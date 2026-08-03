@@ -1,0 +1,85 @@
+import React from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import Layout from './components/common/Layout'
+
+// SaaS Pages
+import Login from './pages/Login'
+import Signup from './pages/Signup'
+import Datasets from './pages/Datasets'
+import Projects from './pages/Projects'
+import ProjectDetail from './pages/ProjectDetail'
+import AnalyticsSaaS from './pages/AnalyticsSaaS'
+import Explainability from './pages/Explainability'
+import WhatIf from './pages/WhatIf'
+
+// Protected Route wrapper
+function ProtectedRoute({ children }) {
+  const { token, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
+  
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+}
+
+// Public Route wrapper (redirect if logged in)
+function PublicRoute({ children }) {
+  const { token, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
+  
+  if (token) {
+    return <Navigate to="/" replace />;
+  }
+  
+  return children;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public Routes */}
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+      
+      {/* Protected SaaS Routes */}
+      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route index element={<Projects />} />
+        <Route path="datasets" element={<Datasets />} />
+        <Route path="projects" element={<Projects />} />
+        <Route path="projects/:id" element={<ProjectDetail />} />
+        <Route path="projects/:projectId/explainability" element={<Explainability />} />
+        <Route path="projects/:projectId/whatif" element={<WhatIf />} />
+        <Route path="analytics" element={<AnalyticsSaaS />} />
+      </Route>
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}
+
+export default App

@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* Risk level colors */
+.risk-critical { @apply bg-red-100 text-red-800 border-red-200; }
+.risk-high { @apply bg-orange-100 text-orange-800 border-orange-200; }
+.risk-medium { @apply bg-yellow-100 text-yellow-800 border-yellow-200; }
+.risk-low { @apply bg-green-100 text-green-800 border-green-200; }
+
+/* Severity colors */
+.severity-critical { @apply bg-red-50 border-l-4 border-red-500; }
+.severity-warning { @apply bg-yellow-50 border-l-4 border-yellow-500; }
+.severity-info { @apply bg-blue-50 border-l-4 border-blue-500; }
+.severity-positive { @apply bg-green-50 border-l-4 border-green-500; }
+
+/* Card styles */
+.card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
+}
+
+.card-header {
+  @apply text-lg font-semibold mb-4 pb-2 border-b border-gray-100;
+}
+
+/* Button styles */
+.btn {
+  @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
+}
+
+.btn-primary {
+  @apply bg-blue-600 text-white hover:bg-blue-700;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+}
+
+.btn-success {
+  @apply bg-green-600 text-white hover:bg-green-700;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white hover:bg-red-700;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+/* Progress bar */
+.progress-bar {
+  @apply h-2 bg-gray-200 rounded-full overflow-hidden;
+}
+
+.progress-fill {
+  @apply h-full transition-all duration-300;
+}
