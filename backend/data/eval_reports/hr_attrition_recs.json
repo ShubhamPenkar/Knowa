@@ -1,0 +1,42 @@
+{
+  "high_risk_probability": 0.6666666666666666,
+  "recommendations": [
+    {
+      "code": "check_in_light",
+      "name": "Light check-in",
+      "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft.",
+      "reasoning": "Lighter-touch move. low cost to try. partially matches current drivers. illustrative shift on outcome: about \u22128% (guide, not a guarantee)."
+    },
+    {
+      "code": "discount_20",
+      "name": "20% discount offer",
+      "description": "Stronger short-term discount when risk is elevated and price is a driver.",
+      "reasoning": "Lighter-touch move. balanced cost vs. likely benefit. illustrative shift on outcome: about \u221211% (guide, not a guarantee). insight focus: over time."
+    },
+    {
+      "code": "add_tech_support",
+      "name": "Tech support trial",
+      "description": "Trial tech support when support gaps may be creating silent friction.",
+      "reasoning": "Lighter-touch move. low cost to try. illustrative shift on outcome: about \u22127% (guide, not a guarantee). insight focus: over time."
+    },
+    {
+      "code": "autopay_incentive",
+      "name": "Auto-pay incentive",
+      "description": "Nudge easier billing to reduce friction-driven drop-off.",
+      "reasoning": "Lighter-touch move. low cost to try. illustrative shift on outcome: about \u22126% (guide, not a guarantee). insight focus: over time."
+    },
+    {
+      "code": "engagement_campaign",
+      "name": "Re-engagement campaign",
+      "description": "Targeted nudge when usage/recency looks weak.",
+      "reasoning": "Lighter-touch move. low cost to try. illustrative shift on outcome: about \u22126% (guide, not a guarantee)."
+    }
+  ],
+  "telco_flavored_hits": [
+    "20% discount offer stronger short-term discount when risk is elevated and price is a driver. discount_20",
+    "tech support trial trial tech support when support gaps may be creating silent friction. add_tech_support",
+    "auto-pay incentive nudge easier billing to reduce friction-driven drop-off. autopay_incentive"
+  ],
+  "hr_relevant_hits": [],
+  "verdict": "telco_catalog_mismatch"
+}

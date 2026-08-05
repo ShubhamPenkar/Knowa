@@ -11,6 +11,12 @@ services:
     environment:
       - DATABASE_URL=sqlite:///./data/decision_intelligence.db
       - DEBUG=true
+      - JWT_SECRET=dev-secret-change-in-production
+      - CONFIDENCE_THRESHOLD=0.7
+      - CONFORMAL_ALPHA=0.1
+      - DISAGREEMENT_THRESHOLD=0.25
+      - INTERVAL_WIDTH_THRESHOLD=0.4
+      - STACKING_N_FOLDS=5
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:

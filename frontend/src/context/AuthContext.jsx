@@ -2,6 +2,38 @@ import { useState, createContext, useContext, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
+async function parseJsonResponse(res, fallbackMessage) {
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) {
+      throw new Error(
+        res.status === 500 || res.status === 502 || res.status === 504
+          ? 'Backend is not running. Start it with: cd backend && uvicorn app.main:app --reload'
+          : fallbackMessage
+      );
+    }
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      res.ok
+        ? 'Invalid response from server'
+        : `Server error (${res.status}). Is the backend running on port 8000?`
+    );
+  }
+}
+
+function formatErrorDetail(detail, fallback) {
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((e) => e.msg || JSON.stringify(e)).join(', ');
+  }
+  return fallback;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [organization, setOrganization] = useState(null);
@@ -22,7 +54,7 @@ export function AuthProvider({ children }) {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await parseJsonResponse(res, 'Session check failed');
         setUser(data.user);
         setOrganization(data.organization);
       } else {
@@ -35,13 +67,18 @@ export function AuthProvider({ children }) {
   };
 
   const login = async (email, password) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Login failed');
+    let res;
+    try {
+      res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+    } catch {
+      throw new Error('Cannot reach API. Is the backend running on port 8000?');
+    }
+    const data = await parseJsonResponse(res, 'Login failed');
+    if (!res.ok) throw new Error(formatErrorDetail(data.detail, 'Login failed'));
     
     localStorage.setItem('token', data.access_token);
     setToken(data.access_token);
@@ -51,13 +88,18 @@ export function AuthProvider({ children }) {
   };
 
   const signup = async (formData) => {
-    const res = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Signup failed');
+    let res;
+    try {
+      res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+    } catch {
+      throw new Error('Cannot reach API. Is the backend running on port 8000?');
+    }
+    const data = await parseJsonResponse(res, 'Signup failed');
+    if (!res.ok) throw new Error(formatErrorDetail(data.detail, 'Signup failed'));
     
     localStorage.setItem('token', data.access_token);
     setToken(data.access_token);

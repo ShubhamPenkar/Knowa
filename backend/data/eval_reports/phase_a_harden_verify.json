@@ -1,0 +1,78 @@
+{
+  "started": "2026-08-04T11:35:23.597790Z",
+  "checks": [
+    {
+      "name": "p0_empty_rejected",
+      "status": "pass",
+      "detail": "missing_n=20 code=missing_required_features"
+    },
+    {
+      "name": "p0_partial_rejected",
+      "status": "pass",
+      "detail": "{'code': 'missing_required_features', 'message': 'Required feature columns are incomplete (missing: OnlineBackup, DeviceProtection, TechSupport, StreamingTV, StreamingMovies, Contract, PaperlessBilling, PaymentMethod, MonthlyCharges, TotalCharges). Provide all required features with non-empty values before scoring.', 'missing_features': ['OnlineBackup', 'DeviceProtection', 'TechSupport', 'StreamingTV', 'StreamingMovies', 'Contract', 'PaperlessBilling', 'PaymentMethod', 'MonthlyCharges', 'TotalCharges'], 'empty_features': []}"
+    },
+    {
+      "name": "p0_empty_value_rejected",
+      "status": "pass",
+      "detail": "['customerID']"
+    },
+    {
+      "name": "p0_sim_no_persist",
+      "status": "pass",
+      "detail": "rows 166 \u2192 166; impact=0.0"
+    },
+    {
+      "name": "p1_entity_id",
+      "status": "pass",
+      "detail": "entity_id=4376-KFVRS pred_id=741e463f-e81c-467c-a53c-b788badf03b9 persisted=True"
+    },
+    {
+      "name": "p1_entity_id_db",
+      "status": "pass",
+      "detail": "db_entity=4376-KFVRS"
+    },
+    {
+      "name": "p1_impact_disclaimer",
+      "status": "pass",
+      "detail": "Illustrative estimate from action-catalog heuristics \u2014 not a re-simulated outcom"
+    },
+    {
+      "name": "p1_batch",
+      "status": "pass",
+      "detail": "scored=25 err=0 persisted=False note=Batch triage scores only \u2014 use single-case /predict with exp"
+    },
+    {
+      "name": "p1_batch_soft",
+      "status": "pass",
+      "detail": "top_entity=4376-KFVRS"
+    },
+    {
+      "name": "p1_batch_no_persist",
+      "status": "pass",
+      "detail": "rows 167\u2192167"
+    },
+    {
+      "name": "demo_schema_empty",
+      "status": "pass",
+      "detail": "demo required list validates empty"
+    }
+  ],
+  "p0_closed": {
+    "input_validation_empty": true,
+    "input_validation_partial": true,
+    "input_validation_empty_values": true,
+    "sim_no_persist": true
+  },
+  "p1": {
+    "entity_id": "4376-KFVRS",
+    "impact_disclaimer": true,
+    "batch": {
+      "n_scored": 25,
+      "n_errors": 0
+    }
+  },
+  "p0_all_closed": true,
+  "summary": {
+    "pass": 11
+  }
+}

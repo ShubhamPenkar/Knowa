@@ -23,10 +23,10 @@ class RandomForestModel(BaseModel):
         self.problem_type = problem_type
         
         self.default_params = {
-            "n_estimators": 100,
-            "max_depth": 10,
-            "min_samples_split": 5,
-            "min_samples_leaf": 2,
+            "n_estimators": 200,
+            "max_depth": 8,
+            "min_samples_split": 8,
+            "min_samples_leaf": 4,
             "max_features": "sqrt",
             "bootstrap": True,
             "random_state": 42,

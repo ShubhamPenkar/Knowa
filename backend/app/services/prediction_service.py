@@ -72,18 +72,35 @@ class PredictionService:
             features = customer.features
         elif features is None:
             raise ValueError("Either customer_id or features must be provided")
+
+        # P0: reject incomplete / empty feature values (demo schema path)
+        from app.ml.feature_validation import validate_required_features
+        from app.ml.pipelines.preprocessing import NUMERIC_FEATURES, CATEGORICAL_FEATURES
+
+        required = list(NUMERIC_FEATURES) + list(CATEGORICAL_FEATURES)
+        validate_required_features(features, required)
         
         # Preprocess features
         feature_df = preprocess_features(features)
         
-        # Make prediction
+        # Make prediction with conformal uncertainty (Phase 1a)
         probability = float(self.model.predict_proba(feature_df)[0])
         confidence = float(self.model.get_confidence(feature_df)[0])
-        
-        # Determine risk level
+        confidence_interval = None
+        low_confidence = False
+        abstention_reason = None
+
+        if hasattr(self.model, "predict_with_uncertainty"):
+            uncertainty = self.model.predict_with_uncertainty(feature_df)[0]
+            confidence_interval = uncertainty.as_interval_dict()
+            low_confidence = uncertainty.low_confidence
+            abstention_reason = uncertainty.abstention_reason
+            # Prefer agreement-based confidence but dampen when abstaining
+            if low_confidence:
+                confidence = min(confidence, 0.5)
+
         risk_level = self._get_risk_level(probability)
-        
-        # Store prediction
+
         prediction = Prediction(
             customer_id=customer_id,
             model_version=self.model.version,
@@ -94,7 +111,7 @@ class PredictionService:
         self.db.add(prediction)
         self.db.commit()
         self.db.refresh(prediction)
-        
+
         return {
             "id": prediction.id,
             "customer_id": customer_id,
@@ -104,6 +121,9 @@ class PredictionService:
             "model_version": self.model.version,
             "prediction_timestamp": prediction.prediction_timestamp,
             "features_used": features,
+            "confidence_interval": confidence_interval,
+            "low_confidence": low_confidence,
+            "abstention_reason": abstention_reason,
         }
     
     def get_prediction(self, prediction_id: str) -> Optional[dict[str, Any]]:
@@ -184,6 +204,9 @@ class PredictionService:
             "model_version": prediction.model_version,
             "prediction_timestamp": prediction.prediction_timestamp,
             "features_used": prediction.features_snapshot,
+            "confidence_interval": None,
+            "low_confidence": prediction.confidence_score < settings.confidence_threshold,
+            "abstention_reason": None,
         }
     
     def _get_risk_level(self, probability: float) -> str:

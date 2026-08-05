@@ -1,15 +1,29 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+
+function humanize(name) {
+  return String(name || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function pct(p) {
+  if (p == null || Number.isNaN(Number(p))) return '—';
+  return `${(Number(p) * 100).toFixed(0)}%`;
+}
 
 export default function WhatIf() {
   const { projectId } = useParams();
   const [searchParams] = useSearchParams();
   const rowIdx = searchParams.get('row');
-  
+
   const { token } = useAuth();
   const navigate = useNavigate();
-  
+
   const [project, setProject] = useState(null);
   const [testData, setTestData] = useState(null);
   const [baseRow, setBaseRow] = useState(null);
@@ -20,17 +34,16 @@ export default function WhatIf() {
   const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState('');
   const [history, setHistory] = useState([]);
+  const [filterLever, setFilterLever] = useState(false);
 
   useEffect(() => {
-    if (token && projectId) {
-      fetchProject();
-    }
+    if (token && projectId) fetchProject();
   }, [projectId, token]);
 
   const fetchProject = async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -40,7 +53,7 @@ export default function WhatIf() {
         }
       }
     } catch (err) {
-      console.error('Error fetching project:', err);
+      console.error(err);
     }
     setLoading(false);
   };
@@ -48,20 +61,17 @@ export default function WhatIf() {
   const fetchTestData = async (proj) => {
     try {
       const res = await fetch(`/api/projects/${projectId}/test-data?limit=50`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
         setTestData(data.rows);
-        
-        // Auto-select row if specified in URL
-        if (rowIdx !== null && data.rows[parseInt(rowIdx)]) {
-          const row = data.rows[parseInt(rowIdx)];
-          selectBaseRow(row, proj);
+        if (rowIdx != null && data.rows[parseInt(rowIdx, 10)]) {
+          selectBaseRow(data.rows[parseInt(rowIdx, 10)], proj);
         }
       }
     } catch (err) {
-      console.error('Error fetching test data:', err);
+      console.error(err);
     }
   };
 
@@ -71,48 +81,84 @@ export default function WhatIf() {
     setSimulationResult(null);
     setError('');
 
-    // Get baseline prediction
     const features = {};
-    proj.feature_columns.forEach(col => {
+    (proj.feature_columns || []).forEach((col) => {
       features[col] = row[col];
     });
+
+    const preferred = [
+      'customerID',
+      'CustomerID',
+      'customer_id',
+      'customerId',
+      'entity_id',
+      'account_id',
+      'user_id',
+      'id',
+      'ID',
+    ];
+    let entity_id = null;
+    for (const k of preferred) {
+      if (row[k] != null && String(row[k]).trim() !== '') {
+        entity_id = String(row[k]);
+        break;
+      }
+    }
+    if (!entity_id && rowIdx != null) entity_id = `row-${rowIdx}`;
 
     try {
       const res = await fetch(`/api/projects/${projectId}/predict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ features, include_explanations: true })
+        body: JSON.stringify({
+          features,
+          entity_id,
+          include_explanations: true,
+          include_recommendations: false,
+        }),
       });
-
       if (res.ok) {
         const data = await res.json();
         setBaselinePrediction(data);
       }
     } catch (err) {
-      console.error('Error getting baseline:', err);
+      console.error(err);
     }
   };
 
   const handleFeatureChange = (feature, value) => {
-    // Parse as number if it looks like one
-    const parsedValue = value === '' ? undefined : 
-      !isNaN(Number(value)) ? Number(value) : value;
-    
-    setModifiedValues(prev => ({
-      ...prev,
-      [feature]: parsedValue
-    }));
+    const parsed =
+      value === ''
+        ? undefined
+        : !Number.isNaN(Number(value)) && value.trim() !== ''
+          ? Number(value)
+          : value;
+    setModifiedValues((prev) => ({ ...prev, [feature]: parsed }));
   };
 
+  const activeChanges = useMemo(() => {
+    const out = {};
+    Object.entries(modifiedValues).forEach(([k, v]) => {
+      if (v === undefined) return;
+      if (baseRow && String(v) === String(baseRow[k])) return;
+      out[k] = v;
+    });
+    return out;
+  }, [modifiedValues, baseRow]);
+
   const runSimulation = async () => {
+    if (!Object.keys(activeChanges).length) {
+      setError('Change at least one value that differs from the original.');
+      return;
+    }
     setSimulating(true);
     setError('');
 
     const baseFeatures = {};
-    project.feature_columns.forEach(col => {
+    project.feature_columns.forEach((col) => {
       baseFeatures[col] = baseRow[col];
     });
 
@@ -121,26 +167,29 @@ export default function WhatIf() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           base_features: baseFeatures,
-          modified_features: modifiedValues
-        })
+          modified_features: activeChanges,
+        }),
       });
 
       if (res.ok) {
         const data = await res.json();
         setSimulationResult(data);
-        
-        // Add to history
-        setHistory(prev => [{
-          timestamp: new Date().toISOString(),
-          changes: { ...modifiedValues },
-          result: data
-        }, ...prev.slice(0, 9)]);
+        setHistory((prev) =>
+          [
+            {
+              timestamp: new Date().toISOString(),
+              changes: { ...activeChanges },
+              result: data,
+            },
+            ...prev,
+          ].slice(0, 10)
+        );
       } else {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
         setError(errData.detail || 'Simulation failed');
       }
     } catch (err) {
@@ -152,6 +201,12 @@ export default function WhatIf() {
   const resetModifications = () => {
     setModifiedValues({});
     setSimulationResult(null);
+    setError('');
+  };
+
+  const applySuggestion = (feature, value) => {
+    if (value === undefined) return;
+    setModifiedValues((prev) => ({ ...prev, [feature]: value }));
   };
 
   const applyHistoryItem = (item) => {
@@ -159,10 +214,30 @@ export default function WhatIf() {
     setSimulationResult(item.result);
   };
 
+  const isReg = project?.problem_type === 'regression';
+  const outcomeLabel = humanize(
+    project?.target_description || project?.target_column || 'outcome'
+  );
+
+  const leverFeatures = useMemo(() => {
+    const drivers =
+      baselinePrediction?.explanations?.drivers ||
+      baselinePrediction?.explanations?.shap?.top_features ||
+      [];
+    return new Set(drivers.map((d) => d.feature));
+  }, [baselinePrediction]);
+
+  const columnsToShow = useMemo(() => {
+    const cols = project?.feature_columns || [];
+    if (!filterLever || leverFeatures.size === 0) return cols;
+    const preferred = cols.filter((c) => leverFeatures.has(c));
+    return preferred.length ? preferred : cols;
+  }, [project, filterLever, leverFeatures]);
+
   if (loading) {
     return (
-      <div className="p-6 flex justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full"></div>
+      <div className="min-h-[40vh] flex items-center justify-center text-[var(--muted)] text-sm">
+        Loading scenario tools…
       </div>
     );
   }
@@ -170,77 +245,57 @@ export default function WhatIf() {
   if (!project) {
     return (
       <div className="p-6">
-        <p className="text-gray-600">Project not found</p>
+        <p className="text-[var(--muted)]">Project not found</p>
       </div>
     );
   }
 
   if (project.status !== 'trained' && project.status !== 'ready') {
     return (
-      <div className="p-6">
-        <button
-          onClick={() => navigate(`/projects/${projectId}`)}
-          className="text-gray-600 hover:text-gray-900 mb-4 flex items-center gap-1"
-        >
-          ← Back to Project
-        </button>
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
-          <h2 className="text-xl font-semibold text-yellow-800 mb-2">Model Not Trained</h2>
-          <p className="text-yellow-700">
-            Please train your model first to use what-if analysis.
-          </p>
-        </div>
+      <div className="p-6 max-w-xl">
+        <Link to={`/projects/${projectId}`} className="text-sm text-teal hover:underline">
+          ← Back to project
+        </Link>
+        <h1 className="font-display text-2xl font-semibold text-ink mt-4">What-if analysis</h1>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Prepare the project first so we can score before/after scenarios.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <button
-          onClick={() => navigate(`/projects/${projectId}`)}
-          className="text-gray-600 hover:text-gray-900 mb-2 flex items-center gap-1"
-        >
-          ← Back to Project
-        </button>
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              🔮 What-If Analysis
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Modify feature values to see how the prediction changes
+    <div className="p-6 max-w-6xl mx-auto space-y-8">
+      <header className="border-b border-mist pb-6">
+        <Link to={`/projects/${projectId}`} className="text-sm text-teal hover:underline">
+          ← Back to project
+        </Link>
+        <p className="page-kicker mt-4 mb-1">Phase 5 · Scenario</p>
+        <h1 className="font-display text-3xl font-semibold text-ink tracking-tight">
+          What if we changed something?
+        </h1>
+        <p className="mt-2 text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
+          Pick a person or account, tweak the levers that drive {outcomeLabel.toLowerCase()}, and
+          compare the estimated chance before vs after — with a re-ranked next-step plan.
+        </p>
+      </header>
+
+      {!baseRow && (
+        <section className="surface overflow-hidden">
+          <div className="px-5 py-4 border-b border-mist">
+            <h2 className="font-display text-lg font-semibold text-ink">Choose a starting case</h2>
+            <p className="text-sm text-[var(--muted)] mt-1">
+              Held-out sample from prepare. Click a row to load the baseline.
             </p>
           </div>
-          <button
-            onClick={() => navigate(`/projects/${projectId}/explainability`)}
-            className="px-4 py-2 bg-brand-teal-dark text-white rounded-lg hover:bg-brand-teal"
-          >
-            ← Back to Explainability
-          </button>
-        </div>
-      </div>
-
-      {/* Step 1: Select Base Record */}
-      {!baseRow && (
-        <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Step 1: Select a Base Record
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Choose a record as your starting point for the what-if analysis
-          </p>
-          <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
+          <div className="overflow-x-auto max-h-[28rem]">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <th className="px-3 py-2 text-left text-gray-600">#</th>
-                  <th className="px-3 py-2 text-left text-gray-600">Actual</th>
-                  {project.feature_columns.slice(0, 4).map(col => (
-                    <th key={col} className="px-3 py-2 text-left text-gray-600 truncate max-w-24">
-                      {col}
-                    </th>
+                  <th>#</th>
+                  <th>Known</th>
+                  {(project.feature_columns || []).slice(0, 5).map((col) => (
+                    <th key={col}>{humanize(col)}</th>
                   ))}
                 </tr>
               </thead>
@@ -248,27 +303,20 @@ export default function WhatIf() {
                 {(testData || []).map((row, idx) => (
                   <tr
                     key={idx}
-                    className="border-t cursor-pointer hover:bg-purple-50 transition-colors"
+                    className="cursor-pointer hover:bg-paper/80"
                     onClick={() => selectBaseRow(row)}
                   >
-                    <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        project.problem_type === 'regression'
-                          ? 'bg-brand-teal/20 text-brand-teal-dark'
-                          : String(row[project.target_column]) === project.target_positive_label
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-green-100 text-green-700'
-                      }`}>
-                        {project.problem_type === 'regression'
-                          ? Number(row[project.target_column]).toFixed(2)
-                          : String(row[project.target_column]) === project.target_positive_label ? 'Yes' : 'No'
-                        }
-                      </span>
+                    <td className="text-[var(--muted)]">{idx + 1}</td>
+                    <td>
+                      {isReg
+                        ? Number(row[project.target_column]).toFixed(2)
+                        : String(row[project.target_column]) === project.target_positive_label
+                          ? 'Yes'
+                          : 'No'}
                     </td>
-                    {project.feature_columns.slice(0, 4).map(col => (
-                      <td key={col} className="px-3 py-2 truncate max-w-24 text-gray-600">
-                        {String(row[col] ?? '').substring(0, 12)}
+                    {(project.feature_columns || []).slice(0, 5).map((col) => (
+                      <td key={col} className="max-w-[8rem] truncate">
+                        {String(row[col] ?? '')}
                       </td>
                     ))}
                   </tr>
@@ -276,301 +324,407 @@ export default function WhatIf() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* What-If Interface */}
       {baseRow && (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left: Feature Modifications */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Current Prediction Banner */}
+        <div className="grid lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-7 space-y-6">
+            {/* Baseline */}
             {baselinePrediction && (
-              <div className="bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl p-6">
-                <div className="flex justify-between items-center">
+              <div className="border border-mist px-5 py-5">
+                <div className="flex justify-between items-start gap-4">
                   <div>
-                    <div className="text-purple-100 text-sm">Current {project.target_description || 'Prediction'}</div>
-                    <div className="text-4xl font-bold">
-                      {project.problem_type === 'regression'
-                        ? baselinePrediction.predicted_value?.toFixed(2)
-                        : `${(baselinePrediction.probability * 100).toFixed(1)}%`
-                      }
-                    </div>
-                    <div className="text-purple-100 text-sm mt-1">
-                      Confidence: {(baselinePrediction.confidence * 100).toFixed(0)}%
-                      {baselinePrediction.risk_level && ` • Risk: ${baselinePrediction.risk_level}`}
-                    </div>
+                    <p className="page-kicker mb-1">Baseline</p>
+                    <p className="font-display text-3xl font-semibold tabular-nums text-ink">
+                      {isReg
+                        ? Number(baselinePrediction.predicted_value).toFixed(2)
+                        : pct(baselinePrediction.probability)}
+                    </p>
+                    <p className="text-sm text-[var(--muted)] mt-1">
+                      Current best guess for {outcomeLabel.toLowerCase()}
+                      {baselinePrediction.risk_level
+                        ? ` · ${baselinePrediction.risk_level}`
+                        : ''}
+                    </p>
                   </div>
                   <button
+                    type="button"
+                    className="btn-secondary text-sm"
                     onClick={() => {
                       setBaseRow(null);
                       setBaselinePrediction(null);
                       setSimulationResult(null);
                       setModifiedValues({});
                     }}
-                    className="px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm"
                   >
-                    Change Record
+                    Change case
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Feature Modification Panel */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <div className="flex justify-between items-center mb-4">
+            {/* Suggested tweaks */}
+            {baselinePrediction?.explanations?.drivers && (
+              <div className="border border-mist px-5 py-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-3">
+                  Suggested levers (from “why”)
+                </h3>
+                <ul className="space-y-2">
+                  {(baselinePrediction.explanations.drivers || [])
+                    .filter((d) => Number(d.impact) > 0)
+                    .slice(0, 4)
+                    .map((d) => (
+                      <li
+                        key={d.feature}
+                        className="flex flex-wrap items-center justify-between gap-2 text-sm border-b border-mist/70 pb-2"
+                      >
+                        <span className="text-ink">
+                          <span className="font-medium">{humanize(d.feature)}</span>
+                          <span className="text-[var(--muted)]"> · currently raises risk</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="text-xs text-teal hover:underline"
+                          onClick={() => {
+                            setFilterLever(true);
+                            // scroll-ish focus: mark for edit
+                            const el = document.getElementById(`feat-${d.feature}`);
+                            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el?.querySelector('input,select')?.focus();
+                          }}
+                        >
+                          Edit this
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Feature editor */}
+            <div className="border border-mist">
+              <div className="px-5 py-4 border-b border-mist flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Modify Features
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Change values to see how it affects the prediction
+                  <h3 className="font-display text-lg font-semibold text-ink">Edit scenario</h3>
+                  <p className="text-sm text-[var(--muted)] mt-0.5">
+                    {Object.keys(activeChanges).length} change
+                    {Object.keys(activeChanges).length === 1 ? '' : 's'} ready
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={resetModifications}
-                    className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm"
+                    type="button"
+                    className="btn-secondary text-sm"
+                    onClick={() => setFilterLever((v) => !v)}
                   >
-                    Reset All
+                    {filterLever ? 'Show all fields' : 'Focus key drivers'}
+                  </button>
+                  <button type="button" className="btn-secondary text-sm" onClick={resetModifications}>
+                    Reset
                   </button>
                   <button
+                    type="button"
+                    className="btn-primary text-sm"
+                    disabled={simulating || !Object.keys(activeChanges).length}
                     onClick={runSimulation}
-                    disabled={simulating || Object.keys(modifiedValues).filter(k => modifiedValues[k] !== undefined).length === 0}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium"
                   >
-                    {simulating ? 'Running...' : 'Run Simulation'}
+                    {simulating ? 'Running…' : 'Run scenario'}
                   </button>
                 </div>
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+                <div className="mx-5 mt-4 px-3 py-2 border border-coral/40 bg-coral-soft text-sm text-ink">
                   {error}
                 </div>
               )}
 
-              <div className="grid md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                {project.feature_columns.map(col => {
+              <div className="p-5 grid sm:grid-cols-2 gap-3 max-h-[28rem] overflow-y-auto">
+                {columnsToShow.map((col) => {
                   const originalValue = baseRow[col];
-                  const isModified = modifiedValues[col] !== undefined;
-                  
+                  const isModified = activeChanges[col] !== undefined;
+                  const display =
+                    modifiedValues[col] !== undefined ? modifiedValues[col] : originalValue;
                   return (
-                    <div key={col} className={`p-3 rounded-lg border ${
-                      isModified ? 'border-purple-300 bg-purple-50' : 'border-gray-200'
-                    }`}>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {col}
+                    <div
+                      id={`feat-${col}`}
+                      key={col}
+                      className={`px-3 py-3 border text-sm ${
+                        isModified ? 'border-teal/50 bg-teal-soft/10' : 'border-mist'
+                      }`}
+                    >
+                      <label className="block text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
+                        {humanize(col)}
                         {isModified && (
-                          <span className="ml-2 text-purple-600 text-xs">modified</span>
+                          <span className="ml-2 normal-case tracking-normal text-teal">changed</span>
                         )}
                       </label>
-                      <div className="flex gap-2 items-center">
+                      <div className="flex gap-2">
                         <input
                           type="text"
-                          value={modifiedValues[col] !== undefined ? modifiedValues[col] : originalValue}
+                          value={display ?? ''}
                           onChange={(e) => handleFeatureChange(col, e.target.value)}
-                          className={`flex-1 px-3 py-2 border rounded-lg text-sm ${
-                            isModified ? 'border-purple-400' : 'border-gray-300'
-                          }`}
+                          className="flex-1 bg-transparent border border-mist px-2 py-1.5 text-ink focus:border-teal outline-none"
                         />
                         {isModified && (
                           <button
+                            type="button"
+                            className="text-xs text-[var(--muted)] hover:text-ink px-1"
                             onClick={() => {
-                              setModifiedValues(prev => {
+                              setModifiedValues((prev) => {
                                 const next = { ...prev };
                                 delete next[col];
                                 return next;
                               });
                             }}
-                            className="p-2 text-gray-400 hover:text-gray-600"
-                            title="Reset to original"
                           >
                             ↩
                           </button>
                         )}
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Original: {String(originalValue)}
-                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-1">Original: {String(originalValue)}</p>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Simulation Result */}
+            {/* Result */}
             {simulationResult && (
-              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-6">
-                  <h3 className="text-lg font-semibold mb-4">Simulation Result</h3>
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div className="bg-white/20 rounded-lg p-4">
-                      <div className="text-green-100 text-sm">Before</div>
-                      <div className="text-3xl font-bold">
-                        {project.problem_type === 'regression'
-                          ? simulationResult.original.predicted_value?.toFixed(2)
-                          : `${(simulationResult.original.probability * 100).toFixed(1)}%`
-                        }
-                      </div>
+              <div className="border border-mist">
+                <div className="px-5 py-5 border-b border-mist">
+                  <p className="page-kicker mb-1">Scenario outcome</p>
+                  <p className="text-sm text-ink leading-relaxed max-w-2xl">
+                    {simulationResult.plain_summary}
+                  </p>
+                  {Array.isArray(simulationResult.key_insights) &&
+                    simulationResult.key_insights.length > 0 && (
+                      <ul className="mt-3 space-y-1.5 text-sm text-[var(--muted)] list-disc pl-5">
+                        {simulationResult.key_insights.map((line, i) => (
+                          <li key={i} className="leading-relaxed">
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-px bg-mist">
+                  <div className="bg-paper px-4 py-5 text-center">
+                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Before</div>
+                    <div className="font-display text-2xl font-semibold tabular-nums text-ink mt-1">
+                      {isReg
+                        ? Number(simulationResult.original?.predicted_value).toFixed(2)
+                        : pct(simulationResult.original?.probability)}
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
-                      <div className="text-green-100 text-sm">After</div>
-                      <div className="text-3xl font-bold">
-                        {project.problem_type === 'regression'
-                          ? simulationResult.modified.predicted_value?.toFixed(2)
-                          : `${(simulationResult.modified.probability * 100).toFixed(1)}%`
-                        }
+                    {!isReg && simulationResult.original?.risk_level && (
+                      <div className="text-xs text-[var(--muted)] mt-1">
+                        {simulationResult.original.risk_level}
                       </div>
+                    )}
+                  </div>
+                  <div className="bg-paper px-4 py-5 text-center">
+                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">After</div>
+                    <div className="font-display text-2xl font-semibold tabular-nums text-ink mt-1">
+                      {isReg
+                        ? Number(simulationResult.modified?.predicted_value).toFixed(2)
+                        : pct(simulationResult.modified?.probability)}
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
-                      <div className="text-green-100 text-sm">Impact</div>
-                      <div className={`text-3xl font-bold ${
-                        simulationResult.impact < 0 ? 'text-green-200' : 'text-red-200'
-                      }`}>
-                        {simulationResult.impact > 0 ? '+' : ''}
-                        {(simulationResult.impact * 100).toFixed(1)}%
+                    {!isReg && simulationResult.modified?.risk_level && (
+                      <div className="text-xs text-[var(--muted)] mt-1">
+                        {simulationResult.modified.risk_level}
                       </div>
+                    )}
+                  </div>
+                  <div className="bg-paper px-4 py-5 text-center">
+                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Impact</div>
+                    <div
+                      className={`font-display text-2xl font-semibold tabular-nums mt-1 ${
+                        Number(simulationResult.impact) < 0
+                          ? 'text-teal'
+                          : Number(simulationResult.impact) > 0
+                            ? 'text-coral'
+                            : 'text-ink'
+                      }`}
+                    >
+                      {Number(simulationResult.impact) > 0 ? '+' : ''}
+                      {isReg
+                        ? Number(simulationResult.impact).toFixed(2)
+                        : `${(Number(simulationResult.impact) * 100).toFixed(1)} pp`}
+                    </div>
+                    <div className="text-xs text-[var(--muted)] mt-1">
+                      {simulationResult.risk_level_change || simulationResult.direction}
                     </div>
                   </div>
                 </div>
 
-                {/* Impact Interpretation */}
-                <div className="p-6">
-                  <div className={`p-4 rounded-lg ${
-                    simulationResult.impact < 0
-                      ? 'bg-green-50 border border-green-200'
-                      : simulationResult.impact > 0
-                        ? 'bg-red-50 border border-red-200'
-                        : 'bg-gray-50 border border-gray-200'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <div className="text-3xl">
-                        {simulationResult.impact < 0 ? '✅' : simulationResult.impact > 0 ? '⚠️' : '➡️'}
-                      </div>
-                      <div>
-                        <div className={`font-semibold ${
-                          simulationResult.impact < 0 ? 'text-green-800' : 
-                          simulationResult.impact > 0 ? 'text-red-800' : 'text-gray-800'
-                        }`}>
-                          {simulationResult.impact < -0.1
-                            ? 'Significant positive impact!'
-                            : simulationResult.impact < 0
-                              ? 'Slight improvement'
-                              : simulationResult.impact > 0.1
-                                ? 'This change increases risk'
-                                : simulationResult.impact > 0
-                                  ? 'Slight increase in risk'
-                                  : 'No significant change'
-                          }
-                        </div>
-                        <div className={`text-sm ${
-                          simulationResult.impact < 0 ? 'text-green-700' : 
-                          simulationResult.impact > 0 ? 'text-red-700' : 'text-gray-700'
-                        }`}>
-                          {simulationResult.impact < 0
-                            ? `These changes would reduce ${project.target_description || 'the outcome'} probability by ${Math.abs(simulationResult.impact * 100).toFixed(1)} percentage points.`
-                            : simulationResult.impact > 0
-                              ? `These changes would increase ${project.target_description || 'the outcome'} probability by ${(simulationResult.impact * 100).toFixed(1)} percentage points.`
-                              : 'The changes have minimal effect on the prediction.'
-                          }
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Changes Made */}
-                  <div className="mt-4">
-                    <h4 className="font-medium text-gray-900 mb-2">Changes Applied:</h4>
+                {simulationResult.change_log?.length > 0 && (
+                  <div className="px-5 py-4 border-t border-mist">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
+                      Changes applied
+                    </h4>
                     <div className="flex flex-wrap gap-2">
-                      {Object.entries(modifiedValues)
-                        .filter(([_, v]) => v !== undefined)
-                        .map(([key, value]) => (
-                          <span key={key} className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
-                            {key}: {String(baseRow[key])} → {String(value)}
-                          </span>
-                        ))
-                      }
+                      {simulationResult.change_log.map((c) => (
+                        <span
+                          key={c.feature}
+                          className="text-xs border border-mist px-2.5 py-1 text-ink"
+                        >
+                          {humanize(c.label || c.feature)}: {String(c.before)} → {String(c.after)}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                </div>
+                )}
+
+                {simulationResult.driver_shift?.length > 0 && (
+                  <div className="px-5 py-4 border-t border-mist">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
+                      How the story shifts
+                    </h4>
+                    <ul className="space-y-2 text-sm">
+                      {simulationResult.driver_shift.slice(0, 4).map((d) => (
+                        <li key={d.feature} className="flex justify-between gap-3 border-b border-mist/70 pb-2">
+                          <span className="text-ink">{humanize(d.label || d.feature)}</span>
+                          <span className="text-[var(--muted)] tabular-nums shrink-0">
+                            {d.before_impact?.toFixed?.(3) ?? d.before_impact} →{' '}
+                            {d.after_impact?.toFixed?.(3) ?? d.after_impact}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {simulationResult.decision_summary && (
+                  <div className="px-5 py-4 border-t border-mist text-sm">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
+                      After this scenario
+                    </h4>
+                    <p className="font-medium text-ink">{simulationResult.decision_summary.strategy}</p>
+                    <p className="mt-1 text-[var(--muted)] leading-relaxed">
+                      {simulationResult.decision_summary.description}
+                    </p>
+                  </div>
+                )}
+
+                {simulationResult.recommendations?.length > 0 && (
+                  <div className="px-5 py-4 border-t border-mist">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
+                      Re-ranked next steps
+                    </h4>
+                    <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
+                      Impact language in these ranks is illustrative (catalog heuristics), not a
+                      re-simulated outcome.
+                    </p>
+                    <ol className="space-y-3 text-sm">
+                      {simulationResult.recommendations.slice(0, 3).map((r, i) => (
+                        <li key={r.action_code || i}>
+                          <div className="font-medium text-ink">
+                            {i + 1}. {r.action_name || r.name}
+                          </div>
+                          {r.reasoning && (
+                            <p className="text-[var(--muted)] mt-0.5 leading-relaxed">{r.reasoning}</p>
+                          )}
+                          {r.expected_probability_reduction > 0.01 && (
+                            <p className="text-xs text-[var(--muted)] mt-1 tabular-nums">
+                              Illustrative est. ~−
+                              {(Number(r.expected_probability_reduction) * 100).toFixed(0)} pp
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Right: Simulation History */}
-          <div className="space-y-6">
-            {/* Quick Actions */}
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Quick Actions</h3>
-              <div className="space-y-2">
-                <button
-                  onClick={() => navigate(`/projects/${projectId}/explainability`)}
-                  className="w-full px-3 py-2 text-left bg-brand-teal/10 text-brand-teal-dark rounded-lg hover:bg-brand-teal/20 text-sm"
-                >
-                  🔍 View SHAP Explanation
-                </button>
-                <button
-                  onClick={() => navigate(`/projects/${projectId}`)}
-                  className="w-full px-3 py-2 text-left bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 text-sm"
-                >
-                  📊 Back to Project
-                </button>
-              </div>
+          {/* Sidebar */}
+          <aside className="lg:col-span-5 space-y-6">
+            <div className="border border-mist px-4 py-4 text-sm">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
+                How to use this
+              </h3>
+              <ol className="list-decimal pl-4 space-y-2 text-[var(--muted)] leading-relaxed">
+                <li>Change levers that raise risk in the baseline “why”.</li>
+                <li>Run the scenario to see before vs after chance.</li>
+                <li>Read re-ranked actions as a guide — not a guarantee.</li>
+              </ol>
             </div>
 
-            {/* Simulation History */}
             {history.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="font-semibold text-gray-900 mb-3">
-                  Simulation History ({history.length})
-                </h3>
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {history.map((item, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => applyHistoryItem(item)}
-                      className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                        <span className={`text-sm font-medium ${
-                          item.result.impact < 0 ? 'text-green-700' : 'text-red-700'
-                        }`}>
-                          Impact: {item.result.impact > 0 ? '+' : ''}{(item.result.impact * 100).toFixed(1)}%
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(item.timestamp).toLocaleTimeString()}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {Object.keys(item.changes).filter(k => item.changes[k] !== undefined).length} changes
-                      </div>
-                    </button>
-                  ))}
+              <div className="border border-mist">
+                <div className="px-4 py-3 border-b border-mist">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Recent scenarios ({history.length})
+                  </h3>
                 </div>
+                <ul className="divide-y divide-mist max-h-80 overflow-y-auto">
+                  {history.map((item, idx) => {
+                    const imp = Number(item.result?.impact ?? 0);
+                    return (
+                      <li key={idx}>
+                        <button
+                          type="button"
+                          className="w-full text-left px-4 py-3 hover:bg-paper text-sm"
+                          onClick={() => applyHistoryItem(item)}
+                        >
+                          <div className="flex justify-between gap-2">
+                            <span
+                              className={`font-medium tabular-nums ${
+                                imp < 0 ? 'text-teal' : imp > 0 ? 'text-coral' : 'text-ink'
+                              }`}
+                            >
+                              {imp > 0 ? '+' : ''}
+                              {(imp * 100).toFixed(1)} pp
+                            </span>
+                            <span className="text-xs text-[var(--muted)]">
+                              {new Date(item.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <div className="text-xs text-[var(--muted)] mt-1">
+                            {Object.keys(item.changes || {}).length} field change
+                            {Object.keys(item.changes || {}).length === 1 ? '' : 's'}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
 
-            {/* Tips - Dynamic based on baseline prediction */}
-            <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-              <h3 className="font-semibold text-purple-800 mb-2">💡 Suggestions for This Record</h3>
-              {baselinePrediction?.explanations?.shap?.top_features ? (
-                <ul className="text-sm text-purple-700 space-y-2">
-                  {baselinePrediction.explanations.shap.top_features.slice(0, 4).map((f, i) => (
-                    <li key={i}>
-                      {f.impact > 0 ? (
-                        <span>• <strong>{f.feature.replace(/_/g, ' ')}</strong>: Try {typeof f.value === 'number' ? 'decreasing' : 'changing'} this value to reduce {project.target_description || 'risk'}</span>
-                      ) : (
-                        <span>• <strong>{f.feature.replace(/_/g, ' ')}</strong>: This is helping — current value is favorable</span>
+            {simulationResult?.suggested_tweaks?.length > 0 && (
+              <div className="border border-mist">
+                <div className="px-4 py-3 border-b border-mist">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Try dialing
+                  </h3>
+                </div>
+                <ul className="divide-y divide-mist">
+                  {simulationResult.suggested_tweaks.map((t, i) => (
+                    <li key={`${t.feature}-${i}`} className="px-4 py-3 text-sm">
+                      <div className="font-medium text-ink">{humanize(t.label || t.feature)}</div>
+                      {t.hint && (
+                        <p className="text-xs text-[var(--muted)] mt-1 leading-relaxed">{t.hint}</p>
+                      )}
+                      {t.suggested_value !== undefined && (
+                        <button
+                          type="button"
+                          className="mt-2 text-xs text-teal hover:underline"
+                          onClick={() => applySuggestion(t.feature, t.suggested_value)}
+                        >
+                          Set to {String(t.suggested_value)}
+                        </button>
                       )}
                     </li>
                   ))}
                 </ul>
-              ) : (
-                <p className="text-sm text-purple-700">Select a row to see personalized suggestions</p>
-              )}
-            </div>
-          </div>
+              </div>
+            )}
+          </aside>
         </div>
       )}
     </div>

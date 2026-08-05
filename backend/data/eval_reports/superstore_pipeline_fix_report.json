@@ -1,0 +1,42 @@
+{
+  "theory": {
+    "n_rows": 896,
+    "store_sales_dtype": "str",
+    "parse_ok": 895,
+    "parse_fail": 1,
+    "failed_samples": [
+      "    "
+    ],
+    "pearson_sales_high": 0.7678766088358581,
+    "univariate_auc_sales_high": 1.0,
+    "conclusion": "pipeline_bug",
+    "corr_if_forced_categorical_ordinal": 0.21206712632466238
+  },
+  "post_fix_sanity": {
+    "feature_names_out": [
+      "Store_Area",
+      "Items_Available",
+      "Daily_Customer_Count",
+      "Store_Sales"
+    ],
+    "numeric_columns": [
+      "Store_Area",
+      "Items_Available",
+      "Daily_Customer_Count",
+      "Store_Sales"
+    ],
+    "categorical_columns": [],
+    "dropped_columns": [],
+    "dropped_reasons": {},
+    "corr_transformed_sales_high": 0.7678920302132262,
+    "bad_positive_label_blocked": true
+  },
+  "project_id": "8352b4a9-fe90-4d8b-a893-3a494d56c7a2",
+  "target_positive_label": "High",
+  "feature_columns": [
+    "Store_Area",
+    "Items_Available",
+    "Daily_Customer_Count",
+    "Store_Sales"
+  ]
+}

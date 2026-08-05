@@ -21,7 +21,8 @@ async def upload_dataset(
     """Upload CSV dataset."""
     service = DatasetService(db, auth.org_id)
     dataset = await service.upload_csv(file, name, description)
-    
+    profile = service.get_profile(dataset.id)
+
     return {
         "id": dataset.id,
         "name": dataset.name,
@@ -29,6 +30,12 @@ async def upload_dataset(
         "row_count": dataset.row_count,
         "columns": dataset.columns,
         "uploaded_at": dataset.uploaded_at.isoformat(),
+        "profiling": {
+            "excluded_as_id": (profile or {}).get("excluded_as_id", []),
+            "dropped_as_constant": (profile or {}).get("dropped_as_constant", []),
+            "warnings": (profile or {}).get("warnings", []),
+            "blocking": (profile or {}).get("blocking", False),
+        },
     }
 
 
@@ -76,7 +83,22 @@ async def get_dataset(
         "columns": dataset.columns,
         "file_size": dataset.file_size,
         "uploaded_at": dataset.uploaded_at.isoformat(),
+        "profiling": service.get_profile(dataset_id),
     }
+
+
+@router.get("/{dataset_id}/profile")
+async def get_dataset_profile(
+    dataset_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Return deterministic hygiene profile for a dataset."""
+    service = DatasetService(db, auth.org_id)
+    profile = service.get_profile(dataset_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return profile
 
 
 @router.get("/{dataset_id}/preview")

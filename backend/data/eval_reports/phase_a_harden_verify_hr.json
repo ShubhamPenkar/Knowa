@@ -1,0 +1,61 @@
+{
+  "started": "2026-08-05T04:39:34.905924+00:00",
+  "project_id": "6073ce25-10bc-4ca8-aef3-c2b2186935e0",
+  "checks": [
+    {
+      "name": "p0_empty_rejected",
+      "status": "pass",
+      "detail": "{'code': 'missing_required_features', 'message': 'Required feature columns are incomplete (missing: Age, BusinessTravel, DailyRate, Department, DistanceFromHome, Education, EducationField, EnvironmentSatisfaction, Gender, HourlyRate, JobInvolvement, JobLevel, JobRole, JobSatisfaction, MaritalStatus, MonthlyIncome, MonthlyRate, NumCompaniesWorked, OverTime, PercentSalaryHike\u2026). Provide all required features with non-empty values before scoring.', 'missing_features': ['Age', 'BusinessTravel', 'Dai"
+    },
+    {
+      "name": "p0_partial_rejected",
+      "status": "pass",
+      "detail": "{'code': 'missing_required_features', 'message': 'Required feature columns are incomplete (missing: BusinessTravel, DailyRate, Department, DistanceFromHome, Education, EducationField, EnvironmentSatisfaction, Gender, HourlyRate, JobInvolvement, JobLevel, JobRole, JobSatisfaction, MaritalStatus, MonthlyIncome, MonthlyRate, NumCompaniesWorked, OverTime, PercentSalaryHike, PerformanceRating\u2026). Provide all required features with non-empty values before scoring.', 'missing_features': ['BusinessTravel"
+    },
+    {
+      "name": "p0_empty_value_rejected",
+      "status": "pass",
+      "detail": "['Age']"
+    },
+    {
+      "name": "p0_sim_no_persist",
+      "status": "pass",
+      "detail": "rows 0\u21920"
+    },
+    {
+      "name": "p1_entity_id",
+      "status": "pass",
+      "detail": "entity_id=1495 pred_id=b9ea0f4c-73c9-4330-939d-8343fa462666"
+    },
+    {
+      "name": "p1_entity_id_db",
+      "status": "pass",
+      "detail": "db_entity=1495"
+    },
+    {
+      "name": "p1_entity_resolve_employeenumber",
+      "status": "pass",
+      "detail": "resolved=1495"
+    },
+    {
+      "name": "p1_impact_disclaimer",
+      "status": "pass",
+      "detail": "Illustrative estimate from action-catalog heuristics \u2014 not a re-simulated outcome for this case."
+    },
+    {
+      "name": "p1_batch",
+      "status": "pass",
+      "detail": "scored=25 err=0 note=Batch triage scores only \u2014 use single-case /predict with exp"
+    },
+    {
+      "name": "p1_batch_no_persist",
+      "status": "pass",
+      "detail": "rows 1\u21921"
+    }
+  ],
+  "p0_all_closed": true,
+  "summary": {
+    "pass": 10,
+    "fail": 0
+  }
+}

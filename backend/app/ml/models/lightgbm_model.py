@@ -6,7 +6,6 @@ from typing import Optional
 import joblib
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score, roc_auc_score,
     mean_absolute_error, mean_squared_error, r2_score
@@ -15,52 +14,68 @@ from sklearn.metrics import (
 from app.ml.models.base_model import BaseModel
 
 
+def _import_lightgbm():
+    """Lazy import so the API can start without native LightGBM loaded."""
+    try:
+        import lightgbm as lgb
+        return lgb
+    except Exception as e:
+        raise RuntimeError(
+            "LightGBM failed to load. Original error: " + str(e)
+        ) from e
+
+
 class LightGBMModel(BaseModel):
     """LightGBM model for classification or regression."""
     
     def __init__(self, version: str = "1.0", problem_type: str = "binary_classification", **params):
         super().__init__("lightgbm", version)
         self.problem_type = problem_type
+        lgb = _import_lightgbm()
         
         if problem_type == "regression":
             self.default_params = {
                 "objective": "regression",
                 "metric": "rmse",
                 "boosting_type": "gbdt",
-                "num_leaves": 31,
-                "max_depth": -1,
-                "learning_rate": 0.1,
-                "n_estimators": 100,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-                "min_child_samples": 20,
-                "reg_alpha": 0,
-                "reg_lambda": 0,
+                "num_leaves": 24,
+                "max_depth": 5,
+                "learning_rate": 0.05,
+                "n_estimators": 400,
+                "subsample": 0.85,
+                "colsample_bytree": 0.85,
+                "min_child_samples": 30,
+                "reg_alpha": 0.1,
+                "reg_lambda": 1.0,
                 "random_state": 42,
                 "n_jobs": -1,
                 "verbose": -1,
             }
             self.params = {**self.default_params, **params}
+            es = self.params.pop("early_stopping_rounds", 40)
+            self.early_stopping_rounds = int(es) if es is not None else 40
             self.model = lgb.LGBMRegressor(**self.params)
         else:
             self.default_params = {
                 "objective": "binary",
                 "metric": "binary_logloss",
                 "boosting_type": "gbdt",
-                "num_leaves": 31,
-                "max_depth": -1,
-                "learning_rate": 0.1,
-                "n_estimators": 100,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-                "min_child_samples": 20,
-                "reg_alpha": 0,
-                "reg_lambda": 0,
+                "num_leaves": 24,
+                "max_depth": 5,
+                "learning_rate": 0.05,
+                "n_estimators": 400,
+                "subsample": 0.85,
+                "colsample_bytree": 0.85,
+                "min_child_samples": 30,
+                "reg_alpha": 0.1,
+                "reg_lambda": 1.0,
                 "random_state": 42,
                 "n_jobs": -1,
                 "verbose": -1,
             }
             self.params = {**self.default_params, **params}
+            es = self.params.pop("early_stopping_rounds", 40)
+            self.early_stopping_rounds = int(es) if es is not None else 40
             self.model = lgb.LGBMClassifier(**self.params)
     
     def train(
@@ -80,11 +95,24 @@ class LightGBMModel(BaseModel):
                 scale_pos_weight = neg_count / pos_count
                 self.model.set_params(scale_pos_weight=scale_pos_weight)
         
-        fit_params = {}
+        fit_params: dict = {}
         if validation_data:
             fit_params["eval_set"] = [validation_data]
-        
-        self.model.fit(X, y, **fit_params)
+            try:
+                import lightgbm as lgb
+
+                fit_params["callbacks"] = [
+                    lgb.early_stopping(self.early_stopping_rounds, verbose=False),
+                    lgb.log_evaluation(period=0),
+                ]
+            except Exception:
+                pass
+
+        try:
+            self.model.fit(X, y, **fit_params)
+        except TypeError:
+            fit_params.pop("callbacks", None)
+            self.model.fit(X, y, **fit_params)
         self.is_trained = True
         
         # Calculate metrics based on problem type

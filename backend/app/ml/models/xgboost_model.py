@@ -6,7 +6,6 @@ from typing import Optional
 import joblib
 import numpy as np
 import pandas as pd
-import xgboost as xgb
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score, roc_auc_score,
     mean_absolute_error, mean_squared_error, r2_score
@@ -15,49 +14,68 @@ from sklearn.metrics import (
 from app.ml.models.base_model import BaseModel
 
 
+def _import_xgboost():
+    """Lazy import so the API can start without OpenMP (libomp) loaded."""
+    try:
+        import xgboost as xgb
+        return xgb
+    except Exception as e:
+        raise RuntimeError(
+            "XGBoost failed to load. On macOS install OpenMP: brew install libomp. "
+            f"Original error: {e}"
+        ) from e
+
+
 class XGBoostModel(BaseModel):
     """XGBoost model for classification or regression."""
     
     def __init__(self, version: str = "1.0", problem_type: str = "binary_classification", **params):
         super().__init__("xgboost", version)
         self.problem_type = problem_type
+        xgb = _import_xgboost()
         
         if problem_type == "regression":
             self.default_params = {
                 "objective": "reg:squarederror",
                 "eval_metric": "rmse",
-                "max_depth": 6,
-                "learning_rate": 0.1,
-                "n_estimators": 100,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-                "min_child_weight": 1,
-                "gamma": 0,
-                "reg_alpha": 0,
-                "reg_lambda": 1,
+                "max_depth": 4,
+                "learning_rate": 0.05,
+                "n_estimators": 400,
+                "subsample": 0.85,
+                "colsample_bytree": 0.85,
+                "min_child_weight": 5,
+                "gamma": 0.1,
+                "reg_alpha": 0.1,
+                "reg_lambda": 2.0,
                 "random_state": 42,
                 "n_jobs": -1,
             }
             self.params = {**self.default_params, **params}
+            es = self.params.pop("early_stopping_rounds", 40)
+            self.early_stopping_rounds = int(es) if es is not None else 40
             self.model = xgb.XGBRegressor(**self.params)
         else:
             self.default_params = {
                 "objective": "binary:logistic",
                 "eval_metric": "logloss",
-                "max_depth": 6,
-                "learning_rate": 0.1,
-                "n_estimators": 100,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-                "min_child_weight": 1,
-                "gamma": 0,
-                "reg_alpha": 0,
-                "reg_lambda": 1,
-                "scale_pos_weight": 1,  # Will be set dynamically for class imbalance
+                "max_depth": 4,
+                "learning_rate": 0.05,
+                "n_estimators": 400,
+                "subsample": 0.85,
+                "colsample_bytree": 0.85,
+                "min_child_weight": 5,
+                "gamma": 0.1,
+                "reg_alpha": 0.1,
+                "reg_lambda": 2.0,
+                "scale_pos_weight": 1,
                 "random_state": 42,
                 "n_jobs": -1,
+                "use_label_encoder": False,
             }
             self.params = {**self.default_params, **params}
+            # Strip non-estimator keys
+            es = self.params.pop("early_stopping_rounds", 40)
+            self.early_stopping_rounds = int(es) if es is not None else 40
             self.model = xgb.XGBClassifier(**self.params)
     
     def train(
@@ -78,17 +96,33 @@ class XGBoostModel(BaseModel):
                 scale_pos_weight = neg_count / pos_count
                 self.model.set_params(scale_pos_weight=scale_pos_weight)
         
-        # Prepare eval set
-        eval_set = [(X, y)]
-        if validation_data:
-            eval_set.append(validation_data)
-        
-        # Train
-        self.model.fit(
-            X, y,
-            eval_set=eval_set,
-            verbose=False
-        )
+        fit_kwargs: dict = {"verbose": False}
+        if validation_data is not None:
+            X_val, y_val = validation_data
+            fit_kwargs["eval_set"] = [(X_val, y_val)]
+            try:
+                self.model.set_params(early_stopping_rounds=self.early_stopping_rounds)
+            except Exception:
+                pass
+        else:
+            # Avoid training-set-only eval that encourages overfit monitoring noise
+            fit_kwargs["eval_set"] = None
+
+        try:
+            if fit_kwargs.get("eval_set") is not None:
+                self.model.fit(X, y, **fit_kwargs)
+            else:
+                self.model.fit(X, y, verbose=False)
+        except TypeError:
+            # Older/newer API variants without early_stopping_rounds
+            try:
+                self.model.set_params(early_stopping_rounds=None)
+            except Exception:
+                pass
+            if validation_data is not None:
+                self.model.fit(X, y, eval_set=[validation_data], verbose=False)
+            else:
+                self.model.fit(X, y, verbose=False)
         
         self.is_trained = True
         

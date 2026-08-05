@@ -32,9 +32,9 @@ class LogisticModel(BaseModel):
         else:
             self.default_params = {
                 "penalty": "l2",
-                "C": 1.0,
+                "C": 0.5,
                 "solver": "lbfgs",
-                "max_iter": 1000,
+                "max_iter": 2000,
                 "class_weight": "balanced",  # Handle class imbalance
                 "random_state": 42,
                 "n_jobs": -1,

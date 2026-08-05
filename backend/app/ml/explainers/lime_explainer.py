@@ -1,4 +1,6 @@
-"""LIME explainer for local explanations."""
+"""LIME explainer for local tabular explanations."""
+
+from __future__ import annotations
 
 from typing import Any, Optional
 
@@ -10,173 +12,128 @@ from app.ml.models.base_model import BaseModel
 
 
 class LIMEExplainer:
-    """
-    LIME-based explainer for local interpretable explanations.
-    
-    Creates local linear approximations around individual predictions.
-    """
-    
+    """Local linear explanations around a single prediction."""
+
     def __init__(
-        self, 
-        model: BaseModel, 
+        self,
+        model: BaseModel,
         training_data: pd.DataFrame,
         categorical_features: Optional[list[int]] = None,
-        feature_names: Optional[list[str]] = None
+        feature_names: Optional[list[str]] = None,
+        class_names: Optional[list[str]] = None,
+        *,
+        max_background: int = 500,
     ):
-        """
-        Initialize LIME explainer.
-        
-        Args:
-            model: Trained model to explain
-            training_data: Training data for LIME's kernel
-            categorical_features: Indices of categorical features
-            feature_names: Feature names (uses model's if not provided)
-        """
         self.model = model
-        self.training_data = training_data
-        
-        if not self.model.is_trained:
+        if not getattr(self.model, "is_trained", False):
             raise ValueError("Model must be trained before creating explainer")
-        
-        self.feature_names = feature_names or self.model.feature_names
+
+        self.feature_names = list(
+            feature_names
+            or getattr(model, "feature_names", None)
+            or training_data.columns
+        )
+
+        bg = training_data.copy()
+        for c in self.feature_names:
+            if c not in bg.columns:
+                bg[c] = 0
+        bg = bg[self.feature_names]
+        if len(bg) > max_background:
+            bg = bg.sample(n=max_background, random_state=42)
+        self.training_data = bg
+
+        # After FeatureTransformer, features are numeric codes
         self.categorical_features = categorical_features or []
-        
-        # Identify categorical features by dtype if not provided
-        if not self.categorical_features:
-            self.categorical_features = [
-                i for i, col in enumerate(training_data.columns)
-                if training_data[col].dtype == 'object' or training_data[col].dtype.name == 'category'
-            ]
-        
-        # Initialize LIME explainer
+        self.class_names = class_names or ["No", "Yes"]
+
         self.explainer = LimeTabularExplainer(
-            training_data=training_data.values,
+            training_data=self.training_data.values.astype(float),
             feature_names=self.feature_names,
             categorical_features=self.categorical_features,
-            class_names=["No Churn", "Churn"],
+            class_names=self.class_names,
             mode="classification",
             discretize_continuous=True,
-            random_state=42
+            random_state=42,
         )
-    
+
     def _predict_fn(self, X: np.ndarray) -> np.ndarray:
-        """Prediction function wrapper for LIME."""
-        df = pd.DataFrame(X, columns=self.feature_names)
-        proba = self.model.predict_proba(df)
-        # Return both classes for LIME
-        return np.column_stack([1 - proba, proba])
-    
+        df = pd.DataFrame(np.asarray(X), columns=self.feature_names)
+        proba = np.asarray(self.model.predict_proba(df), dtype=float).ravel()
+        proba = np.clip(proba, 1e-6, 1.0 - 1e-6)
+        return np.column_stack([1.0 - proba, proba])
+
     def explain_instance(
-        self, 
+        self,
         instance: pd.DataFrame,
         num_features: int = 10,
-        num_samples: int = 5000
+        num_samples: int = 1200,
     ) -> dict[str, Any]:
-        """
-        Get local explanation for a single instance.
-        
-        Args:
-            instance: Single row DataFrame with features
-            num_features: Number of top features to include
-            num_samples: Number of samples for LIME's local approximation
-            
-        Returns:
-            Dictionary with feature explanations and model fidelity
-        """
-        # Convert to numpy array
-        instance_array = instance.values[0] if len(instance.shape) > 1 else instance.values
-        
-        # Generate explanation
+        inst = instance.copy()
+        for c in self.feature_names:
+            if c not in inst.columns:
+                inst[c] = 0
+        inst = inst[self.feature_names]
+        instance_array = inst.values[0].astype(float)
+
         explanation = self.explainer.explain_instance(
             instance_array,
             self._predict_fn,
             num_features=num_features,
             num_samples=num_samples,
-            labels=(1,)  # Explain churn class
+            labels=(1,),
         )
-        
-        # Extract feature contributions for churn class
+
         lime_exp = explanation.as_list(label=1)
-        
-        # Build structured explanation
-        explanations = []
         feature_values = dict(zip(self.feature_names, instance_array))
-        
+
+        explanations = []
         for feature_expr, weight in lime_exp:
-            # Parse feature name from LIME's expression (e.g., "tenure <= 5.00")
             feature_name = self._parse_feature_name(feature_expr)
-            
             if feature_name in feature_values:
                 value = feature_values[feature_name]
             else:
-                value = feature_expr  # Use expression if can't find exact value
-            
-            explanations.append({
-                "feature": feature_name,
-                "expression": feature_expr,
-                "value": float(value) if isinstance(value, (int, float, np.number)) else value,
-                "importance": float(abs(weight)),
-                "lime_weight": float(weight),
-                "direction": "positive" if weight > 0 else "negative",
-                "contribution": "increases_risk" if weight > 0 else "decreases_risk",
-            })
-        
-        # Sort by absolute importance
+                value = feature_expr
+            w = float(weight)
+            explanations.append(
+                {
+                    "feature": feature_name,
+                    "expression": feature_expr,
+                    "value": float(value) if isinstance(value, (int, float, np.number)) else value,
+                    "importance": abs(w),
+                    "lime_weight": w,
+                    "direction": "positive" if w > 0 else "negative",
+                    "contribution": "increases_risk" if w > 0 else "decreases_risk",
+                }
+            )
+
         explanations.sort(key=lambda x: x["importance"], reverse=True)
-        
-        # Get model fidelity (how well LIME's linear model approximates locally)
-        local_pred = explanation.local_pred[0] if hasattr(explanation, 'local_pred') else None
-        score = explanation.score if hasattr(explanation, 'score') else None
-        
+
+        local_pred = explanation.local_pred[0] if hasattr(explanation, "local_pred") else None
+        score = explanation.score if hasattr(explanation, "score") else None
+
         return {
             "explanations": explanations,
-            "feature_importance": {e["feature"]: e["importance"] for e in explanations},
-            "intercept": float(explanation.intercept[1]) if hasattr(explanation, 'intercept') else 0,
+            # Signed for direction-aware consistency
+            "feature_importance": {e["feature"]: e["lime_weight"] for e in explanations},
+            "intercept": float(explanation.intercept[1]) if hasattr(explanation, "intercept") else 0.0,
             "local_prediction": float(local_pred) if local_pred is not None else None,
             "model_fidelity": float(score) if score is not None else None,
+            "method": "lime",
         }
-    
+
     def _parse_feature_name(self, expression: str) -> str:
-        """
-        Extract feature name from LIME's expression.
-        
-        LIME returns expressions like "tenure <= 5.00" or "contract_type=month-to-month"
-        """
-        # Common operators in LIME expressions
         operators = [" <= ", " < ", " >= ", " > ", " = ", "="]
-        
         for op in operators:
             if op in expression:
                 return expression.split(op)[0].strip()
-        
         return expression
-    
+
     def get_top_factors(
-        self, 
-        instance: pd.DataFrame, 
-        n: int = 5
+        self, instance: pd.DataFrame, n: int = 5
     ) -> tuple[list[str], list[str]]:
-        """
-        Get top risk and protective factors.
-        
-        Args:
-            instance: Single instance to explain
-            n: Number of top factors to return
-            
-        Returns:
-            Tuple of (risk_factors, protective_factors) as feature names
-        """
         explanation = self.explain_instance(instance)
         explanations = explanation["explanations"]
-        
-        risk_factors = [
-            e["feature"] for e in explanations 
-            if e["direction"] == "positive"
-        ][:n]
-        
-        protective_factors = [
-            e["feature"] for e in explanations 
-            if e["direction"] == "negative"
-        ][:n]
-        
-        return risk_factors, protective_factors
+        risk = [e["feature"] for e in explanations if e["direction"] == "positive"][:n]
+        protect = [e["feature"] for e in explanations if e["direction"] == "negative"][:n]
+        return risk, protect

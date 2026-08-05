@@ -1,0 +1,56 @@
+{
+  "low_conf_bucket": {
+    "n_low_conf": 27,
+    "n_high_conf": 267,
+    "n_total": 294,
+    "small_bucket_warning": true,
+    "acc_low_conf_at_0.5": 0.4074074074074074,
+    "acc_high_conf_at_0.5": 0.8764044943820225,
+    "acc_low_conf_at_tuned": 0.2962962962962963,
+    "acc_high_conf_at_tuned": 0.8764044943820225
+  },
+  "threshold_search_test": {
+    "f1_optimal": {
+      "threshold": 0.1,
+      "accuracy": 0.602,
+      "majority_baseline": 0.8401,
+      "lift_pp": -23.81,
+      "balanced_accuracy": 0.677,
+      "f1": 0.3874
+    },
+    "balanced_acc_optimal": {
+      "threshold": 0.1,
+      "accuracy": 0.602,
+      "majority_baseline": 0.8401,
+      "lift_pp": -23.81,
+      "balanced_accuracy": 0.677,
+      "f1": 0.3874
+    }
+  },
+  "stored_threshold": {
+    "value": 0.15,
+    "tuned_on": "calibration",
+    "calib_meta": {
+      "metric": "balanced_accuracy",
+      "metric_value": 0.723447,
+      "n_samples": 294,
+      "pos_rate": 0.159864
+    },
+    "test_metrics_at_stored": {
+      "threshold": 0.15,
+      "accuracy": 0.8231,
+      "majority_baseline": 0.8401,
+      "lift_pp": -1.7,
+      "balanced_accuracy": 0.6105,
+      "f1": 0.35
+    }
+  },
+  "before_at_0.5": {
+    "threshold": 0.5,
+    "accuracy": 0.8333,
+    "majority_baseline": 0.8401,
+    "lift_pp": -0.68,
+    "balanced_accuracy": 0.5735,
+    "f1": 0.2687
+  }
+}

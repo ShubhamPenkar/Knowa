@@ -1,0 +1,380 @@
+{
+  "generated": "HR Attrition validation",
+  "bugs_found": [
+    {
+      "severity": "P0",
+      "title": "pandas dtype=str treated as numeric (all-zero cats)",
+      "detail": "Gender/OverTime/JobRole etc. became median-imputed zeros because _is_categorical did not recognize dtype 'str'. Fixed via _is_stringy_dtype.",
+      "fixed": true
+    },
+    {
+      "severity": "P0",
+      "title": "EmployeeNumber not auto-excluded as ID",
+      "detail": "Pattern only matched employee_id, not employee_number. Fixed.",
+      "fixed": true
+    },
+    {
+      "severity": "P1",
+      "title": "Dropped constants still required at predict",
+      "detail": "EmployeeCount/StandardHours/Over18 remained in feature_columns after train drop. Now synced out of project.feature_columns post-fit.",
+      "fixed": true
+    },
+    {
+      "severity": "P1",
+      "title": "entity_id candidates missing EmployeeNumber",
+      "detail": "resolve_entity_id now includes EmployeeNumber aliases.",
+      "fixed": true
+    },
+    {
+      "severity": "P1",
+      "title": "Recommendation catalog is Telco/retail flavored",
+      "detail": "HR high-risk case recommended discount_20, add_tech_support, autopay_incentive \u2014 not attrition-relevant. Same gap as Superstore.",
+      "fixed": false
+    },
+    {
+      "severity": "note",
+      "title": "Router reports cat=0% post-transform",
+      "detail": "Categorical fraction measured on encoded matrix (codes are numeric). Misleading for diagnostics; not a scoring bug.",
+      "fixed": false
+    }
+  ],
+  "onboarding": {
+    "class_counts": {
+      "No": 1233,
+      "Yes": 237
+    },
+    "positive_label": "Yes",
+    "label_ok": true,
+    "ids_dropped": [
+      "EmployeeNumber"
+    ],
+    "constants_dropped": [
+      "EmployeeCount",
+      "StandardHours",
+      "Over18"
+    ],
+    "numeric_n": 23,
+    "categorical": [
+      "BusinessTravel",
+      "Department",
+      "EducationField",
+      "Gender",
+      "JobRole",
+      "MaritalStatus",
+      "OverTime"
+    ]
+  },
+  "router": {
+    "strategy": "foundation_model",
+    "backend": "hist_gradient_boosting",
+    "row_count_train_split": 882,
+    "feature_count_after_transform": 30,
+    "reason": "Rows=882 \u2264 10000 and features=30 \u2264 500; foundation preferred"
+  },
+  "phase1_side_by_side": {
+    "Telco": {
+      "accuracy": 0.7857,
+      "majority_baseline": 0.7346,
+      "lift_pp": 5.11,
+      "auc": 0.8235,
+      "brier": 0.1426,
+      "high_risk_n": 182,
+      "high_risk_precision": 0.6978,
+      "low_risk_n": 972,
+      "low_risk_tnr": 0.8683,
+      "soft_share": 0.5408,
+      "conformal_coverage": 0.8964,
+      "mean_interval_width": 0.859,
+      "acc_low_conf": 0.6509,
+      "acc_high_conf": 0.9444,
+      "recommendation": "solid_enough_for_phase2"
+    },
+    "Superstore_post_fix": {
+      "accuracy": 1.0,
+      "majority_baseline": 0.6778,
+      "lift_pp": 32.22,
+      "auc": 1.0,
+      "brier": 0.0,
+      "high_risk_n": 122,
+      "high_risk_precision": 1.0,
+      "low_risk_n": 58,
+      "low_risk_tnr": 1.0,
+      "soft_share": 0.0,
+      "conformal_coverage": 1.0,
+      "mean_interval_width": 0.0,
+      "acc_low_conf": null,
+      "acc_high_conf": 1.0,
+      "recommendation": "solid_enough_for_phase2"
+    },
+    "HR_Attrition": {
+      "accuracy": 0.8333,
+      "majority_baseline": 0.8401,
+      "lift_pp": -0.68,
+      "auc": 0.7264,
+      "brier": 0.1216,
+      "high_risk_n": 13,
+      "high_risk_precision": 0.6923,
+      "low_risk_n": 274,
+      "low_risk_tnr": 0.8613,
+      "soft_share": 0.0918,
+      "conformal_coverage": 0.8571,
+      "mean_interval_width": 0.714,
+      "acc_low_conf": 0.4074,
+      "acc_high_conf": 0.8764,
+      "recommendation": "investigate_before_phase2"
+    }
+  },
+  "phase1_splits_hr": {
+    "accuracy_mean": 0.8605,
+    "accuracy_std": 0.0169,
+    "accuracy_min": 0.8367,
+    "coverage_mean": 0.9173,
+    "coverage_min": 0.9014,
+    "lift_pp_mean": 2.04,
+    "lift_pp_min": -0.34,
+    "soft_share_mean": 0.2551
+  },
+  "harden_hr": {
+    "started": "2026-08-05T04:39:34.905924+00:00",
+    "project_id": "6073ce25-10bc-4ca8-aef3-c2b2186935e0",
+    "checks": [
+      {
+        "name": "p0_empty_rejected",
+        "status": "pass",
+        "detail": "{'code': 'missing_required_features', 'message': 'Required feature columns are incomplete (missing: Age, BusinessTravel, DailyRate, Department, DistanceFromHome, Education, EducationField, EnvironmentSatisfaction, Gender, HourlyRate, JobInvolvement, JobLevel, JobRole, JobSatisfaction, MaritalStatus, MonthlyIncome, MonthlyRate, NumCompaniesWorked, OverTime, PercentSalaryHike\u2026). Provide all required features with non-empty values before scoring.', 'missing_features': ['Age', 'BusinessTravel', 'Dai"
+      },
+      {
+        "name": "p0_partial_rejected",
+        "status": "pass",
+        "detail": "{'code': 'missing_required_features', 'message': 'Required feature columns are incomplete (missing: BusinessTravel, DailyRate, Department, DistanceFromHome, Education, EducationField, EnvironmentSatisfaction, Gender, HourlyRate, JobInvolvement, JobLevel, JobRole, JobSatisfaction, MaritalStatus, MonthlyIncome, MonthlyRate, NumCompaniesWorked, OverTime, PercentSalaryHike, PerformanceRating\u2026). Provide all required features with non-empty values before scoring.', 'missing_features': ['BusinessTravel"
+      },
+      {
+        "name": "p0_empty_value_rejected",
+        "status": "pass",
+        "detail": "['Age']"
+      },
+      {
+        "name": "p0_sim_no_persist",
+        "status": "pass",
+        "detail": "rows 0\u21920"
+      },
+      {
+        "name": "p1_entity_id",
+        "status": "pass",
+        "detail": "entity_id=1495 pred_id=b9ea0f4c-73c9-4330-939d-8343fa462666"
+      },
+      {
+        "name": "p1_entity_id_db",
+        "status": "pass",
+        "detail": "db_entity=1495"
+      },
+      {
+        "name": "p1_entity_resolve_employeenumber",
+        "status": "pass",
+        "detail": "resolved=1495"
+      },
+      {
+        "name": "p1_impact_disclaimer",
+        "status": "pass",
+        "detail": "Illustrative estimate from action-catalog heuristics \u2014 not a re-simulated outcome for this case."
+      },
+      {
+        "name": "p1_batch",
+        "status": "pass",
+        "detail": "scored=25 err=0 note=Batch triage scores only \u2014 use single-case /predict with exp"
+      },
+      {
+        "name": "p1_batch_no_persist",
+        "status": "pass",
+        "detail": "rows 1\u21921"
+      }
+    ],
+    "p0_all_closed": true,
+    "summary": {
+      "pass": 10,
+      "fail": 0
+    }
+  },
+  "explain": {
+    "Telco_mean": 0.9267,
+    "Superstore_mean": 0.5288,
+    "HR": {
+      "cases": [
+        {
+          "bucket": "low",
+          "probability": 0.09090909090909091,
+          "consistency_score": 0.8457,
+          "trust_level": "high",
+          "flag": false,
+          "plain": "Two independent explanation methods largely agree on what is driving this case \u2014 stronger trust in the \u201cwhy\u201d (score 85%).",
+          "recommendations": [
+            {
+              "code": "check_in_light",
+              "name": "Light check-in",
+              "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft."
+            },
+            {
+              "code": "monitor_only",
+              "name": "Monitor \u2014 no heavy intervention",
+              "description": "Keep an eye on signals; deprioritize costly actions while risk is low."
+            },
+            {
+              "code": "autopay_incentive",
+              "name": "Auto-pay incentive",
+              "description": "Nudge easier billing to reduce friction-driven drop-off."
+            },
+            {
+              "code": "engagement_campaign",
+              "name": "Re-engagement campaign",
+              "description": "Targeted nudge when usage/recency looks weak."
+            },
+            {
+              "code": "add_tech_support",
+              "name": "Tech support trial",
+              "description": "Trial tech support when support gaps may be creating silent friction."
+            }
+          ]
+        },
+        {
+          "bucket": "mid",
+          "probability": 0.25,
+          "consistency_score": 0.7904,
+          "trust_level": "medium",
+          "flag": false,
+          "plain": "Explanation methods partially agree. Treat the main drivers as a useful guide, but leave room for judgment (score 79%; top-factor overlap 60%).",
+          "recommendations": [
+            {
+              "code": "check_in_light",
+              "name": "Light check-in",
+              "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft."
+            },
+            {
+              "code": "monitor_only",
+              "name": "Monitor \u2014 no heavy intervention",
+              "description": "Keep an eye on signals; deprioritize costly actions while risk is low."
+            },
+            {
+              "code": "add_tech_support",
+              "name": "Tech support trial",
+              "description": "Trial tech support when support gaps may be creating silent friction."
+            },
+            {
+              "code": "autopay_incentive",
+              "name": "Auto-pay incentive",
+              "description": "Nudge easier billing to reduce friction-driven drop-off."
+            },
+            {
+              "code": "engagement_campaign",
+              "name": "Re-engagement campaign",
+              "description": "Targeted nudge when usage/recency looks weak."
+            }
+          ]
+        },
+        {
+          "bucket": "high",
+          "probability": 0.6666666666666666,
+          "consistency_score": 0.7292,
+          "trust_level": "medium",
+          "flag": false,
+          "plain": "Explanation methods partially agree. Treat the main drivers as a useful guide, but leave room for judgment (score 73%; top-factor overlap 60%).",
+          "recommendations": [
+            {
+              "code": "check_in_light",
+              "name": "Light check-in",
+              "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft."
+            },
+            {
+              "code": "discount_20",
+              "name": "20% discount offer",
+              "description": "Stronger short-term discount when risk is elevated and price is a driver."
+            },
+            {
+              "code": "add_tech_support",
+              "name": "Tech support trial",
+              "description": "Trial tech support when support gaps may be creating silent friction."
+            },
+            {
+              "code": "autopay_incentive",
+              "name": "Auto-pay incentive",
+              "description": "Nudge easier billing to reduce friction-driven drop-off."
+            },
+            {
+              "code": "engagement_campaign",
+              "name": "Re-engagement campaign",
+              "description": "Targeted nudge when usage/recency looks weak."
+            }
+          ]
+        }
+      ],
+      "mean_consistency": 0.7884333333333333,
+      "min_consistency": 0.7292,
+      "broader_mean_consistency": 0.7912100000000001,
+      "broader_min_consistency": 0.6492,
+      "broader_n": 10
+    }
+  },
+  "recommendations": {
+    "high_risk_probability": 0.6666666666666666,
+    "recommendations": [
+      {
+        "code": "check_in_light",
+        "name": "Light check-in",
+        "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft.",
+        "reasoning": "Lighter-touch move. low cost to try. partially matches current drivers. illustrative shift on outcome: about \u22128% (guide, not a guarantee)."
+      },
+      {
+        "code": "discount_20",
+        "name": "20% discount offer",
+        "description": "Stronger short-term discount when risk is elevated and price is a driver.",
+        "reasoning": "Lighter-touch move. balanced cost vs. likely benefit. illustrative shift on outcome: about \u221211% (guide, not a guarantee). insight focus: over time."
+      },
+      {
+        "code": "add_tech_support",
+        "name": "Tech support trial",
+        "description": "Trial tech support when support gaps may be creating silent friction.",
+        "reasoning": "Lighter-touch move. low cost to try. illustrative shift on outcome: about \u22127% (guide, not a guarantee). insight focus: over time."
+      },
+      {
+        "code": "autopay_incentive",
+        "name": "Auto-pay incentive",
+        "description": "Nudge easier billing to reduce friction-driven drop-off.",
+        "reasoning": "Lighter-touch move. low cost to try. illustrative shift on outcome: about \u22126% (guide, not a guarantee). insight focus: over time."
+      },
+      {
+        "code": "engagement_campaign",
+        "name": "Re-engagement campaign",
+        "description": "Targeted nudge when usage/recency looks weak.",
+        "reasoning": "Lighter-touch move. low cost to try. illustrative shift on outcome: about \u22126% (guide, not a guarantee)."
+      }
+    ],
+    "telco_flavored_hits": [
+      "20% discount offer stronger short-term discount when risk is elevated and price is a driver. discount_20",
+      "tech support trial trial tech support when support gaps may be creating silent friction. add_tech_support",
+      "auto-pay incentive nudge easier billing to reduce friction-driven drop-off. autopay_incentive"
+    ],
+    "hr_relevant_hits": [],
+    "verdict": "telco_catalog_mismatch"
+  },
+  "verdict_layers": {
+    "prediction_quality": {
+      "status": "partial_pass",
+      "note": "AUC 0.73\u20130.78 is realistic (not Superstore-style 1.0). Live accuracy slightly under majority due to imbalance; splits usually beat majority. Phase1 overall=investigate_before_phase2."
+    },
+    "router": {
+      "status": "pass",
+      "note": "foundation/HGB for n\u22481.5k \u2014 correct path."
+    },
+    "hardening": {
+      "status": "pass",
+      "note": "All P0/P1 harden checks pass after syncing dropped columns + EmployeeNumber entity resolve."
+    },
+    "explainability": {
+      "status": "pass_with_note",
+      "note": "Mean SHAP/LIME consistency ~0.7884333333333333 \u2014 between Telco (~93%) and Superstore (~53%). Plausible for mixed numeric+ordinal-coded cats."
+    },
+    "recommendations": {
+      "status": "fail_domain_fit",
+      "note": "Still Telco catalog (discount, tech support, autopay) on attrition cases."
+    }
+  }
+}

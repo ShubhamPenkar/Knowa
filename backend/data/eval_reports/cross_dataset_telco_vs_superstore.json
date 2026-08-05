@@ -1,0 +1,2729 @@
+{
+  "generated_at": "2026-08-04T18:31:37",
+  "datasets": {
+    "telco": {
+      "id": "1db0a2a2-3e1c-46ee-a1b9-7d986942c2a9",
+      "name": "Telco Churn Test",
+      "target": "Churn",
+      "pos": "Yes"
+    },
+    "superstore": {
+      "id": "8352b4a9-fe90-4d8b-a893-3a494d56c7a2",
+      "name": "Superstore Analysis",
+      "target": "Performance",
+      "pos": "High"
+    }
+  },
+  "comparison_table": [
+    {
+      "metric": "n_test",
+      "telco": 1409,
+      "superstore": 180
+    },
+    {
+      "metric": "n_pos",
+      "telco": 374,
+      "superstore": 122
+    },
+    {
+      "metric": "n_neg",
+      "telco": 1035,
+      "superstore": 58
+    },
+    {
+      "metric": "majority_baseline_acc",
+      "telco": 0.7346,
+      "superstore": 0.6778
+    },
+    {
+      "metric": "accuracy@0.5",
+      "telco": 0.7857,
+      "superstore": 0.6833
+    },
+    {
+      "metric": "lift_vs_majority_pp",
+      "telco": 5.11,
+      "superstore": 0.56
+    },
+    {
+      "metric": "auc",
+      "telco": 0.8235,
+      "superstore": 0.5835
+    },
+    {
+      "metric": "brier",
+      "telco": 0.1426,
+      "superstore": 0.2215
+    },
+    {
+      "metric": "high_risk_n",
+      "telco": 182,
+      "superstore": 133
+    },
+    {
+      "metric": "high_risk_precision",
+      "telco": 0.6978,
+      "superstore": 0.7293
+    },
+    {
+      "metric": "low_risk_n",
+      "telco": 972,
+      "superstore": 7
+    },
+    {
+      "metric": "low_risk_true_neg_rate",
+      "telco": 0.8683,
+      "superstore": 0.5714
+    },
+    {
+      "metric": "conformal_target",
+      "telco": 0.9,
+      "superstore": 0.9
+    },
+    {
+      "metric": "conformal_coverage",
+      "telco": 0.8964,
+      "superstore": 0.9611
+    },
+    {
+      "metric": "conformal_coverage_gap",
+      "telco": -0.0036,
+      "superstore": 0.0611
+    },
+    {
+      "metric": "mean_interval_width",
+      "telco": 0.859,
+      "superstore": 0.9737
+    },
+    {
+      "metric": "soft_share",
+      "telco": 0.5408,
+      "superstore": 0.8889
+    },
+    {
+      "metric": "n_low_conf",
+      "telco": 762,
+      "superstore": 160
+    },
+    {
+      "metric": "acc_low_conf",
+      "telco": 0.6509,
+      "superstore": 0.6875
+    },
+    {
+      "metric": "n_high_conf",
+      "telco": 647,
+      "superstore": 20
+    },
+    {
+      "metric": "acc_high_conf",
+      "telco": 0.9444,
+      "superstore": 0.65
+    },
+    {
+      "metric": "split_acc_mean",
+      "telco": 0.7968,
+      "superstore": 0.6685
+    },
+    {
+      "metric": "split_acc_std",
+      "telco": 0.0112,
+      "superstore": 0.0159
+    },
+    {
+      "metric": "split_acc_min",
+      "telco": 0.7814,
+      "superstore": 0.65
+    },
+    {
+      "metric": "split_coverage_mean",
+      "telco": 0.9013,
+      "superstore": 0.8981
+    },
+    {
+      "metric": "split_coverage_min",
+      "telco": 0.8999,
+      "superstore": 0.8333
+    },
+    {
+      "metric": "split_lift_pp_mean",
+      "telco": 6.22,
+      "superstore": -0.93
+    },
+    {
+      "metric": "split_soft_share_mean",
+      "telco": 0.3745,
+      "superstore": 0.9296
+    },
+    {
+      "metric": "router_strategy",
+      "telco": "foundation_model",
+      "superstore": "foundation_model"
+    },
+    {
+      "metric": "router_row_count",
+      "telco": 4225,
+      "superstore": 537
+    },
+    {
+      "metric": "router_feature_count",
+      "telco": 19,
+      "superstore": 5
+    },
+    {
+      "metric": "router_backend",
+      "telco": "hist_gradient_boosting",
+      "superstore": "hist_gradient_boosting"
+    },
+    {
+      "metric": "explain_mean_consistency",
+      "telco": 0.9267,
+      "superstore": 0.5288
+    },
+    {
+      "metric": "explain_min_consistency",
+      "telco": 0.882,
+      "superstore": 0.35
+    },
+    {
+      "metric": "phase1_recommendation",
+      "telco": "solid_enough_for_phase2",
+      "superstore": "investigate_before_phase2"
+    }
+  ],
+  "telco_phase1": {
+    "project_id": "1db0a2a2-3e1c-46ee-a1b9-7d986942c2a9",
+    "project_name": "Telco Churn Test",
+    "generated_at": "2026-08-04T18:31:27",
+    "checks": {
+      "1_large_spot_check": {
+        "label": "live_full_test (n=1409)",
+        "n": 1409,
+        "n_pos": 374,
+        "n_neg": 1035,
+        "majority_class": 0,
+        "majority_baseline_accuracy": 0.7346,
+        "accuracy": 0.7857,
+        "lift_vs_majority_pp": 5.11,
+        "agree_rate": 0.7857,
+        "auc": 0.8235,
+        "brier": 0.1426,
+        "high_risk_n": 182,
+        "high_risk_precision": 0.6978,
+        "low_risk_n": 972,
+        "low_risk_true_neg_rate": 0.8683,
+        "soft_share": 0.5408,
+        "conformal_target": 0.9,
+        "conformal_coverage": 0.8964,
+        "conformal_coverage_gap": -0.0036,
+        "mean_interval_width": 0.859,
+        "median_interval_width": 0.8768,
+        "conformal_quantile": 0.6863,
+        "n_low_conf": 762,
+        "n_high_conf": 647,
+        "acc_low_conf": 0.6509,
+        "acc_high_conf": 0.9444,
+        "soft_low_conf_share": 1.0,
+        "soft_high_conf_share": 0.0
+      },
+      "2_conformal_coverage": {
+        "target": 0.9,
+        "observed": 0.8964,
+        "gap": -0.0036,
+        "mean_width": 0.859,
+        "median_width": 0.8768,
+        "quantile": 0.6863
+      },
+      "3_accuracy_by_confidence": {
+        "n_low_conf": 762,
+        "acc_low_conf": 0.6509,
+        "n_high_conf": 647,
+        "acc_high_conf": 0.9444
+      },
+      "4_vs_majority_baseline": {
+        "accuracy": 0.7857,
+        "majority_baseline": 0.7346,
+        "majority_class": 0,
+        "lift_pp": 5.11
+      },
+      "5_three_random_splits": [
+        {
+          "label": "split_seed_7",
+          "n": 1409,
+          "n_pos": 374,
+          "n_neg": 1035,
+          "majority_class": 0,
+          "majority_baseline_accuracy": 0.7346,
+          "accuracy": 0.8077,
+          "lift_vs_majority_pp": 7.31,
+          "agree_rate": 0.8077,
+          "auc": 0.8397,
+          "brier": 0.1358,
+          "high_risk_n": 173,
+          "high_risk_precision": 0.7861,
+          "low_risk_n": 1024,
+          "low_risk_true_neg_rate": 0.8662,
+          "soft_share": 0.3712,
+          "conformal_target": 0.9,
+          "conformal_coverage": 0.9035,
+          "conformal_coverage_gap": 0.0035,
+          "mean_interval_width": 0.827,
+          "median_interval_width": 0.8208,
+          "conformal_quantile": 0.6429,
+          "n_low_conf": 523,
+          "n_high_conf": 886,
+          "acc_low_conf": 0.6577,
+          "acc_high_conf": 0.8962,
+          "soft_low_conf_share": 1.0,
+          "soft_high_conf_share": 0.0
+        },
+        {
+          "label": "split_seed_21",
+          "n": 1409,
+          "n_pos": 374,
+          "n_neg": 1035,
+          "majority_class": 0,
+          "majority_baseline_accuracy": 0.7346,
+          "accuracy": 0.7814,
+          "lift_vs_majority_pp": 4.68,
+          "agree_rate": 0.7814,
+          "auc": 0.8115,
+          "brier": 0.1473,
+          "high_risk_n": 124,
+          "high_risk_precision": 0.7258,
+          "low_risk_n": 1081,
+          "low_risk_true_neg_rate": 0.8326,
+          "soft_share": 0.3023,
+          "conformal_target": 0.9,
+          "conformal_coverage": 0.9006,
+          "conformal_coverage_gap": 0.0006,
+          "mean_interval_width": 0.8044,
+          "median_interval_width": 0.7971,
+          "conformal_quantile": 0.6141,
+          "n_low_conf": 426,
+          "n_high_conf": 983,
+          "acc_low_conf": 0.5704,
+          "acc_high_conf": 0.8728,
+          "soft_low_conf_share": 1.0,
+          "soft_high_conf_share": 0.0
+        },
+        {
+          "label": "split_seed_99",
+          "n": 1409,
+          "n_pos": 374,
+          "n_neg": 1035,
+          "majority_class": 0,
+          "majority_baseline_accuracy": 0.7346,
+          "accuracy": 0.8013,
+          "lift_vs_majority_pp": 6.67,
+          "agree_rate": 0.8013,
+          "auc": 0.8271,
+          "brier": 0.14,
+          "high_risk_n": 136,
+          "high_risk_precision": 0.7941,
+          "low_risk_n": 1058,
+          "low_risk_true_neg_rate": 0.8478,
+          "soft_share": 0.45,
+          "conformal_target": 0.9,
+          "conformal_coverage": 0.8999,
+          "conformal_coverage_gap": -0.0001,
+          "mean_interval_width": 0.8333,
+          "median_interval_width": 0.799,
+          "conformal_quantile": 0.6538,
+          "n_low_conf": 634,
+          "n_high_conf": 775,
+          "acc_low_conf": 0.6609,
+          "acc_high_conf": 0.9161,
+          "soft_low_conf_share": 1.0,
+          "soft_high_conf_share": 0.0
+        }
+      ]
+    },
+    "summary": {
+      "live": {
+        "label": "live_full_test (n=1409)",
+        "n": 1409,
+        "n_pos": 374,
+        "n_neg": 1035,
+        "majority_class": 0,
+        "majority_baseline_accuracy": 0.7346,
+        "accuracy": 0.7857,
+        "lift_vs_majority_pp": 5.11,
+        "agree_rate": 0.7857,
+        "auc": 0.8235,
+        "brier": 0.1426,
+        "high_risk_n": 182,
+        "high_risk_precision": 0.6978,
+        "low_risk_n": 972,
+        "low_risk_true_neg_rate": 0.8683,
+        "soft_share": 0.5408,
+        "conformal_target": 0.9,
+        "conformal_coverage": 0.8964,
+        "conformal_coverage_gap": -0.0036,
+        "mean_interval_width": 0.859,
+        "median_interval_width": 0.8768,
+        "conformal_quantile": 0.6863,
+        "n_low_conf": 762,
+        "n_high_conf": 647,
+        "acc_low_conf": 0.6509,
+        "acc_high_conf": 0.9444,
+        "soft_low_conf_share": 1.0,
+        "soft_high_conf_share": 0.0
+      },
+      "splits": {
+        "accuracy_mean": 0.7968,
+        "accuracy_std": 0.0112,
+        "accuracy_min": 0.7814,
+        "coverage_mean": 0.9013,
+        "coverage_min": 0.8999,
+        "lift_pp_mean": 6.22,
+        "lift_pp_min": 4.68,
+        "soft_share_mean": 0.3745
+      },
+      "verdict_live": {
+        "beats_majority": "pass",
+        "coverage": "pass",
+        "conf_split": "pass",
+        "soft_not_all": "pass"
+      },
+      "verdict_splits": [
+        {
+          "beats_majority": "pass",
+          "coverage": "pass",
+          "conf_split": "pass",
+          "soft_not_all": "pass"
+        },
+        {
+          "beats_majority": "pass",
+          "coverage": "pass",
+          "conf_split": "pass",
+          "soft_not_all": "pass"
+        },
+        {
+          "beats_majority": "pass",
+          "coverage": "pass",
+          "conf_split": "pass",
+          "soft_not_all": "pass"
+        }
+      ]
+    },
+    "overall": {
+      "live_checks_ok": true,
+      "splits_checks_ok": true,
+      "splits_stable_acc": true,
+      "recommendation": "solid_enough_for_phase2"
+    },
+    "routing": {
+      "strategy": "foundation_model",
+      "reason": "Rows=4225 \u2264 10000 and features=19 \u2264 500 (cat=0%, missing=0.0%); foundation model preferred for small/medium tabular data",
+      "row_count": 4225,
+      "feature_count": 19,
+      "categorical_fraction": 0.0,
+      "missing_density": 0.0,
+      "forced": false,
+      "backend": "hist_gradient_boosting",
+      "n_train": 4225,
+      "n_calib": 1409,
+      "n_test": 1409,
+      "metrics_snapshot": {
+        "ensemble_auc_roc": 0.8234751608153144,
+        "ensemble_accuracy": 0.7856635911994322,
+        "ensemble_brier": 0.14258847293994945,
+        "conformal_quantile": 0.6862745098039216,
+        "prob_calibration_fitted": 1.0
+      }
+    }
+  },
+  "superstore_phase1": {
+    "project_id": "8352b4a9-fe90-4d8b-a893-3a494d56c7a2",
+    "project_name": "Superstore Analysis",
+    "generated_at": "2026-08-04T18:31:29",
+    "checks": {
+      "1_large_spot_check": {
+        "label": "live_full_test (n=180)",
+        "n": 180,
+        "n_pos": 122,
+        "n_neg": 58,
+        "majority_class": 1,
+        "majority_baseline_accuracy": 0.6778,
+        "accuracy": 0.6833,
+        "lift_vs_majority_pp": 0.56,
+        "agree_rate": 0.6833,
+        "auc": 0.5835,
+        "brier": 0.2215,
+        "high_risk_n": 133,
+        "high_risk_precision": 0.7293,
+        "low_risk_n": 7,
+        "low_risk_true_neg_rate": 0.5714,
+        "soft_share": 0.8889,
+        "conformal_target": 0.9,
+        "conformal_coverage": 0.9611,
+        "conformal_coverage_gap": 0.0611,
+        "mean_interval_width": 0.9737,
+        "median_interval_width": 1.0,
+        "conformal_quantile": 0.7,
+        "n_low_conf": 160,
+        "n_high_conf": 20,
+        "acc_low_conf": 0.6875,
+        "acc_high_conf": 0.65,
+        "soft_low_conf_share": 1.0,
+        "soft_high_conf_share": 0.0
+      },
+      "2_conformal_coverage": {
+        "target": 0.9,
+        "observed": 0.9611,
+        "gap": 0.0611,
+        "mean_width": 0.9737,
+        "median_width": 1.0,
+        "quantile": 0.7
+      },
+      "3_accuracy_by_confidence": {
+        "n_low_conf": 160,
+        "acc_low_conf": 0.6875,
+        "n_high_conf": 20,
+        "acc_high_conf": 0.65
+      },
+      "4_vs_majority_baseline": {
+        "accuracy": 0.6833,
+        "majority_baseline": 0.6778,
+        "majority_class": 1,
+        "lift_pp": 0.56
+      },
+      "5_three_random_splits": [
+        {
+          "label": "split_seed_7",
+          "n": 180,
+          "n_pos": 122,
+          "n_neg": 58,
+          "majority_class": 1,
+          "majority_baseline_accuracy": 0.6778,
+          "accuracy": 0.6889,
+          "lift_vs_majority_pp": 1.11,
+          "agree_rate": 0.6889,
+          "auc": 0.5125,
+          "brier": 0.2148,
+          "high_risk_n": 174,
+          "high_risk_precision": 0.6897,
+          "low_risk_n": 2,
+          "low_risk_true_neg_rate": 1.0,
+          "soft_share": 0.9833,
+          "conformal_target": 0.9,
+          "conformal_coverage": 0.8889,
+          "conformal_coverage_gap": -0.0111,
+          "mean_interval_width": 0.9893,
+          "median_interval_width": 1.0,
+          "conformal_quantile": 0.718,
+          "n_low_conf": 177,
+          "n_high_conf": 3,
+          "acc_low_conf": 0.6836,
+          "acc_high_conf": 1.0,
+          "soft_low_conf_share": 1.0,
+          "soft_high_conf_share": 0.0
+        },
+        {
+          "label": "split_seed_21",
+          "n": 180,
+          "n_pos": 122,
+          "n_neg": 58,
+          "majority_class": 1,
+          "majority_baseline_accuracy": 0.6778,
+          "accuracy": 0.6667,
+          "lift_vs_majority_pp": -1.11,
+          "agree_rate": 0.6667,
+          "auc": 0.5017,
+          "brier": 0.2342,
+          "high_risk_n": 172,
+          "high_risk_precision": 0.6802,
+          "low_risk_n": 8,
+          "low_risk_true_neg_rate": 0.375,
+          "soft_share": 0.8222,
+          "conformal_target": 0.9,
+          "conformal_coverage": 0.8333,
+          "conformal_coverage_gap": -0.0667,
+          "mean_interval_width": 0.9202,
+          "median_interval_width": 1.0,
+          "conformal_quantile": 0.6154,
+          "n_low_conf": 148,
+          "n_high_conf": 32,
+          "acc_low_conf": 0.6757,
+          "acc_high_conf": 0.625,
+          "soft_low_conf_share": 1.0,
+          "soft_high_conf_share": 0.0
+        },
+        {
+          "label": "split_seed_99",
+          "n": 180,
+          "n_pos": 122,
+          "n_neg": 58,
+          "majority_class": 1,
+          "majority_baseline_accuracy": 0.6778,
+          "accuracy": 0.65,
+          "lift_vs_majority_pp": -2.78,
+          "agree_rate": 0.65,
+          "auc": 0.5447,
+          "brier": 0.2247,
+          "high_risk_n": 159,
+          "high_risk_precision": 0.6855,
+          "low_risk_n": 12,
+          "low_risk_true_neg_rate": 0.25,
+          "soft_share": 0.9833,
+          "conformal_target": 0.9,
+          "conformal_coverage": 0.9722,
+          "conformal_coverage_gap": 0.0722,
+          "mean_interval_width": 0.9816,
+          "median_interval_width": 1.0,
+          "conformal_quantile": 0.7059,
+          "n_low_conf": 177,
+          "n_high_conf": 3,
+          "acc_low_conf": 0.6497,
+          "acc_high_conf": 0.6667,
+          "soft_low_conf_share": 1.0,
+          "soft_high_conf_share": 0.0
+        }
+      ]
+    },
+    "summary": {
+      "live": {
+        "label": "live_full_test (n=180)",
+        "n": 180,
+        "n_pos": 122,
+        "n_neg": 58,
+        "majority_class": 1,
+        "majority_baseline_accuracy": 0.6778,
+        "accuracy": 0.6833,
+        "lift_vs_majority_pp": 0.56,
+        "agree_rate": 0.6833,
+        "auc": 0.5835,
+        "brier": 0.2215,
+        "high_risk_n": 133,
+        "high_risk_precision": 0.7293,
+        "low_risk_n": 7,
+        "low_risk_true_neg_rate": 0.5714,
+        "soft_share": 0.8889,
+        "conformal_target": 0.9,
+        "conformal_coverage": 0.9611,
+        "conformal_coverage_gap": 0.0611,
+        "mean_interval_width": 0.9737,
+        "median_interval_width": 1.0,
+        "conformal_quantile": 0.7,
+        "n_low_conf": 160,
+        "n_high_conf": 20,
+        "acc_low_conf": 0.6875,
+        "acc_high_conf": 0.65,
+        "soft_low_conf_share": 1.0,
+        "soft_high_conf_share": 0.0
+      },
+      "splits": {
+        "accuracy_mean": 0.6685,
+        "accuracy_std": 0.0159,
+        "accuracy_min": 0.65,
+        "coverage_mean": 0.8981,
+        "coverage_min": 0.8333,
+        "lift_pp_mean": -0.93,
+        "lift_pp_min": -2.78,
+        "soft_share_mean": 0.9296
+      },
+      "verdict_live": {
+        "beats_majority": "borderline",
+        "coverage": "pass",
+        "conf_split": "borderline",
+        "soft_not_all": "pass"
+      },
+      "verdict_splits": [
+        {
+          "beats_majority": "borderline",
+          "coverage": "pass",
+          "conf_split": "pass",
+          "soft_not_all": "fail"
+        },
+        {
+          "beats_majority": "fail",
+          "coverage": "borderline",
+          "conf_split": "fail",
+          "soft_not_all": "pass"
+        },
+        {
+          "beats_majority": "fail",
+          "coverage": "pass",
+          "conf_split": "pass",
+          "soft_not_all": "fail"
+        }
+      ]
+    },
+    "overall": {
+      "live_checks_ok": true,
+      "splits_checks_ok": false,
+      "splits_stable_acc": true,
+      "recommendation": "investigate_before_phase2"
+    },
+    "routing": {
+      "strategy": "foundation_model",
+      "reason": "Rows=537 \u2264 10000 and features=5 \u2264 500 (cat=0%, missing=0.0%); foundation model preferred for small/medium tabular data",
+      "row_count": 537,
+      "feature_count": 5,
+      "categorical_fraction": 0.0,
+      "missing_density": 0.0,
+      "forced": false,
+      "backend": "hist_gradient_boosting",
+      "n_train": 537,
+      "n_calib": 179,
+      "n_test": 180,
+      "metrics_snapshot": {
+        "ensemble_auc_roc": 0.5835217637083098,
+        "ensemble_accuracy": 0.6833333333333333,
+        "ensemble_brier": 0.2215485611044524,
+        "conformal_quantile": 0.7,
+        "prob_calibration_fitted": 1.0
+      }
+    }
+  },
+  "telco_harden": {
+    "checks": [
+      {
+        "name": "input_empty_rejected",
+        "status": "pass",
+        "detail": {
+          "code": "missing_required_features",
+          "message": "Required feature columns are incomplete (missing: customerID, gender, SeniorCitizen, Partner, Dependents, tenure, PhoneService, MultipleLines, InternetService, OnlineSecurity, OnlineBackup, DeviceProtection, TechSupport, StreamingTV, StreamingMovies, Contract, PaperlessBilling, PaymentMethod, MonthlyCharges, TotalCharges). Provide all required features with non-empty values before scoring.",
+          "missing_features": [
+            "customerID",
+            "gender",
+            "SeniorCitizen",
+            "Partner",
+            "Dependents",
+            "tenure",
+            "PhoneService",
+            "MultipleLines",
+            "InternetService",
+            "OnlineSecurity",
+            "OnlineBackup",
+            "DeviceProtection",
+            "TechSupport",
+            "StreamingTV",
+            "StreamingMovies",
+            "Contract",
+            "PaperlessBilling",
+            "PaymentMethod",
+            "MonthlyCharges",
+            "TotalCharges"
+          ],
+          "empty_features": []
+        }
+      },
+      {
+        "name": "input_partial_rejected",
+        "status": "pass",
+        "detail": {
+          "code": "missing_required_features",
+          "message": "Required feature columns are incomplete (missing: OnlineBackup, DeviceProtection, TechSupport, StreamingTV, StreamingMovies, Contract, PaperlessBilling, PaymentMethod, MonthlyCharges, TotalCharges). Provide all required features with non-empty values before scoring.",
+          "missing_features": [
+            "OnlineBackup",
+            "DeviceProtection",
+            "TechSupport",
+            "StreamingTV",
+            "StreamingMovies",
+            "Contract",
+            "PaperlessBilling",
+            "PaymentMethod",
+            "MonthlyCharges",
+            "TotalCharges"
+          ],
+          "empty_features": []
+        }
+      },
+      {
+        "name": "input_blank_rejected",
+        "status": "pass",
+        "detail": {
+          "code": "missing_required_features",
+          "message": "Required feature columns are incomplete (empty/null: customerID). Provide all required features with non-empty values before scoring.",
+          "missing_features": [],
+          "empty_features": [
+            "customerID"
+          ]
+        }
+      },
+      {
+        "name": "input_unexpected_string",
+        "status": "warn",
+        "detail": "accepted score p=0.027777777777777776 \u2014 format coercion may hide bad values"
+      },
+      {
+        "name": "sim_no_persist",
+        "status": "pass",
+        "detail": "rows 168->168 impact=0.0"
+      },
+      {
+        "name": "entity_id",
+        "status": "pass",
+        "detail": "resolved=4376-KFVRS response=4376-KFVRS db=4376-KFVRS"
+      },
+      {
+        "name": "batch_scored",
+        "status": "pass",
+        "detail": {
+          "project_id": "1db0a2a2-3e1c-46ee-a1b9-7d986942c2a9",
+          "n_requested": 40,
+          "n_scored": 40,
+          "n_errors": 0,
+          "include_explanations": false,
+          "include_recommendations": false,
+          "persisted": false,
+          "note": "Batch triage scores only \u2014 use single-case /predict with explanations for full drivers and recommendations.",
+          "results": [
+            {
+              "index": 0,
+              "entity_id": "4376-KFVRS",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.9262672811059908,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7231408692509261,
+                "level": 0.9,
+                "width": 0.7231408692509261
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.03686635944700461,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 30
+            },
+            {
+              "index": 1,
+              "entity_id": "2754-SDJRD",
+              "ok": true,
+              "risk_level": "critical",
+              "confidence": 0.8461538461538463,
+              "confidence_interval": {
+                "lower": 0.23680241327300156,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 0.7631975867269984
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.9230769230769231,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "act",
+              "priority_rank": 1
+            },
+            {
+              "index": 2,
+              "entity_id": "9917-KWRBE",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.8010471204188482,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7857509495944974,
+                "level": 0.9,
+                "width": 0.7857509495944974
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.09947643979057591,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 25
+            },
+            {
+              "index": 3,
+              "entity_id": "0365-GXEZS",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.4645669291338582,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9539910452369924,
+                "level": 0.9,
+                "width": 0.9539910452369924
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.2677165354330709,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 16
+            },
+            {
+              "index": 4,
+              "entity_id": "9385-NXKDA",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.9821088392551296,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.6952200901763568,
+                "level": 0.9,
+                "width": 0.6952200901763568
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.008945580372435182,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 35
+            },
+            {
+              "index": 5,
+              "entity_id": "4686-UXDML",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.37254901960784315,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.6862745098039216,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 3
+            },
+            {
+              "index": 6,
+              "entity_id": "2227-JRSJX",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 9
+            },
+            {
+              "index": 7,
+              "entity_id": "4830-FAXFM",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.4645669291338582,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9539910452369924,
+                "level": 0.9,
+                "width": 0.9539910452369924
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.2677165354330709,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 17
+            },
+            {
+              "index": 8,
+              "entity_id": "1830-IPXVJ",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.6862745098039216,
+                "level": 0.9,
+                "width": 0.6862745098039216
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 36
+            },
+            {
+              "index": 9,
+              "entity_id": "4690-LLKUA",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 10
+            },
+            {
+              "index": 10,
+              "entity_id": "5804-HYIEZ",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9362745098039216,
+                "level": 0.9,
+                "width": 0.9362745098039216
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.25,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 19
+            },
+            {
+              "index": 11,
+              "entity_id": "2388-LAESQ",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.8867924528301887,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7428782833888272,
+                "level": 0.9,
+                "width": 0.7428782833888272
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.05660377358490566,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 29
+            },
+            {
+              "index": 12,
+              "entity_id": "5533-RJFTJ",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9252682204957454,
+                "level": 0.9,
+                "width": 0.9252682204957454
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.2389937106918239,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 22
+            },
+            {
+              "index": 13,
+              "entity_id": "4706-AXVKM",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.36363636363636354,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.6818181818181818,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 7
+            },
+            {
+              "index": 14,
+              "entity_id": "0997-YTLNY",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.8010471204188482,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7857509495944974,
+                "level": 0.9,
+                "width": 0.7857509495944974
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.09947643979057591,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 26
+            },
+            {
+              "index": 15,
+              "entity_id": "7971-HLVXI",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.9262672811059908,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7231408692509261,
+                "level": 0.9,
+                "width": 0.7231408692509261
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.03686635944700461,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 31
+            },
+            {
+              "index": 16,
+              "entity_id": "7337-CINUD",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.6862745098039216,
+                "level": 0.9,
+                "width": 0.6862745098039216
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 37
+            },
+            {
+              "index": 17,
+              "entity_id": "1379-FRVEB",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 11
+            },
+            {
+              "index": 18,
+              "entity_id": "4753-PADAS",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9252682204957454,
+                "level": 0.9,
+                "width": 0.9252682204957454
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.2389937106918239,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 23
+            },
+            {
+              "index": 19,
+              "entity_id": "5701-GUXDC",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.8010471204188482,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7857509495944974,
+                "level": 0.9,
+                "width": 0.7857509495944974
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.09947643979057591,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 27
+            },
+            {
+              "index": 20,
+              "entity_id": "7235-NXZCP",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.37254901960784315,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.6862745098039216,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 4
+            },
+            {
+              "index": 21,
+              "entity_id": "0668-OGMHD",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.4645669291338582,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9539910452369924,
+                "level": 0.9,
+                "width": 0.9539910452369924
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.2677165354330709,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 18
+            },
+            {
+              "index": 22,
+              "entity_id": "2812-REYAT",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.6862745098039216,
+                "level": 0.9,
+                "width": 0.6862745098039216
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 38
+            },
+            {
+              "index": 23,
+              "entity_id": "8779-YIQQA",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.9262672811059908,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7231408692509261,
+                "level": 0.9,
+                "width": 0.7231408692509261
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.03686635944700461,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 32
+            },
+            {
+              "index": 24,
+              "entity_id": "9701-CDXHR",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9252682204957454,
+                "level": 0.9,
+                "width": 0.9252682204957454
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.2389937106918239,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 24
+            },
+            {
+              "index": 25,
+              "entity_id": "7130-CTCUS",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9362745098039216,
+                "level": 0.9,
+                "width": 0.9362745098039216
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.25,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 20
+            },
+            {
+              "index": 26,
+              "entity_id": "1894-IGFSG",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 12
+            },
+            {
+              "index": 27,
+              "entity_id": "0871-URUWO",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 13
+            },
+            {
+              "index": 28,
+              "entity_id": "0057-QBUQH",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.9262672811059908,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7231408692509261,
+                "level": 0.9,
+                "width": 0.7231408692509261
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.03686635944700461,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 33
+            },
+            {
+              "index": 29,
+              "entity_id": "9611-CTWIH",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.36363636363636354,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.6818181818181818,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 8
+            },
+            {
+              "index": 30,
+              "entity_id": "8058-DMYRU",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 14
+            },
+            {
+              "index": 31,
+              "entity_id": "5351-QESIO",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.37254901960784315,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.6862745098039216,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 5
+            },
+            {
+              "index": 32,
+              "entity_id": "4302-ZYFEL",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.6862745098039216,
+                "level": 0.9,
+                "width": 0.6862745098039216
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 39
+            },
+            {
+              "index": 33,
+              "entity_id": "6134-KWTBV",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.9262672811059908,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7231408692509261,
+                "level": 0.9,
+                "width": 0.7231408692509261
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.03686635944700461,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 34
+            },
+            {
+              "index": 34,
+              "entity_id": "2034-GDRCN",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.37254901960784315,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.6862745098039216,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 6
+            },
+            {
+              "index": 35,
+              "entity_id": "9544-PYPSJ",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.8010471204188482,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7857509495944974,
+                "level": 0.9,
+                "width": 0.7857509495944974
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.09947643979057591,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 28
+            },
+            {
+              "index": 36,
+              "entity_id": "4208-UFFGW",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.058365758754863606,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.4708171206225682,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 15
+            },
+            {
+              "index": 37,
+              "entity_id": "9537-JALFH",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.6862745098039216,
+                "level": 0.9,
+                "width": 0.6862745098039216
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 40
+            },
+            {
+              "index": 38,
+              "entity_id": "4415-IJZTP",
+              "ok": true,
+              "risk_level": "critical",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.12324929971988796,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 0.876750700280112
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.8095238095238095,
+              "soft_case": true,
+              "soft_reason": "backend_abstention",
+              "action_tier": "act",
+              "priority_rank": 2
+            },
+            {
+              "index": 39,
+              "entity_id": "4701-MLJPN",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 0.5,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.9362745098039216,
+                "level": 0.9,
+                "width": 0.9362745098039216
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.25,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "calm",
+              "priority_rank": 21
+            }
+          ]
+        }
+      },
+      {
+        "name": "batch_no_persist",
+        "status": "pass",
+        "detail": "169->169"
+      },
+      {
+        "name": "impact_disclaimer",
+        "status": "pass",
+        "detail": {
+          "has_recs": 5,
+          "strategy": "Relationship maintenance",
+          "disclaimer": "Illustrative estimate from action-catalog heuristics \u2014 not a re-simulated outcome for this case.",
+          "top_actions": [
+            "engagement_campaign",
+            "loyalty_program",
+            "check_in_light"
+          ]
+        }
+      },
+      {
+        "name": "catalog_language_context",
+        "status": "info",
+        "detail": "outcome_label used=outcome; recs may still say churn-ish actions: ['Re-engagement campaign', 'Loyalty recognition', 'Light check-in']"
+      }
+    ],
+    "summary": {
+      "pass": 8,
+      "warn": 1,
+      "info": 1
+    },
+    "p0_closed": true
+  },
+  "superstore_harden": {
+    "checks": [
+      {
+        "name": "input_empty_rejected",
+        "status": "pass",
+        "detail": {
+          "code": "missing_required_features",
+          "message": "Required feature columns are incomplete (missing: Store ID , Store_Area, Items_Available, Daily_Customer_Count, Store_Sales). Provide all required features with non-empty values before scoring.",
+          "missing_features": [
+            "Store ID ",
+            "Store_Area",
+            "Items_Available",
+            "Daily_Customer_Count",
+            "Store_Sales"
+          ],
+          "empty_features": []
+        }
+      },
+      {
+        "name": "input_partial_rejected",
+        "status": "pass",
+        "detail": {
+          "code": "missing_required_features",
+          "message": "Required feature columns are incomplete (missing: Items_Available, Daily_Customer_Count, Store_Sales). Provide all required features with non-empty values before scoring.",
+          "missing_features": [
+            "Items_Available",
+            "Daily_Customer_Count",
+            "Store_Sales"
+          ],
+          "empty_features": []
+        }
+      },
+      {
+        "name": "input_blank_rejected",
+        "status": "pass",
+        "detail": {
+          "code": "missing_required_features",
+          "message": "Required feature columns are incomplete (empty/null: Store ID ). Provide all required features with non-empty values before scoring.",
+          "missing_features": [],
+          "empty_features": [
+            "Store ID "
+          ]
+        }
+      },
+      {
+        "name": "input_unexpected_string",
+        "status": "warn",
+        "detail": "accepted score p=0.5151515151515151 \u2014 format coercion may hide bad values"
+      },
+      {
+        "name": "sim_no_persist",
+        "status": "pass",
+        "detail": "rows 1->1 impact=-0.18484848484848482"
+      },
+      {
+        "name": "entity_id",
+        "status": "pass",
+        "detail": "resolved=352 response=352 db=352"
+      },
+      {
+        "name": "batch_scored",
+        "status": "pass",
+        "detail": {
+          "project_id": "8352b4a9-fe90-4d8b-a893-3a494d56c7a2",
+          "n_requested": 40,
+          "n_scored": 40,
+          "n_errors": 0,
+          "include_explanations": false,
+          "include_recommendations": false,
+          "persisted": false,
+          "note": "Batch triage scores only \u2014 use single-case /predict with explanations for full drivers and recommendations.",
+          "results": [
+            {
+              "index": 0,
+              "entity_id": "row-0",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 4
+            },
+            {
+              "index": 1,
+              "entity_id": "row-1",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 5
+            },
+            {
+              "index": 2,
+              "entity_id": "row-2",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 6
+            },
+            {
+              "index": 3,
+              "entity_id": "row-3",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 7
+            },
+            {
+              "index": 4,
+              "entity_id": "row-4",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 8
+            },
+            {
+              "index": 5,
+              "entity_id": "row-5",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 9
+            },
+            {
+              "index": 6,
+              "entity_id": "row-6",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 10
+            },
+            {
+              "index": 7,
+              "entity_id": "row-7",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 11
+            },
+            {
+              "index": 8,
+              "entity_id": "row-8",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7,
+                "level": 0.9,
+                "width": 0.7
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 38
+            },
+            {
+              "index": 9,
+              "entity_id": "row-9",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 12
+            },
+            {
+              "index": 10,
+              "entity_id": "row-10",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 13
+            },
+            {
+              "index": 11,
+              "entity_id": "row-11",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 14
+            },
+            {
+              "index": 12,
+              "entity_id": "row-12",
+              "ok": true,
+              "risk_level": "critical",
+              "confidence": 0.8095238095238095,
+              "confidence_interval": {
+                "lower": 0.2047619047619048,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 0.7952380952380952
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.9047619047619048,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "act",
+              "priority_rank": 1
+            },
+            {
+              "index": 13,
+              "entity_id": "row-13",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 15
+            },
+            {
+              "index": 14,
+              "entity_id": "row-14",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7,
+                "level": 0.9,
+                "width": 0.7
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 39
+            },
+            {
+              "index": 15,
+              "entity_id": "row-15",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 31
+            },
+            {
+              "index": 16,
+              "entity_id": "row-16",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 16
+            },
+            {
+              "index": 17,
+              "entity_id": "row-17",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 32
+            },
+            {
+              "index": 18,
+              "entity_id": "row-18",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 33
+            },
+            {
+              "index": 19,
+              "entity_id": "row-19",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 17
+            },
+            {
+              "index": 20,
+              "entity_id": "row-20",
+              "ok": true,
+              "risk_level": "critical",
+              "confidence": 0.8095238095238095,
+              "confidence_interval": {
+                "lower": 0.2047619047619048,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 0.7952380952380952
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.9047619047619048,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "act",
+              "priority_rank": 2
+            },
+            {
+              "index": 21,
+              "entity_id": "row-21",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 18
+            },
+            {
+              "index": 22,
+              "entity_id": "row-22",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 19
+            },
+            {
+              "index": 23,
+              "entity_id": "row-23",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 34
+            },
+            {
+              "index": 24,
+              "entity_id": "row-24",
+              "ok": true,
+              "risk_level": "critical",
+              "confidence": 0.8095238095238095,
+              "confidence_interval": {
+                "lower": 0.2047619047619048,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 0.7952380952380952
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.9047619047619048,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "act",
+              "priority_rank": 3
+            },
+            {
+              "index": 25,
+              "entity_id": "row-25",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 20
+            },
+            {
+              "index": 26,
+              "entity_id": "row-26",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 21
+            },
+            {
+              "index": 27,
+              "entity_id": "row-27",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 22
+            },
+            {
+              "index": 28,
+              "entity_id": "row-28",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 23
+            },
+            {
+              "index": 29,
+              "entity_id": "row-29",
+              "ok": true,
+              "risk_level": "low",
+              "confidence": 1.0,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 0.7,
+                "level": 0.9,
+                "width": 0.7
+              },
+              "low_confidence": false,
+              "routing_strategy": "foundation_model",
+              "probability": 0.0,
+              "soft_case": false,
+              "soft_reason": "none",
+              "action_tier": "calm",
+              "priority_rank": 40
+            },
+            {
+              "index": 30,
+              "entity_id": "row-30",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 24
+            },
+            {
+              "index": 31,
+              "entity_id": "row-31",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 25
+            },
+            {
+              "index": 32,
+              "entity_id": "row-32",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 35
+            },
+            {
+              "index": 33,
+              "entity_id": "row-33",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 26
+            },
+            {
+              "index": 34,
+              "entity_id": "row-34",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 27
+            },
+            {
+              "index": 35,
+              "entity_id": "row-35",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 36
+            },
+            {
+              "index": 36,
+              "entity_id": "row-36",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 28
+            },
+            {
+              "index": 37,
+              "entity_id": "row-37",
+              "ok": true,
+              "risk_level": "medium",
+              "confidence": 0.030303030303030276,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.5151515151515151,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "watch",
+              "priority_rank": 37
+            },
+            {
+              "index": 38,
+              "entity_id": "row-38",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 29
+            },
+            {
+              "index": 39,
+              "entity_id": "row-39",
+              "ok": true,
+              "risk_level": "high",
+              "confidence": 0.3999999999999999,
+              "confidence_interval": {
+                "lower": 0.0,
+                "upper": 1.0,
+                "level": 0.9,
+                "width": 1.0
+              },
+              "low_confidence": true,
+              "routing_strategy": "foundation_model",
+              "probability": 0.7,
+              "soft_case": true,
+              "soft_reason": "near_full_band",
+              "action_tier": "act",
+              "priority_rank": 30
+            }
+          ]
+        }
+      },
+      {
+        "name": "batch_no_persist",
+        "status": "pass",
+        "detail": "2->2"
+      },
+      {
+        "name": "impact_disclaimer",
+        "status": "pass",
+        "detail": {
+          "has_recs": 5,
+          "strategy": "Urgent intervention (soft \u2014 prefer lighter first steps)",
+          "disclaimer": "Illustrative estimate from action-catalog heuristics \u2014 not a re-simulated outcome for this case.",
+          "top_actions": [
+            "check_in_light",
+            "discount_20",
+            "add_tech_support"
+          ]
+        }
+      },
+      {
+        "name": "catalog_language_context",
+        "status": "info",
+        "detail": "outcome_label used=High store performance; recs may still say churn-ish actions: ['Light check-in', '20% discount offer', 'Tech support trial']"
+      }
+    ],
+    "summary": {
+      "pass": 8,
+      "warn": 1,
+      "info": 1
+    },
+    "p0_closed": true
+  },
+  "telco_explain": {
+    "cases": [
+      {
+        "case": "low",
+        "p": 0.0,
+        "methods": [
+          "shap",
+          "lime"
+        ],
+        "consistency_score": 0.9371,
+        "trust_level": "high",
+        "degraded": false,
+        "n_drivers": 5,
+        "errors": null
+      },
+      {
+        "case": "mid",
+        "p": 0.4708171206225682,
+        "methods": [
+          "shap",
+          "lime"
+        ],
+        "consistency_score": 0.882,
+        "trust_level": "high",
+        "degraded": false,
+        "n_drivers": 5,
+        "errors": null
+      },
+      {
+        "case": "high",
+        "p": 0.9230769230769231,
+        "methods": [
+          "shap",
+          "lime"
+        ],
+        "consistency_score": 0.9609,
+        "trust_level": "high",
+        "degraded": false,
+        "n_drivers": 5,
+        "errors": null
+      }
+    ],
+    "mean_consistency": 0.9267,
+    "min_consistency": 0.882
+  },
+  "superstore_explain": {
+    "cases": [
+      {
+        "case": "low",
+        "p": 0.0,
+        "methods": [
+          "shap",
+          "lime"
+        ],
+        "consistency_score": 0.7708,
+        "trust_level": "medium",
+        "degraded": false,
+        "n_drivers": 5,
+        "errors": null
+      },
+      {
+        "case": "mid",
+        "p": 0.5151515151515151,
+        "methods": [
+          "shap",
+          "lime"
+        ],
+        "consistency_score": 0.4655,
+        "trust_level": "low",
+        "degraded": false,
+        "n_drivers": 5,
+        "errors": null
+      },
+      {
+        "case": "high",
+        "p": 1.0,
+        "methods": [
+          "shap",
+          "lime"
+        ],
+        "consistency_score": 0.35,
+        "trust_level": "low",
+        "degraded": false,
+        "n_drivers": 5,
+        "errors": null
+      }
+    ],
+    "mean_consistency": 0.5288,
+    "min_consistency": 0.35
+  },
+  "onboarding": {
+    "project_id": "8352b4a9-fe90-4d8b-a893-3a494d56c7a2",
+    "project_name": "Superstore Analysis",
+    "dataset_id": "6ebd5a0a-39c3-489b-b8c0-09bdf85ca8e8",
+    "dataset_name": "Superstore Sales Performance Analysis ",
+    "config": {
+      "target": "Performance",
+      "positive_label": "High",
+      "features": [
+        "Store ID ",
+        "Store_Area",
+        "Items_Available",
+        "Daily_Customer_Count",
+        "Store_Sales"
+      ],
+      "problem_type": "binary_classification",
+      "n_rows_raw": 896,
+      "label_counts": {
+        "High": 605,
+        "Medium": 274,
+        "Low": 17
+      }
+    },
+    "routing": {
+      "strategy": "foundation_model",
+      "reason": "Rows=537 \u2264 10000 and features=5 \u2264 500 (cat=0%, missing=0.0%); foundation model preferred for small/medium tabular data",
+      "row_count": 537,
+      "feature_count": 5,
+      "categorical_fraction": 0.0,
+      "missing_density": 0.0,
+      "forced": false,
+      "backend": "hist_gradient_boosting",
+      "n_train": 537,
+      "n_calib": 179,
+      "n_test": 180,
+      "metrics_snapshot": {
+        "ensemble_auc_roc": 0.5835217637083098,
+        "ensemble_accuracy": 0.6833333333333333,
+        "ensemble_brier": 0.2215485611044524,
+        "conformal_quantile": 0.7,
+        "prob_calibration_fitted": 1.0
+      }
+    },
+    "train_metrics": {
+      "version": "v1",
+      "accuracy": 0.6833333333333333,
+      "auc_roc": 0.5835217637083098,
+      "f1_score": 0.8067796610169492
+    },
+    "onboarding_findings": [
+      {
+        "area": "onboarding",
+        "severity": "critical",
+        "title": "target_positive_label='1' does not match any Performance values",
+        "note": "Actual labels: {'High': 605, 'Medium': 274, 'Low': 17}. With pos='1', all y=0 \u2192 useless model. Product draft left default/wrong label."
+      },
+      {
+        "area": "onboarding",
+        "severity": "warn",
+        "title": "Column names with trailing/leading spaces",
+        "note": "['Store ID ']"
+      },
+      {
+        "area": "onboarding",
+        "severity": "warn",
+        "title": "Store_Sales stored/detected as object/text",
+        "note": "Looks numeric-as-string; nunique=816; coerce nulls=1"
+      },
+      {
+        "area": "onboarding",
+        "severity": "gap",
+        "title": "3-class Performance forced into binary_classification",
+        "note": "Only one positive class (High) vs rest; Medium collapse not offered in UI."
+      },
+      {
+        "area": "onboarding",
+        "severity": "warn",
+        "title": "Store ID included as model feature",
+        "note": "Identity column likely leakage/noise for performance prediction."
+      }
+    ]
+  },
+  "flags": [
+    {
+      "severity": "critical",
+      "title": "Superstore AUC weak (~chance)",
+      "note": "auc=0.5835"
+    },
+    {
+      "severity": "critical",
+      "title": "Barely better than majority on Superstore",
+      "note": "acc=0.6833 baseline=0.6778"
+    },
+    {
+      "severity": "critical",
+      "title": "Phase1 recommendation not solid for Superstore",
+      "note": {
+        "live_checks_ok": true,
+        "splits_checks_ok": false,
+        "splits_stable_acc": true,
+        "recommendation": "investigate_before_phase2"
+      }
+    },
+    {
+      "severity": "warn",
+      "title": "Explain consistency lower than Telco",
+      "note": "telco=0.9267 store=0.5288"
+    },
+    {
+      "severity": "warn",
+      "title": "Harden:input_unexpected_string",
+      "note": "accepted score p=0.5151515151515151 \u2014 format coercion may hide bad values"
+    },
+    {
+      "severity": "warn",
+      "title": "Action catalog still churn-tilted on non-churn target",
+      "note": "top=['check_in_light', 'discount_20', 'add_tech_support'] strategy=Urgent intervention (soft \u2014 prefer lighter first steps)"
+    }
+  ],
+  "verdict": {
+    "label": "does_not_generalize_cleanly",
+    "text": "Hardening transfers; Phase1 predictive quality does not hold at Telco level \u2014 dataset-specific config/model assumptions need work"
+  }
+}

@@ -4,6 +4,7 @@ from app.db.models import (
     ActionCatalog,
     ActionEffectiveness,
     Customer,
+    Decision,
     Explanation,
     Feedback,
     Insight,
@@ -22,4 +23,5 @@ __all__ = [
     "Feedback",
     "ModelPerformance",
     "ActionEffectiveness",
+    "Decision",
 ]

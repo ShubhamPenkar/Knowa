@@ -472,18 +472,29 @@ export default function Explainability() {
               {prediction.prediction.recommendations?.length > 0 && (
                 <div className="bg-brand-teal/10 rounded-xl border border-blue-200 p-6">
                   <h3 className="text-lg font-semibold text-blue-800 mb-3">
-                    🎯 Recommended Actions
+                    Recommended Actions
                   </h3>
+                  <p className="text-xs text-blue-800/80 mb-3 leading-relaxed">
+                    Rank scores and impact figures are illustrative catalog heuristics —
+                    not re-simulated outcomes for this case.
+                  </p>
                   <div className="space-y-3">
                     {prediction.prediction.recommendations.map((rec, i) => (
                       <div key={i} className="bg-white rounded-lg p-3 border border-blue-100">
                         <div className="flex justify-between items-start mb-1">
-                          <span className="font-medium text-gray-900">{rec.action_name}</span>
+                          <span className="font-medium text-gray-900">{rec.action_name || rec.name}</span>
                           <span className="text-xs bg-brand-teal/20 text-brand-teal-dark px-2 py-1 rounded">
-                            Score: {(rec.score * 100).toFixed(0)}
+                            Rank score: {(((rec.final_score ?? rec.score) || 0) * 100).toFixed(0)}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600">{rec.reason}</p>
+                        <p className="text-sm text-gray-600">{rec.reasoning || rec.reason}</p>
+                        {rec.expected_probability_reduction > 0.01 && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Illustrative est. ~−
+                            {(Number(rec.expected_probability_reduction) * 100).toFixed(0)} pp
+                            {' '}(not re-simulated)
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>

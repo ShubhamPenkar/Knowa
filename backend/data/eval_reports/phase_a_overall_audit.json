@@ -1,0 +1,416 @@
+{
+  "started": "2026-08-04T11:23:04.342555Z",
+  "checks": [
+    {
+      "layer": "A1",
+      "name": "model_load",
+      "status": "pass",
+      "detail": "strategy=foundation_model backend=hist_gradient_boosting",
+      "severity": "info"
+    },
+    {
+      "layer": "A1",
+      "name": "prob_span",
+      "status": "pass",
+      "detail": "min=0.000 max=0.923 mean=0.266 n=1409",
+      "severity": "info"
+    },
+    {
+      "layer": "A1",
+      "name": "heldout_acc",
+      "status": "pass",
+      "detail": "acc=0.786 base=0.265",
+      "severity": "info"
+    },
+    {
+      "layer": "A1",
+      "name": "predict_low",
+      "status": "pass",
+      "detail": "p=0.0000 risk=low conf=1.0 pred_id=True",
+      "severity": "info"
+    },
+    {
+      "layer": "A1",
+      "name": "predict_mid",
+      "status": "pass",
+      "detail": "p=0.4708 risk=medium conf=0.058365758754863606 pred_id=True",
+      "severity": "info"
+    },
+    {
+      "layer": "A1",
+      "name": "predict_high",
+      "status": "pass",
+      "detail": "p=0.9231 risk=critical conf=0.8461538461538463 pred_id=True",
+      "severity": "info"
+    },
+    {
+      "layer": "A1",
+      "name": "partial_features",
+      "status": "warn",
+      "detail": "half cols accepted p=0.03686635944700461",
+      "severity": "warn"
+    },
+    {
+      "layer": "A1",
+      "name": "empty_features",
+      "status": "warn",
+      "detail": "empty accepted p=0.03686635944700461",
+      "severity": "warn"
+    },
+    {
+      "layer": "A2",
+      "name": "trust_low",
+      "status": "pass",
+      "detail": "soft=True reason=mid_priority low_conf=False width=0.686 conf=1.0",
+      "severity": "info"
+    },
+    {
+      "layer": "A2",
+      "name": "trust_mid",
+      "status": "pass",
+      "detail": "soft=True reason=near_full_band low_conf=True width=1.000 conf=0.058365758754863606",
+      "severity": "info"
+    },
+    {
+      "layer": "A2",
+      "name": "trust_high",
+      "status": "pass",
+      "detail": "soft=False reason=none low_conf=False width=0.763 conf=0.8461538461538463",
+      "severity": "info"
+    },
+    {
+      "layer": "A2",
+      "name": "interval_width_sample",
+      "status": "info",
+      "detail": "widths=[0.686, 1.0, 0.763] mean=0.816 soft=2/3",
+      "severity": "info"
+    },
+    {
+      "layer": "A2",
+      "name": "spot_check_ui_n50",
+      "status": "pass",
+      "detail": "On 50 held-out people with known outcomes, the Yes/No call matched 38 times (76%). Of 10 flagged high-risk, 5 had actually Yes.",
+      "severity": "info"
+    },
+    {
+      "layer": "A3",
+      "name": "explain_low",
+      "status": "pass",
+      "detail": "methods=['shap', 'lime'] n_drivers=5 cons=0.9371 trust=high degraded=False",
+      "severity": "info"
+    },
+    {
+      "layer": "A3",
+      "name": "explain_mid",
+      "status": "pass",
+      "detail": "methods=['shap', 'lime'] n_drivers=5 cons=0.882 trust=high degraded=False",
+      "severity": "info"
+    },
+    {
+      "layer": "A3",
+      "name": "explain_high",
+      "status": "pass",
+      "detail": "methods=['shap', 'lime'] n_drivers=5 cons=0.9609 trust=high degraded=False",
+      "severity": "info"
+    },
+    {
+      "layer": "A3",
+      "name": "explanations_off",
+      "status": "pass",
+      "detail": "has_expl=False has_brief=False",
+      "severity": "info"
+    },
+    {
+      "layer": "A4",
+      "name": "insight_low",
+      "status": "pass",
+      "detail": "headline=True themes=4 insights=5 lever=False",
+      "severity": "info"
+    },
+    {
+      "layer": "A4",
+      "name": "insight_mid",
+      "status": "pass",
+      "detail": "headline=True themes=4 insights=5 lever=True",
+      "severity": "info"
+    },
+    {
+      "layer": "A4",
+      "name": "insight_high",
+      "status": "pass",
+      "detail": "headline=True themes=4 insights=5 lever=True",
+      "severity": "info"
+    },
+    {
+      "layer": "A5",
+      "name": "recs_low",
+      "status": "pass",
+      "detail": "n=5 mono=True strategy=Relationship maintenance top=['check_in_light', 'engagement_campaign', 'loyalty_program'] p=0.000",
+      "severity": "info"
+    },
+    {
+      "layer": "A5",
+      "name": "recs_mid",
+      "status": "pass",
+      "detail": "n=5 mono=True strategy=Preventive engagement (soft \u2014 prefer lighter first steps) top=['upgrade_contract_2yr', 'check_in_light', 'discount_10'] p=0.471",
+      "severity": "info"
+    },
+    {
+      "layer": "A5",
+      "name": "recs_high",
+      "status": "pass",
+      "detail": "n=5 mono=True strategy=Urgent intervention top=['engagement_campaign', 'check_in_light', 'plan_optimization'] p=0.923",
+      "severity": "info"
+    },
+    {
+      "layer": "A6",
+      "name": "simulate_full",
+      "status": "pass",
+      "detail": "miss=[] impact=-0.8236004832863473 n_changes=3",
+      "severity": "info"
+    },
+    {
+      "layer": "A6",
+      "name": "simulate_empty_mods",
+      "status": "pass",
+      "detail": "log=[] impact=0.0",
+      "severity": "info"
+    },
+    {
+      "layer": "A6",
+      "name": "simulate_noop",
+      "status": "pass",
+      "detail": "log=[]",
+      "severity": "info"
+    },
+    {
+      "layer": "A6",
+      "name": "simulate_unknown_feature",
+      "status": "pass",
+      "detail": "change_log=[{'feature': '__not_a_col__', 'label': 'Not A Col', 'before': None, 'after': 1}] impact=0.0 \u2014 accepts unknown keys into merge carefully?",
+      "severity": "info"
+    },
+    {
+      "layer": "A7",
+      "name": "record",
+      "status": "pass",
+      "detail": "Model Yes/No call disagreed with the real outcome (predicted 0%). Use this miss when reviewing drivers.",
+      "severity": "info"
+    },
+    {
+      "layer": "A7",
+      "name": "invalid",
+      "status": "pass",
+      "detail": "Invalid actual_outcome 'garbage'. Use positive/yes, negative/no, unknown, or a label matching your target.",
+      "severity": "info"
+    },
+    {
+      "layer": "A7",
+      "name": "wrong_project",
+      "status": "pass",
+      "detail": "None",
+      "severity": "info"
+    },
+    {
+      "layer": "A7",
+      "name": "summary",
+      "status": "pass",
+      "detail": "2 of 163 predictions have outcomes logged (1% coverage). Among known Yes/No labels, model matched 1/2 (50%). Strongest logged action so far: monitor_only (1/1 avoided positive outcome). Not a 30/60/90",
+      "severity": "info"
+    },
+    {
+      "layer": "A7",
+      "name": "effectiveness_map",
+      "status": "pass",
+      "detail": "{'monitor_only': {'n': 1, 'success_n': 1, 'success_rate': 1.0}, 'discount_20': {'n': 1, 'success_n': 0, 'success_rate': 0.0}}",
+      "severity": "info"
+    },
+    {
+      "layer": "Cross",
+      "name": "latency_full_case",
+      "status": "info",
+      "detail": "0.61s",
+      "severity": "info"
+    },
+    {
+      "layer": "Cross",
+      "name": "latency_simulate",
+      "status": "info",
+      "detail": "1.26s",
+      "severity": "info"
+    },
+    {
+      "layer": "A7",
+      "name": "db_counts",
+      "status": "pass",
+      "detail": "predictions=166 feedback=2",
+      "severity": "info"
+    }
+  ],
+  "findings": [
+    {
+      "area": "A1",
+      "title": "No required-column validation",
+      "note": "Partial and empty feature dicts are accepted; missing fields imputed as 0 \u2192 silent wrong score.",
+      "severity": "gap"
+    },
+    {
+      "area": "A1",
+      "title": "entity_id not set on case scoring",
+      "note": "Project UI predict rarely passes entity_id; feedback hard to join to a customer later.",
+      "severity": "gap"
+    },
+    {
+      "area": "A2",
+      "title": "Conformal residual bands often very wide",
+      "note": "Sample mean width 0.82. Soft rules fixed over-flagging, but interval is weak for tight decision thresholds.",
+      "severity": "limitation"
+    },
+    {
+      "area": "A3",
+      "title": "No counterfactual explanations",
+      "note": "Drivers are attribution only \u2014 no 'minimal change to flip decision' (related to B2/B4).",
+      "severity": "omission"
+    },
+    {
+      "area": "A3",
+      "title": "Explain is local, slow path ~SHAP+LIME every case",
+      "note": "Every predict with explain runs dual methods; no cache by feature hash; weak for bulk prioritization.",
+      "severity": "limitation"
+    },
+    {
+      "area": "A4",
+      "title": "Templates + aliases, not domain learning",
+      "note": "Feature mapping is fixed alias table; novel columns fall back to generic wording.",
+      "severity": "limitation"
+    },
+    {
+      "area": "A4",
+      "title": "Regression gets no insight brief",
+      "note": "CaseExplainer + InsightGenerator gated to non-regression.",
+      "severity": "gap"
+    },
+    {
+      "area": "A5",
+      "title": "Action impact is heuristic, not simulated counterfactual",
+      "note": "expected_probability_reduction from catalog math \u2014 not re-running predict under action effects.",
+      "severity": "limitation"
+    },
+    {
+      "area": "A5",
+      "title": "Catalog is generic/churn-tilted",
+      "note": "Default action catalog not industry-agnostic generation; weak for non-churn binary projects.",
+      "severity": "limitation"
+    },
+    {
+      "area": "A6",
+      "title": "Single-scenario what-if only",
+      "note": "No Monte Carlo distribution; delta itself has no CI.",
+      "severity": "omission"
+    },
+    {
+      "area": "A6",
+      "title": "No action\u2192feature effect model",
+      "note": "You edit features manually; system doesn't map 'offer discount' \u2192 feature shifts.",
+      "severity": "omission"
+    },
+    {
+      "area": "A6",
+      "title": "Very large scenario deltas possible",
+      "note": "impact=-0.82 with 1\u20132 edits \u2014 user may over-trust without uncertainty on the delta.",
+      "severity": "limitation"
+    },
+    {
+      "area": "A6",
+      "title": "Simulate persists two prediction rows",
+      "note": "simulate calls predict twice \u2192 DB fills with sim noise/prediction_id noise.",
+      "severity": "gap"
+    },
+    {
+      "area": "A7",
+      "title": "Success definition is outcome-avoidance only",
+      "note": "success_n = avoided positive class; wrong framing for non-churn positives (e.g. conversion).",
+      "severity": "gap"
+    },
+    {
+      "area": "A7",
+      "title": "No scheduled recheck / autopsy / decision object",
+      "note": "A7 is stamp on prediction row \u2014 design B3 still missing.",
+      "severity": "omission"
+    },
+    {
+      "area": "A7",
+      "title": "Notes not stored; no audit trail of overwrites",
+      "note": "updates overwrite silently.",
+      "severity": "gap"
+    },
+    {
+      "area": "A7",
+      "title": "UI feedback only in PredictionPanel with prediction_id",
+      "note": "Must complete live predict; cannot log offline from historical prediction list alone easily.",
+      "severity": "minor"
+    },
+    {
+      "area": "A7",
+      "title": "No project retrain from feedback accumulation",
+      "note": "Demo FeedbackService has triggers; SaaS project path doesn't.",
+      "severity": "omission"
+    },
+    {
+      "area": "Cross",
+      "title": "Classification-first product surface",
+      "note": "Explain/Insight/Rec/Feedback log UI heavily gates regression.",
+      "severity": "gap"
+    },
+    {
+      "area": "Cross",
+      "title": "Dual demo + SaaS stacks",
+      "note": "Demo /feedback and project /projects/{id}/feedback diverge.",
+      "severity": "limitation"
+    },
+    {
+      "area": "Cross",
+      "title": "No batch prioritize/explain API",
+      "note": "Cannot sort 1000 accounts by risk+soft+recs without N sequential predict calls.",
+      "severity": "omission"
+    },
+    {
+      "area": "Cross",
+      "title": "Latency/cost of full case path unmeasured in CI",
+      "note": "No SLO/regression suite for time per case with SHAP+LIME on.",
+      "severity": "gap"
+    },
+    {
+      "area": "Cross",
+      "title": "Multiclass / time-series not in A",
+      "note": "binary + regression only.",
+      "severity": "omission"
+    },
+    {
+      "area": "Cross",
+      "title": "Human-in-loop 'why we disagreed' not closed",
+      "note": "knownOutcome conflicts shown but no structured miss review workflow.",
+      "severity": "gap"
+    }
+  ],
+  "project": {
+    "id": "1db0a2a2-3e1c-46ee-a1b9-7d986942c2a9",
+    "name": "Telco Churn Test",
+    "type": "binary_classification"
+  },
+  "summary": {
+    "checks": {
+      "pass": 30,
+      "warn": 2,
+      "info": 3
+    },
+    "findings": {
+      "gap": 9,
+      "limitation": 7,
+      "omission": 7,
+      "minor": 1
+    },
+    "n_checks": 35,
+    "n_findings": 24
+  }
+}

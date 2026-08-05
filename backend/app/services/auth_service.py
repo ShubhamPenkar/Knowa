@@ -20,7 +20,7 @@ settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+JWT_SECRET = os.getenv("JWT_SECRET", settings.jwt_secret if hasattr(settings, "jwt_secret") else "dev-secret-change-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 

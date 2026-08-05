@@ -1,0 +1,53 @@
+{
+  "tested_first": "Store_Sales_parse_theory",
+  "theory": {
+    "n_rows": 896,
+    "store_sales_dtype": "str/object",
+    "parse_ok": 895,
+    "parse_fail": 1,
+    "failed_samples": [
+      "    "
+    ],
+    "pearson_sales_high": 0.768,
+    "univariate_auc_sales_high": 1.0,
+    "corr_if_treated_as_categorical_ordinal": 0.21,
+    "verdict": "Store_Sales is nearly perfectly informative for High vs not (univariate AUC=1.0). Prior model AUC~0.58 was pipeline damage (string\u2192category codes), not an intrinsically hard problem."
+  },
+  "fixes": {
+    "id_columns_auto_excluded": true,
+    "numeric_object_coercion": true,
+    "positive_label_hard_block": true
+  },
+  "after_fix": {
+    "model_version": "v2",
+    "pipeline_version": "1.6",
+    "numeric_columns": [
+      "Store_Area",
+      "Items_Available",
+      "Daily_Customer_Count",
+      "Store_Sales"
+    ],
+    "phase1": {
+      "live_auc": 1.0,
+      "live_accuracy": 1.0,
+      "live_lift_pp": 32.22,
+      "recommendation": "solid_enough_for_phase2",
+      "before_auc_approx": 0.58
+    },
+    "corr_transformed_sales_high": 0.7678920302132262
+  },
+  "conclusion": "Pipeline bug confirmed and fixed. Superstore Phase1 now solid_enough_for_phase2 (AUC~1.0). Prior 0.58 was not hard-data.",
+  "theory_raw": {
+    "n_rows": 896,
+    "store_sales_dtype": "str",
+    "parse_ok": 895,
+    "parse_fail": 1,
+    "failed_samples": [
+      "    "
+    ],
+    "pearson_sales_high": 0.7678766088358581,
+    "univariate_auc_sales_high": 1.0,
+    "conclusion": "pipeline_bug",
+    "corr_if_forced_categorical_ordinal": 0.21206712632466238
+  }
+}

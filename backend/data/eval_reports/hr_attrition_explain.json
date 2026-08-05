@@ -1,0 +1,114 @@
+{
+  "cases": [
+    {
+      "bucket": "low",
+      "probability": 0.09090909090909091,
+      "consistency_score": 0.8457,
+      "trust_level": "high",
+      "flag": false,
+      "plain": "Two independent explanation methods largely agree on what is driving this case \u2014 stronger trust in the \u201cwhy\u201d (score 85%).",
+      "recommendations": [
+        {
+          "code": "check_in_light",
+          "name": "Light check-in",
+          "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft."
+        },
+        {
+          "code": "monitor_only",
+          "name": "Monitor \u2014 no heavy intervention",
+          "description": "Keep an eye on signals; deprioritize costly actions while risk is low."
+        },
+        {
+          "code": "autopay_incentive",
+          "name": "Auto-pay incentive",
+          "description": "Nudge easier billing to reduce friction-driven drop-off."
+        },
+        {
+          "code": "engagement_campaign",
+          "name": "Re-engagement campaign",
+          "description": "Targeted nudge when usage/recency looks weak."
+        },
+        {
+          "code": "add_tech_support",
+          "name": "Tech support trial",
+          "description": "Trial tech support when support gaps may be creating silent friction."
+        }
+      ]
+    },
+    {
+      "bucket": "mid",
+      "probability": 0.25,
+      "consistency_score": 0.7904,
+      "trust_level": "medium",
+      "flag": false,
+      "plain": "Explanation methods partially agree. Treat the main drivers as a useful guide, but leave room for judgment (score 79%; top-factor overlap 60%).",
+      "recommendations": [
+        {
+          "code": "check_in_light",
+          "name": "Light check-in",
+          "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft."
+        },
+        {
+          "code": "monitor_only",
+          "name": "Monitor \u2014 no heavy intervention",
+          "description": "Keep an eye on signals; deprioritize costly actions while risk is low."
+        },
+        {
+          "code": "add_tech_support",
+          "name": "Tech support trial",
+          "description": "Trial tech support when support gaps may be creating silent friction."
+        },
+        {
+          "code": "autopay_incentive",
+          "name": "Auto-pay incentive",
+          "description": "Nudge easier billing to reduce friction-driven drop-off."
+        },
+        {
+          "code": "engagement_campaign",
+          "name": "Re-engagement campaign",
+          "description": "Targeted nudge when usage/recency looks weak."
+        }
+      ]
+    },
+    {
+      "bucket": "high",
+      "probability": 0.6666666666666666,
+      "consistency_score": 0.7292,
+      "trust_level": "medium",
+      "flag": false,
+      "plain": "Explanation methods partially agree. Treat the main drivers as a useful guide, but leave room for judgment (score 73%; top-factor overlap 60%).",
+      "recommendations": [
+        {
+          "code": "check_in_light",
+          "name": "Light check-in",
+          "description": "Low-cost health check \u2014 useful when risk is moderate or uncertainty is soft."
+        },
+        {
+          "code": "discount_20",
+          "name": "20% discount offer",
+          "description": "Stronger short-term discount when risk is elevated and price is a driver."
+        },
+        {
+          "code": "add_tech_support",
+          "name": "Tech support trial",
+          "description": "Trial tech support when support gaps may be creating silent friction."
+        },
+        {
+          "code": "autopay_incentive",
+          "name": "Auto-pay incentive",
+          "description": "Nudge easier billing to reduce friction-driven drop-off."
+        },
+        {
+          "code": "engagement_campaign",
+          "name": "Re-engagement campaign",
+          "description": "Targeted nudge when usage/recency looks weak."
+        }
+      ]
+    }
+  ],
+  "mean_consistency": 0.7884333333333333,
+  "min_consistency": 0.7292,
+  "broader_mean_consistency": 0.7912100000000001,
+  "broader_min_consistency": 0.6492,
+  "broader_n": 10
+}

@@ -132,7 +132,7 @@ class Project(Base):
     model_type: Mapped[str] = mapped_column(String(50), default="ensemble")
     
     # Status
-    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft, training, ready, error
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft, training, ready, error (legacy DBs may have "trained")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -142,6 +142,7 @@ class Project(Base):
     dataset: Mapped["Dataset"] = relationship(back_populates="projects")
     trained_models: Mapped[list["TrainedModel"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     project_predictions: Mapped[list["ProjectPrediction"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    decisions: Mapped[list["Decision"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class CustomAction(Base):
@@ -245,6 +246,66 @@ class ProjectPrediction(Base):
     
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="project_predictions")
+    decisions: Mapped[list["Decision"]] = relationship(back_populates="prediction")
+
+
+class Decision(Base):
+    """B3 decision ledger — accountable action committed from a case.
+
+    Distinct from A7 feedback stamps on ProjectPrediction. A decision is a
+    first-class object with expected lift, status, and scheduled recheck
+    (30/60/90). Autopsy narratives deepen in later B3 slices.
+    """
+
+    __tablename__ = "decisions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), index=True)
+    prediction_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("project_predictions.id"), index=True
+    )
+
+    entity_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+
+    # proposed | committed | checking | closed | cancelled
+    status: Mapped[str] = mapped_column(String(20), default="committed", index=True)
+
+    action_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    action_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    action_description: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Case snapshot at commit time
+    probability_at_commit: Mapped[Optional[float]] = mapped_column(Float)
+    risk_level_at_commit: Mapped[Optional[str]] = mapped_column(String(20))
+    expected_probability_after: Mapped[Optional[float]] = mapped_column(Float)
+    expected_lift: Mapped[Optional[float]] = mapped_column(Float)  # negative = risk down
+    decision_summary: Mapped[Optional[str]] = mapped_column(Text)
+    case_snapshot: Mapped[Optional[dict]] = mapped_column(JSON)  # features, drivers, recs meta
+
+    # Recheck schedule (B3 backbone)
+    recheck_interval_days: Mapped[int] = mapped_column(Integer, default=30)
+    recheck_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    last_checkin_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    checkin_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Outcome / autopsy (filled on check-in)
+    actual_outcome: Mapped[Optional[str]] = mapped_column(String(50))
+    outcome_notes: Mapped[Optional[str]] = mapped_column(Text)
+    autopsy_narrative: Mapped[Optional[str]] = mapped_column(Text)
+
+    committed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    project: Mapped["Project"] = relationship(back_populates="decisions")
+    prediction: Mapped[Optional["ProjectPrediction"]] = relationship(back_populates="decisions")
 
 
 # =============================================================================

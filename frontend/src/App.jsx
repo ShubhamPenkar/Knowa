@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/common/Layout'
 
-// SaaS Pages
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Datasets from './pages/Datasets'
@@ -13,52 +12,36 @@ import AnalyticsSaaS from './pages/AnalyticsSaaS'
 import Explainability from './pages/Explainability'
 import WhatIf from './pages/WhatIf'
 
-// Protected Route wrapper
-function ProtectedRoute({ children }) {
-  const { token, loading } = useAuth();
-  
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
-  
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  return children;
+function Loader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-paper">
+      <div
+        className="h-6 w-6 border-2 border-teal border-t-transparent rounded-full animate-spin"
+        aria-label="Loading"
+      />
+    </div>
+  )
 }
 
-// Public Route wrapper (redirect if logged in)
+function ProtectedRoute({ children }) {
+  const { token, loading } = useAuth()
+  if (loading) return <Loader />
+  if (!token) return <Navigate to="/login" replace />
+  return children
+}
+
 function PublicRoute({ children }) {
-  const { token, loading } = useAuth();
-  
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
-  
-  if (token) {
-    return <Navigate to="/" replace />;
-  }
-  
-  return children;
+  const { token, loading } = useAuth()
+  if (loading) return <Loader />
+  if (token) return <Navigate to="/" replace />
+  return children
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Routes */}
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
-      
-      {/* Protected SaaS Routes */}
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Projects />} />
         <Route path="datasets" element={<Datasets />} />
@@ -69,7 +52,7 @@ function AppRoutes() {
         <Route path="analytics" element={<AnalyticsSaaS />} />
       </Route>
     </Routes>
-  );
+  )
 }
 
 function App() {

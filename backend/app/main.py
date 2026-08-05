@@ -33,10 +33,19 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    # Startup
+    import os
+
+    # Ensure data directories exist (models, uploads, sqlite)
+    for sub in ("", "models", "raw", "processed", "uploads"):
+        path = os.path.join(settings.data_path, sub) if sub else settings.data_path
+        os.makedirs(path, exist_ok=True)
+
     init_db()
+    # Ensure all ORM tables (incl. B3 decisions) are registered
+    import app.db.models  # noqa: F401
+    from app.database import Base, engine
+    Base.metadata.create_all(bind=engine)
     yield
-    # Shutdown
 
 
 app = FastAPI(
@@ -63,11 +72,11 @@ Use either:
 
 ## Quick Start
 
-1. `POST /api/v1/auth/signup` - Create organization
-2. `POST /api/v1/datasets` - Upload CSV data
-3. `POST /api/v1/projects` - Create prediction project
-4. `POST /api/v1/projects/{id}/train` - Train model
-5. `POST /api/v1/projects/{id}/predict` - Make predictions!
+1. `POST /api/auth/signup` - Create organization
+2. `POST /api/datasets` - Upload CSV data
+3. `POST /api/projects` - Create prediction project
+4. `POST /api/projects/{id}/train` - Train model
+5. `POST /api/projects/{id}/predict` - Make predictions!
 """,
     lifespan=lifespan,
 )
@@ -111,17 +120,17 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "saas_endpoints": {
-            "signup": "/api/v1/auth/signup",
-            "login": "/api/v1/auth/login",
-            "datasets": "/api/v1/datasets",
-            "projects": "/api/v1/projects",
-            "actions": "/api/v1/actions",
+            "signup": "/api/auth/signup",
+            "login": "/api/auth/login",
+            "datasets": "/api/datasets",
+            "projects": "/api/projects",
+            "actions": "/api/actions",
         },
         "demo_endpoints": {
-            "predict": "/api/v1/predict",
-            "explain": "/api/v1/explain/{id}",
-            "recommend": "/api/v1/recommend/{id}",
-            "simulate": "/api/v1/simulate",
+            "predict": "/api/predict",
+            "explain": "/api/explain/{id}",
+            "recommend": "/api/recommend/{id}",
+            "simulate": "/api/simulate",
         },
     }
 

@@ -26,6 +26,10 @@ scikit-learn==1.4.0
 xgboost==2.0.3
 lightgbm==4.3.0
 optuna==3.5.0
+# Optional Phase 1b foundation path (heavy: torch). Without it, Knowa uses
+# HistGradientBoosting under the foundation_model strategy.
+# pip install tabpfn
+# tabpfn>=2.0.0
 
 # Explainability
 shap==0.44.1

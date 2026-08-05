@@ -55,8 +55,16 @@ class PredictionRequest(BaseModel):
             raise ValueError("Either customer_id or features must be provided")
 
 
+class ConfidenceInterval(BaseModel):
+    """Conformal prediction interval around the point estimate."""
+    lower: float
+    upper: float
+    level: float = Field(0.9, description="Target coverage level, e.g. 0.9")
+    width: Optional[float] = None
+
+
 class PredictionResponse(BaseModel):
-    """Prediction result with confidence."""
+    """Prediction result with confidence and conformal uncertainty."""
     id: str
     customer_id: Optional[str]
     churn_probability: float = Field(..., ge=0, le=1)
@@ -65,7 +73,10 @@ class PredictionResponse(BaseModel):
     model_version: str
     prediction_timestamp: datetime
     features_used: dict[str, Any]
-    
+    confidence_interval: Optional[ConfidenceInterval] = None
+    low_confidence: bool = False
+    abstention_reason: Optional[str] = None
+
     class Config:
         from_attributes = True
 

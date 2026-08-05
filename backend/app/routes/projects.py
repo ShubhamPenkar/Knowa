@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.auth_service import AuthContext, get_auth_context
 from app.services.project_service import ProjectService
+from app.ml.dataset_profiler import ProfilingError
+from app.ml.feature_validation import FeatureValidationError
 
 router = APIRouter()
 
@@ -48,10 +50,42 @@ class SimulateRequest(BaseModel):
     modified_features: dict
 
 
+class BatchPredictRequest(BaseModel):
+    """Triage scoring for many rows (no per-row SHAP/LIME)."""
+    rows: list[dict]
+    entity_ids: list[str | None] | None = None
+    max_rows: int = 1000
+
+
 class FeedbackRequest(BaseModel):
     prediction_id: str
     actual_outcome: str
     action_taken: str | None = None
+    notes: str | None = None
+
+
+class CreateDecisionRequest(BaseModel):
+    """B3: commit an action from a scored case onto the decision ledger."""
+    action_code: str
+    prediction_id: str | None = None
+    action_name: str | None = None
+    action_description: str | None = None
+    entity_id: str | None = None
+    probability: float | None = None
+    risk_level: str | None = None
+    expected_probability_after: float | None = None
+    expected_lift: float | None = None
+    decision_summary: str | None = None
+    case_snapshot: dict | None = None
+    recheck_interval_days: int = 30
+    status: str = "committed"
+
+
+class DecisionCheckInRequest(BaseModel):
+    actual_outcome: str | None = None
+    notes: str | None = None
+    close: bool = False
+    schedule_next: bool = True
 
 
 # =============================================================================
@@ -93,6 +127,8 @@ async def create_project(
             "feature_count": len(project.feature_columns),
             "created_at": project.created_at.isoformat(),
         }
+    except ProfilingError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -203,6 +239,8 @@ async def update_project(
             "status": project.status,
             "updated_at": project.updated_at.isoformat(),
         }
+    except ProfilingError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -272,6 +310,23 @@ async def train_model(
                 "training_time_seconds": trained_model.training_time_seconds,
             },
         }
+    except ProfilingError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{project_id}/spot-check")
+async def spot_check(
+    project_id: str,
+    limit: int = 50,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Compare held-out known outcomes to model predictions (trust strip)."""
+    service = ProjectService(db, auth.org_id)
+    try:
+        return service.spot_check(project_id, limit=min(limit, 100))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -284,6 +339,8 @@ async def predict(
     db: Session = Depends(get_db)
 ):
     """Make prediction using trained model."""
+    from app.ml.feature_validation import FeatureValidationError
+
     service = ProjectService(db, auth.org_id)
     
     try:
@@ -293,8 +350,40 @@ async def predict(
             entity_id=request.entity_id,
             include_explanations=request.include_explanations,
             include_recommendations=request.include_recommendations,
+            persist=True,
+            source="api",
         )
         return result
+    except FeatureValidationError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{project_id}/predict/batch")
+async def predict_batch(
+    project_id: str,
+    request: BatchPredictRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db)
+):
+    """
+    Batch triage scores (probability / risk / soft) without SHAP/LIME.
+
+    Use single-case /predict for full explanations and recommendations.
+    """
+    from app.ml.feature_validation import FeatureValidationError
+
+    service = ProjectService(db, auth.org_id)
+    try:
+        return service.predict_batch(
+            project_id,
+            rows=request.rows,
+            entity_ids=request.entity_ids,
+            max_rows=min(request.max_rows or 1000, 2000),
+        )
+    except FeatureValidationError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -306,7 +395,9 @@ async def simulate(
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db)
 ):
-    """Run what-if simulation."""
+    """Run what-if simulation (does not persist prediction history)."""
+    from app.ml.feature_validation import FeatureValidationError
+
     service = ProjectService(db, auth.org_id)
     
     try:
@@ -316,6 +407,8 @@ async def simulate(
             modified_features=request.modified_features,
         )
         return result
+    except FeatureValidationError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -327,19 +420,144 @@ async def record_feedback(
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db)
 ):
-    """Record outcome feedback."""
+    """Record or update real-world outcome for a project prediction (A7 log)."""
     service = ProjectService(db, auth.org_id)
-    
-    success = service.record_feedback(
-        prediction_id=request.prediction_id,
-        actual_outcome=request.actual_outcome,
-        action_taken=request.action_taken,
-    )
-    
-    if not success:
+    try:
+        result = service.record_feedback(
+            prediction_id=request.prediction_id,
+            actual_outcome=request.actual_outcome,
+            action_taken=request.action_taken,
+            project_id=project_id,
+            notes=request.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not result:
         raise HTTPException(status_code=404, detail="Prediction not found")
-    
-    return {"message": "Feedback recorded"}
+
+    return result
+
+
+@router.get("/{project_id}/feedback/{prediction_id}")
+async def get_prediction_feedback(
+    project_id: str,
+    prediction_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db)
+):
+    """Get feedback for one prediction if logged."""
+    service = ProjectService(db, auth.org_id)
+    result = service.get_feedback(project_id, prediction_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="No feedback for this prediction")
+    return result
+
+
+@router.get("/{project_id}/feedback-summary")
+async def feedback_summary(
+    project_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db)
+):
+    """A7 aggregate: coverage, model match rate, action effectiveness."""
+    service = ProjectService(db, auth.org_id)
+    try:
+        return service.get_feedback_summary(project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{project_id}/decisions")
+async def create_decision(
+    project_id: str,
+    request: CreateDecisionRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """B3: commit a decision from a case onto the ledger."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.create_from_case(
+            project_id,
+            action_code=request.action_code,
+            prediction_id=request.prediction_id,
+            action_name=request.action_name,
+            action_description=request.action_description,
+            entity_id=request.entity_id,
+            probability=request.probability,
+            risk_level=request.risk_level,
+            expected_probability_after=request.expected_probability_after,
+            expected_lift=request.expected_lift,
+            decision_summary=request.decision_summary,
+            case_snapshot=request.case_snapshot,
+            recheck_interval_days=request.recheck_interval_days,
+            status=request.status,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{project_id}/decisions")
+async def list_decisions(
+    project_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """B3: list decisions on the project ledger."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.list_decisions(project_id, status=status, limit=limit)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{project_id}/decisions/{decision_id}")
+async def get_decision(
+    project_id: str,
+    decision_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """B3: fetch one decision (incl. case snapshot)."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.get_decision(project_id, decision_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{project_id}/decisions/{decision_id}/check-in")
+async def check_in_decision(
+    project_id: str,
+    decision_id: str,
+    request: DecisionCheckInRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """B3: 30/60/90 check-in — log notes/outcome, optionally close or reschedule."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.check_in(
+            project_id,
+            decision_id,
+            actual_outcome=request.actual_outcome,
+            notes=request.notes,
+            close=request.close,
+            schedule_next=request.schedule_next,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{project_id}/predictions")
@@ -374,7 +592,8 @@ async def list_predictions(
             "confidence": p.confidence,
             "actual_outcome": p.actual_outcome,
             "action_taken": p.action_taken,
-            "created_at": p.created_at.isoformat(),
+            "feedback_date": p.feedback_date.isoformat() if p.feedback_date else None,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
         }
         for p in predictions
     ]

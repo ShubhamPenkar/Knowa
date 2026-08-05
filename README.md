@@ -6,8 +6,8 @@ A closed-loop decision intelligence system that predicts business outcomes, expl
 
 ### 1. Prediction Layer
 - Multiple ML models: XGBoost, LightGBM, Random Forest, Logistic Regression
-- Ensemble model for robust predictions
-- Confidence scoring based on model agreement
+- Stacked ensemble (meta-learner on out-of-fold base predictions)
+- Conformal prediction intervals + low_confidence abstention on disagreement / wide CI
 
 ### 2. Explainability Layer
 - **SHAP** explanations (global + local)
@@ -40,6 +40,7 @@ A closed-loop decision intelligence system that predicts business outcomes, expl
 - Python 3.11+
 - Node.js 18+
 - (Optional) Docker
+- macOS + XGBoost: `brew install libomp` if you hit OpenMP/`libomp.dylib` errors
 
 ### Backend Setup
 
@@ -90,7 +91,7 @@ docker-compose up --build
 ## 📁 Project Structure
 
 ```
-xai/
+Knowa/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI entry point
@@ -121,6 +122,21 @@ xai/
 
 ## 📊 API Endpoints
 
+All routes are under `/api` (not `/api/v1`).
+
+### SaaS
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/signup` | POST | Create org + owner |
+| `/api/auth/login` | POST | JWT login |
+| `/api/datasets` | POST | Upload CSV |
+| `/api/projects` | POST | Create project |
+| `/api/projects/{id}/train` | POST | Train model |
+| `/api/projects/{id}/predict` | POST | Predict (incl. CI / low_confidence) |
+
+### Demo (fixed churn schema)
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/predict` | POST | Create churn prediction |
@@ -132,6 +148,10 @@ xai/
 | `/api/model/train` | POST | Trigger model training |
 | `/api/model/metrics` | GET | Get performance metrics |
 
+**First run:** from `backend/`, train before using demo predict:
+
+`python scripts/train_models.py --generate-data`
+
 ## 🔧 Configuration
 
 Key settings in `backend/app/config.py`:
@@ -141,6 +161,26 @@ Key settings in `backend/app/config.py`:
 default_model = "xgboost"  # or ensemble
 confidence_threshold = 0.7
 explanation_consistency_threshold = 0.7
+
+# Conformal / abstention (Phase 1a)
+conformal_alpha = 0.1
+disagreement_threshold = 0.25
+interval_width_threshold = 0.85
+stacking_n_folds = 5
+
+# Model routing (Phase 1b)
+routing_mode = "auto"  # auto | foundation_model | ensemble
+foundation_max_rows = 10_000
+foundation_max_features = 500
+prefer_tabpfn = True  # needs optional `pip install tabpfn`
+
+# Phase 1.5 quality training
+test_size = 0.2
+calib_size = 0.2
+enable_optuna = True
+optuna_trials = 12
+probability_calibration = "isotonic"  # isotonic | sigmoid | none
+early_stopping_rounds = 40
 
 # Recommendation weights
 impact_weight = 0.5

@@ -103,19 +103,15 @@ async def signup(request: SignupRequest, db: Session = Depends(get_db)):
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
     """Login and get JWT token."""
+    from app.db.models import Organization
+
     auth_service = AuthService(db)
     user, token = auth_service.authenticate_user(request.email, request.password)
-    
-    org = db.query(auth_service.db.query.__self__.query(
-        __import__('app.db.models', fromlist=['Organization']).Organization
-    ).filter_by(id=user.organization_id).first().__class__).filter_by(
-        id=user.organization_id
-    ).first()
-    
-    # Simpler approach
-    from app.db.models import Organization
+
     org = db.query(Organization).filter(Organization.id == user.organization_id).first()
-    
+    if not org:
+        raise HTTPException(status_code=401, detail="Organization not found")
+
     return {
         "access_token": token,
         "token_type": "bearer",

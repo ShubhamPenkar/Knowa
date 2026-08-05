@@ -1,3 +1,8 @@
+/**
+ * Legacy demo API client (fixed churn schema under /api/predict, /api/explain, etc.).
+ * The SaaS product UI uses authenticated fetch() against /api/projects, /api/datasets, ...
+ * Keep this file for scripts, demos, or future rewiring of a demo console.
+ */
 import axios from 'axios'
 
 const API_BASE = '/api'
@@ -13,7 +18,7 @@ const api = axios.create({
 export const predictionApi = {
   create: (data) => api.post('/predict', data),
   get: (id) => api.get(`/predict/${id}`),
-  getCustomerPredictions: (customerId, limit = 10) => 
+  getCustomerPredictions: (customerId, limit = 10) =>
     api.get(`/predict/customer/${customerId}?limit=${limit}`),
   getLatest: (customerId) => api.get(`/predict/customer/${customerId}/latest`),
   createCustomer: (data) => api.post('/predict/customer', data),
@@ -33,16 +38,16 @@ export const insightApi = {
 
 // Recommendation API
 export const recommendationApi = {
-  get: (predictionId, topN = 5) => 
+  get: (predictionId, topN = 5) =>
     api.get(`/recommend/${predictionId}?top_n=${topN}`),
-  generate: (predictionId, topN = 5) => 
+  generate: (predictionId, topN = 5) =>
     api.post(`/recommend/${predictionId}/generate?top_n=${topN}`),
 }
 
 // Simulation API
 export const simulationApi = {
   run: (data) => api.post('/simulate', data),
-  fromPrediction: (predictionId, modifiedFeatures) => 
+  fromPrediction: (predictionId, modifiedFeatures) =>
     api.post(`/simulate/from-prediction/${predictionId}`, modifiedFeatures),
 }
 
@@ -55,7 +60,7 @@ export const feedbackApi = {
 
 // Model API
 export const modelApi = {
-  train: (modelType = 'ensemble') => 
+  train: (modelType = 'ensemble') =>
     api.post(`/model/train?model_type=${modelType}`),
   getMetrics: (limit = 10) => api.get(`/model/metrics?limit=${limit}`),
   getVersionMetrics: (version) => api.get(`/model/metrics/${version}`),

@@ -1,7 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+/** Business labels — never show ML jargon to decision users. */
+function humanizeLabel(name) {
+  if (!name) return 'this outcome';
+  return String(name)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function attentionLabel(risk) {
+  const r = String(risk || '').toLowerCase();
+  if (r === 'critical' || r === 'high') return 'Act now';
+  if (r === 'medium') return 'Watch closely';
+  return 'On track';
+}
+
+function attentionTone(risk) {
+  const r = String(risk || '').toLowerCase();
+  if (r === 'critical' || r === 'high') return 'coral';
+  if (r === 'medium') return 'muted';
+  return 'teal';
+}
+
+/**
+ * Business briefing: who needs attention, what tends to drive risk, what to do.
+ * No Accuracy / Feature Importance / Prediction Distribution.
+ */
 export default function AnalyticsSaaS() {
   const { token } = useAuth();
   const [projects, setProjects] = useState([]);
@@ -11,29 +39,26 @@ export default function AnalyticsSaaS() {
   const [projectDetails, setProjectDetails] = useState(null);
 
   useEffect(() => {
-    if (token) {
-      fetchProjects();
-    }
+    if (token) fetchProjects();
   }, [token]);
 
   const fetchProjects = async () => {
     try {
       const res = await fetch('/api/projects', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
         setProjects(data);
-        // Auto-select first trained project (check both 'trained' and 'ready' status)
-        const trainedProject = data.find(p => p.status === 'trained' || p.status === 'ready');
-        if (trainedProject) {
-          setSelectedProject(trainedProject.id);
-          fetchProjectDetails(trainedProject.id);
-          fetchPredictions(trainedProject.id);
+        const trained = data.find((p) => p.status === 'trained' || p.status === 'ready');
+        if (trained) {
+          setSelectedProject(trained.id);
+          fetchProjectDetails(trained.id);
+          fetchPredictions(trained.id);
         }
       }
     } catch (err) {
-      console.error('Error fetching projects:', err);
+      console.error(err);
     }
     setLoading(false);
   };
@@ -41,26 +66,22 @@ export default function AnalyticsSaaS() {
   const fetchProjectDetails = async (projectId) => {
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        setProjectDetails(await res.json());
-      }
+      if (res.ok) setProjectDetails(await res.json());
     } catch (err) {
-      console.error('Error fetching project details:', err);
+      console.error(err);
     }
   };
 
   const fetchPredictions = async (projectId) => {
     try {
       const res = await fetch(`/api/projects/${projectId}/predictions?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        setPredictions(await res.json());
-      }
+      if (res.ok) setPredictions(await res.json());
     } catch (err) {
-      console.error('Error fetching predictions:', err);
+      console.error(err);
     }
   };
 
@@ -75,335 +96,312 @@ export default function AnalyticsSaaS() {
     }
   };
 
-  // Calculate stats - check for both 'trained' and 'ready' status
-  const trainedProjects = projects.filter(p => p.status === 'trained' || p.status === 'ready');
-  const totalPredictions = predictions.length;
-  const highRiskCount = predictions.filter(p => p.risk_level === 'high' || p.risk_level === 'critical').length;
-  const avgProbability = predictions.length > 0 
-    ? predictions.reduce((sum, p) => sum + p.probability, 0) / predictions.length 
-    : 0;
+  const outcomeName = humanizeLabel(
+    projectDetails?.target_description || projectDetails?.target_column || 'outcome'
+  );
 
-  // Risk distribution
-  const riskDistribution = {
-    critical: predictions.filter(p => p.risk_level === 'critical').length,
-    high: predictions.filter(p => p.risk_level === 'high').length,
-    medium: predictions.filter(p => p.risk_level === 'medium').length,
-    low: predictions.filter(p => p.risk_level === 'low').length,
-  };
+  const readyProjects = projects.filter((p) => p.status === 'trained' || p.status === 'ready');
+
+  const stats = useMemo(() => {
+    const needsAction = predictions.filter(
+      (p) => p.risk_level === 'high' || p.risk_level === 'critical'
+    );
+    const watch = predictions.filter((p) => p.risk_level === 'medium');
+    const stable = predictions.filter((p) => p.risk_level === 'low' || !p.risk_level);
+    const uncertain = predictions.filter((p) => p.low_confidence);
+    return {
+      needsAction: needsAction.length,
+      watch: watch.length,
+      stable: stable.length,
+      uncertain: uncertain.length,
+      total: predictions.length,
+    };
+  }, [predictions]);
+
+  const topDrivers = useMemo(() => {
+    const fi = projectDetails?.active_model?.feature_importance;
+    if (!fi || typeof fi !== 'object') return [];
+    return Object.entries(fi)
+      .sort((a, b) => Math.abs(Number(b[1])) - Math.abs(Number(a[1])))
+      .slice(0, 5)
+      .map(([name, score]) => ({
+        name: humanizeLabel(name),
+        strength: Math.min(100, Math.round(Math.abs(Number(score)) * 100)),
+      }));
+  }, [projectDetails]);
+
+  const priorityQueue = useMemo(() => {
+    return [...predictions]
+      .filter((p) => p.risk_level === 'high' || p.risk_level === 'critical' || p.risk_level === 'medium')
+      .sort((a, b) => {
+        const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+        const r =
+          (rank[String(a.risk_level).toLowerCase()] ?? 9) -
+          (rank[String(b.risk_level).toLowerCase()] ?? 9);
+        if (r !== 0) return r;
+        return (b.probability || 0) - (a.probability || 0);
+      })
+      .slice(0, 8);
+  }, [predictions]);
 
   if (loading) {
     return (
-      <div className="p-6 flex justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-brand-teal-dark border-t-transparent rounded-full"></div>
+      <div className="page flex justify-center items-center min-h-[40vh]">
+        <div className="h-6 w-6 border-2 border-teal border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-brand-dark">Analytics</h1>
-        <p className="text-gray-600">Overview of your prediction models and insights</p>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Decision brief</p>
+          <h1 className="page-title">Priorities</h1>
+          <p className="page-sub max-w-xl">
+            Who needs attention for {outcomeName.toLowerCase()}, what usually drives it, and where to act first.
+          </p>
+        </div>
       </div>
 
-      {trainedProjects.length === 0 ? (
-        <div className="bg-brand-teal/10 rounded-xl p-8 text-center">
-          <h3 className="text-lg font-medium text-brand-dark mb-2">No Trained Models Yet</h3>
-          <p className="text-gray-600 mb-4">
-            Train a model first to see analytics and insights.
+      {readyProjects.length === 0 ? (
+        <div className="empty-state">
+          <h3 className="font-display text-xl font-semibold text-ink mb-2">Nothing ready yet</h3>
+          <p className="text-[var(--muted)] mb-6 text-sm max-w-md mx-auto">
+            Connect a dataset, set up a project, and prepare it — then this brief fills with who to focus on.
           </p>
-          <Link
-            to="/projects"
-            className="px-4 py-2 bg-brand-teal-dark text-white rounded-lg hover:bg-brand-teal inline-block"
-          >
-            Go to Projects
+          <Link to="/projects" className="btn-primary">
+            Go to projects
           </Link>
         </div>
       ) : (
         <>
-          {/* Project Selector */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select Project</label>
+          <div className="mb-8">
+            <label htmlFor="brief-project" className="block text-sm font-medium text-ink mb-2">
+              Looking at
+            </label>
             <select
+              id="brief-project"
               value={selectedProject || ''}
               onChange={(e) => handleProjectChange(e.target.value)}
-              className="px-4 py-2 border rounded-lg bg-white min-w-64"
+              className="input max-w-md"
             >
-              {trainedProjects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              {readyProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
               ))}
             </select>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border-l-4 border-l-brand-teal-dark">
-              <div className="text-gray-500 text-sm">Trained Models</div>
-              <div className="text-3xl font-bold text-brand-dark">{trainedProjects.length}</div>
+          {/* What matters today */}
+          <section className="mb-10">
+            <h2 className="font-display text-lg font-semibold text-ink mb-1">Today&apos;s focus</h2>
+            <p className="text-sm text-[var(--muted)] mb-4">
+              Based on recent assessments in this project
+              {stats.total ? ` (${stats.total} reviewed)` : ''}.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-mist border border-mist">
+              {[
+                {
+                  label: 'Need action',
+                  value: stats.needsAction,
+                  hint: 'High likelihood — intervene soon',
+                  accent: 'text-coral',
+                },
+                {
+                  label: 'Watch closely',
+                  value: stats.watch,
+                  hint: 'Elevated — stay close',
+                  accent: 'text-ink',
+                },
+                {
+                  label: 'On track',
+                  value: stats.stable,
+                  hint: 'Lower risk — maintain course',
+                  accent: 'text-teal',
+                },
+                {
+                  label: 'Uncertain calls',
+                  value: stats.uncertain,
+                  hint: 'Review before acting hard',
+                  accent: 'text-[var(--muted)]',
+                },
+              ].map((cell) => (
+                <div key={cell.label} className="bg-paper px-4 py-5">
+                  <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                    {cell.label}
+                  </div>
+                  <div className={`mt-1 font-display text-3xl font-semibold tabular-nums ${cell.accent}`}>
+                    {stats.total ? cell.value : '—'}
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--muted)] leading-snug">{cell.hint}</p>
+                </div>
+              ))}
             </div>
-            <div className="bg-white rounded-xl p-6 shadow-sm border-l-4 border-l-brand-teal">
-              <div className="text-gray-500 text-sm">Total Predictions</div>
-              <div className="text-3xl font-bold text-brand-teal-dark">{totalPredictions}</div>
-            </div>
-            <div className="bg-white rounded-xl p-6 shadow-sm border-l-4 border-l-red-500">
-              <div className="text-gray-500 text-sm">High Risk Cases</div>
-              <div className="text-3xl font-bold text-red-600">{highRiskCount}</div>
-            </div>
-            <div className="bg-white rounded-xl p-6 shadow-sm border-l-4 border-l-brand-teal group relative">
-              <div className="text-gray-500 text-sm flex items-center gap-1">
-                Avg Probability
-                <span className="cursor-help text-gray-400" title="Average prediction probability across all analyzed records. Higher values indicate the model is predicting more positive cases (e.g., more likely to churn).">ⓘ</span>
-              </div>
-              <div className="text-3xl font-bold text-brand-teal-dark">{(avgProbability * 100).toFixed(1)}%</div>
-              <div className="text-xs text-gray-400 mt-1">Across all predictions</div>
-            </div>
-          </div>
+            {stats.total === 0 && (
+              <p className="mt-4 text-sm text-[var(--muted)]">
+                No recent cases yet.{' '}
+                <Link to={`/projects/${selectedProject}`} className="text-teal hover:underline">
+                  Review people or accounts
+                </Link>{' '}
+                to fill this brief.
+              </p>
+            )}
+          </section>
 
-          {/* Risk Distribution */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border">
-              <h3 className="text-lg font-semibold text-brand-dark mb-4">Risk Distribution</h3>
-              {totalPredictions === 0 ? (
-                <p className="text-gray-500">No predictions yet. Make some predictions to see distribution.</p>
+          <div className="grid lg:grid-cols-5 gap-10 mb-10">
+            {/* Priority queue */}
+            <section className="lg:col-span-3 min-w-0">
+              <h2 className="font-display text-lg font-semibold text-ink mb-1">Who to prioritize</h2>
+              <p className="text-sm text-[var(--muted)] mb-4">
+                Sorted by urgency for {outcomeName.toLowerCase()}.
+              </p>
+              {priorityQueue.length === 0 ? (
+                <div className="border border-mist px-5 py-8 text-sm text-[var(--muted)]">
+                  {stats.total === 0
+                    ? 'Assess a few rows on the project page to build a queue.'
+                    : 'No elevated cases in recent assessments — stack looks healthy.'}
+                </div>
               ) : (
-                <div className="space-y-3">
-                  {[
-                    { level: 'Critical', count: riskDistribution.critical, color: 'bg-red-600' },
-                    { level: 'High', count: riskDistribution.high, color: 'bg-brand-teal-dark' },
-                    { level: 'Medium', count: riskDistribution.medium, color: 'bg-brand-teal' },
-                    { level: 'Low', count: riskDistribution.low, color: 'bg-green-500' },
-                  ].map(({ level, count, color }) => (
-                    <div key={level} className="flex items-center gap-3">
-                      <span className="w-16 text-sm text-gray-600">{level}</span>
-                      <div className="flex-1 h-6 bg-brand-light rounded-full overflow-hidden">
+                <ol className="border-t border-mist divide-y divide-mist">
+                  {priorityQueue.map((pred, idx) => {
+                    const tone = attentionTone(pred.risk_level);
+                    const pct =
+                      pred.probability != null
+                        ? Math.round(Number(pred.probability) * 100)
+                        : null;
+                    return (
+                      <li key={pred.id || idx} className="py-4 flex flex-wrap items-start gap-4">
+                        <span className="text-[var(--muted)] tabular-nums w-6 shrink-0 pt-0.5">
+                          {idx + 1}.
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`badge border ${
+                                tone === 'coral'
+                                  ? 'bg-coral-soft border-coral/30'
+                                  : tone === 'teal'
+                                    ? 'bg-teal-soft/50 border-teal/20'
+                                    : 'bg-mist border-mist'
+                              }`}
+                            >
+                              {attentionLabel(pred.risk_level)}
+                            </span>
+                            {pred.low_confidence && (
+                              <span className="text-xs text-coral">Double-check before big moves</span>
+                            )}
+                          </div>
+                          <p className="mt-1.5 text-sm text-ink">
+                            {pct != null ? (
+                              <>
+                                About <strong className="font-semibold tabular-nums">{pct}%</strong> likelihood
+                                of {outcomeName.toLowerCase()}
+                              </>
+                            ) : (
+                              'Elevated case'
+                            )}
+                            {pred.entity_id ? (
+                              <span className="text-[var(--muted)]"> · {pred.entity_id}</span>
+                            ) : null}
+                          </p>
+                          {pred.created_at && (
+                            <p className="text-xs text-[var(--muted)] mt-1">
+                              Reviewed {new Date(pred.created_at).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+              {selectedProject && (
+                <Link
+                  to={`/projects/${selectedProject}`}
+                  className="inline-flex mt-5 text-sm font-medium text-teal hover:underline"
+                >
+                  Open full case list →
+                </Link>
+              )}
+            </section>
+
+            {/* What drives this */}
+            <section className="lg:col-span-2">
+              <h2 className="font-display text-lg font-semibold text-ink mb-1">What usually drives it</h2>
+              <p className="text-sm text-[var(--muted)] mb-4">
+                Patterns that most often push {outcomeName.toLowerCase()} up or down for this project.
+              </p>
+              {topDrivers.length === 0 ? (
+                <p className="text-sm text-[var(--muted)] border border-mist px-4 py-6">
+                  Patterns appear after the project is prepared. Retrain if you recently changed the data.
+                </p>
+              ) : (
+                <ul className="space-y-4">
+                  {topDrivers.map((d) => (
+                    <li key={d.name}>
+                      <div className="flex justify-between gap-3 text-sm mb-1.5">
+                        <span className="text-ink font-medium">{d.name}</span>
+                        <span className="text-[var(--muted)] tabular-nums shrink-0">
+                          {d.strength > 60 ? 'Strong' : d.strength > 30 ? 'Moderate' : 'Mild'}
+                        </span>
+                      </div>
+                      <div className="h-1 bg-mist rounded-[1px] overflow-hidden">
                         <div
-                          className={`h-full ${color} transition-all`}
-                          style={{ width: `${totalPredictions > 0 ? (count / totalPredictions) * 100 : 0}%` }}
+                          className="h-full bg-teal"
+                          style={{ width: `${Math.max(d.strength, 8)}%` }}
                         />
                       </div>
-                      <span className="w-12 text-sm text-brand-dark text-right">{count}</span>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
-            </div>
-
-            {/* Model Performance */}
-            {selectedProject && (
-              <div className="bg-white rounded-xl p-6 shadow-sm border">
-                <h3 className="text-lg font-semibold text-brand-dark mb-4">Model Performance</h3>
-                {(() => {
-                  const project = projects.find(p => p.id === selectedProject);
-                  if (!project) return <p className="text-gray-500">Select a project</p>;
-                  
-                  // Use projectDetails.active_model for metrics
-                  const model = projectDetails?.active_model;
-                  const isRegression = projectDetails?.problem_type === 'regression';
-                  
-                  return (
-                    <div className="grid grid-cols-2 gap-4">
-                      {isRegression ? (
-                        <>
-                          <div className="bg-green-50 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-green-700">
-                              {model?.mae ? model.mae.toFixed(4) : '--'}
-                            </div>
-                            <div className="text-sm text-green-600">MAE</div>
-                          </div>
-                          <div className="bg-brand-teal/10 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-brand-teal-dark">
-                              {model?.r2_score ? (model.r2_score * 100).toFixed(1) : '--'}%
-                            </div>
-                            <div className="text-sm text-brand-teal-dark">R² Score</div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="bg-green-50 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-green-700">
-                              {model?.accuracy ? (model.accuracy * 100).toFixed(1) : '--'}%
-                            </div>
-                            <div className="text-sm text-green-600">Accuracy</div>
-                          </div>
-                          <div className="bg-brand-teal/10 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-brand-teal-dark">
-                              {model?.f1_score ? (model.f1_score * 100).toFixed(1) : '--'}%
-                            </div>
-                            <div className="text-sm text-brand-teal-dark">F1 Score</div>
-                          </div>
-                        </>
-                      )}
-                      <div className="bg-brand-teal/10 rounded-lg p-4 text-center">
-                        <div className="text-2xl font-bold text-brand-teal-dark">
-                          {projectDetails?.feature_columns?.length ?? project.feature_count ?? '--'}
-                        </div>
-                        <div className="text-sm text-brand-teal-dark">Features</div>
-                      </div>
-                      <div className="bg-brand-light rounded-lg p-4 text-center">
-                        <div className="text-2xl font-bold text-brand-dark text-base">
-                          {project.target_column || '--'}
-                        </div>
-                        <div className="text-sm text-gray-600">Target</div>
-                      </div>
-                    </div>
-                  );
-                })()}
+              <div className="mt-8 border-l-2 border-teal pl-4">
+                <p className="text-sm text-ink leading-relaxed">
+                  Use these as a checklist when reviewing borderline cases — they are the levers that tend to change the outcome.
+                </p>
               </div>
-            )}
+            </section>
           </div>
 
-          {/* Feature Importance & Model Insights */}
-          {projectDetails?.active_model && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              {/* Feature Importance */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border">
-                <h3 className="text-lg font-semibold text-brand-dark mb-4">Feature Importance</h3>
-                {projectDetails.active_model.feature_importance && Object.keys(projectDetails.active_model.feature_importance).length > 0 ? (
-                  <div className="space-y-3">
-                    {Object.entries(projectDetails.active_model.feature_importance)
-                      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-                      .slice(0, 8)
-                      .map(([feature, importance]) => (
-                        <div key={feature} className="flex items-center gap-3">
-                          <span className="w-32 text-sm text-gray-600 truncate" title={feature}>{feature}</span>
-                          <div className="flex-1 h-4 bg-brand-light rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${importance > 0 ? 'bg-brand-teal-dark' : 'bg-brand-teal'}`}
-                              style={{ width: `${Math.min(Math.abs(importance) * 100, 100)}%` }}
-                            />
-                          </div>
-                          <span className="w-16 text-sm text-brand-dark text-right">
-                            {(Math.abs(importance) * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500">Feature importance not available for this model.</p>
-                )}
-              </div>
-
-              {/* Quick Insights */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border">
-                <h3 className="text-lg font-semibold text-brand-dark mb-4">Model Insights</h3>
-                <div className="space-y-3">
-                  {/* Top driver */}
-                  {projectDetails.active_model.feature_importance && (
-                    <div className="p-3 bg-brand-teal/10 rounded-lg">
-                      <div className="text-sm font-medium text-blue-800">🎯 Top Predictor</div>
-                      <div className="text-brand-teal-dark">
-                        {Object.entries(projectDetails.active_model.feature_importance)
-                          .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0]?.[0] || 'N/A'}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Model type */}
-                  <div className="p-3 bg-brand-teal/10 rounded-lg">
-                    <div className="text-sm font-medium text-brand-dark">🤖 Model Type</div>
-                    <div className="text-brand-teal-dark">Ensemble (XGBoost + LightGBM + RF + LR)</div>
-                  </div>
-                  
-                  {/* Problem type */}
-                  <div className="p-3 bg-brand-teal/10 rounded-lg">
-                    <div className="text-sm font-medium text-brand-dark">📊 Problem Type</div>
-                    <div className="text-brand-teal-dark capitalize">
-                      {projectDetails.problem_type?.replace('_', ' ') || 'Classification'}
-                    </div>
-                  </div>
-
-                  {/* Training date */}
-                  <div className="p-3 bg-brand-light rounded-lg">
-                    <div className="text-sm font-medium text-brand-dark">📅 Trained On</div>
-                    <div className="text-gray-700">
-                      {projectDetails.active_model.trained_at 
-                        ? new Date(projectDetails.active_model.trained_at).toLocaleDateString()
-                        : 'N/A'}
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {/* Simple next steps */}
+          <section className="border-t border-mist pt-8">
+            <h2 className="font-display text-lg font-semibold text-ink mb-3">Suggested next steps</h2>
+            <ol className="space-y-3 text-sm text-ink max-w-2xl">
+              <li className="flex gap-3">
+                <span className="text-teal font-semibold tabular-nums">1</span>
+                <span>
+                  Start with the <strong>Need action</strong> queue — reach out or intervene before the risk solidifies.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-teal font-semibold tabular-nums">2</span>
+                <span>
+                  For any case marked uncertain, open the project, pick that row, and read{' '}
+                  <em>why</em> the call is soft before committing budget.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-teal font-semibold tabular-nums">3</span>
+                <span>
+                  Use <strong>Try a scenario</strong> on a project to test “what if we improved X?” before you act in the real world.
+                </span>
+              </li>
+            </ol>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {selectedProject && (
+                <>
+                  <Link to={`/projects/${selectedProject}`} className="btn-primary">
+                    Review cases
+                  </Link>
+                  <Link to={`/projects/${selectedProject}/whatif`} className="btn-secondary">
+                    Try a scenario
+                  </Link>
+                </>
+              )}
             </div>
-          )}
-
-          {/* Prediction Accuracy Summary - if we have predictions */}
-          {predictions.length > 0 && (
-            <div className="bg-white rounded-xl p-6 shadow-sm border mb-6">
-              <h3 className="text-lg font-semibold text-brand-dark mb-4">Prediction Distribution</h3>
-              <div className="grid grid-cols-5 gap-2">
-                {[
-                  { range: '0-20%', color: 'bg-green-500' },
-                  { range: '20-40%', color: 'bg-brand-teal' },
-                  { range: '40-60%', color: 'bg-brand-teal-dark' },
-                  { range: '60-80%', color: 'bg-brand-dark' },
-                  { range: '80-100%', color: 'bg-red-500' },
-                ].map(({ range, color }, i) => {
-                  const low = i * 0.2;
-                  const high = (i + 1) * 0.2;
-                  const count = predictions.filter(p => p.probability >= low && p.probability < high).length;
-                  const pct = predictions.length > 0 ? (count / predictions.length) * 100 : 0;
-                  
-                  return (
-                    <div key={range} className="text-center">
-                      <div className={`h-24 ${color} rounded-t-lg flex items-end justify-center relative`}
-                           style={{ opacity: 0.3 + (pct / 100) * 0.7 }}>
-                        <div className={`${color} w-full rounded-t-lg absolute bottom-0`} 
-                             style={{ height: `${Math.max(pct, 5)}%` }} />
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">{range}</div>
-                      <div className="text-sm font-medium">{count}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Recent Predictions */}
-          {predictions.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border">
-              <div className="p-4 border-b">
-                <h3 className="text-lg font-semibold text-brand-dark">Recent Predictions</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-gray-600">Date</th>
-                      <th className="px-4 py-2 text-left text-gray-600">Probability</th>
-                      <th className="px-4 py-2 text-left text-gray-600">Risk Level</th>
-                      <th className="px-4 py-2 text-left text-gray-600">Confidence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {predictions.slice(0, 10).map((pred, idx) => (
-                      <tr key={pred.id || idx} className="border-t">
-                        <td className="px-4 py-2 text-gray-600">
-                          {new Date(pred.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-4 py-2 font-medium">
-                          {(pred.probability * 100).toFixed(1)}%
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            pred.risk_level === 'critical' ? 'bg-red-100 text-red-700' :
-                            pred.risk_level === 'high' ? 'bg-orange-100 text-orange-700' :
-                            pred.risk_level === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-green-100 text-green-700'
-                          }`}>
-                            {pred.risk_level}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-gray-600">
-                          {(pred.confidence * 100).toFixed(0)}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          </section>
         </>
       )}
     </div>

@@ -1,0 +1,127 @@
+{
+  "checks": [
+    {
+      "bug": "Store_Sales_string_as_categorical",
+      "caught": true,
+      "detail": {
+        "column_name": "Store_Sales",
+        "inferred_type": "numeric",
+        "n_rows": 896,
+        "n_unique": 816,
+        "null_frac": 0.0,
+        "numeric_parse_frac": 1.0,
+        "issues": [
+          "coerced_numeric_from_text"
+        ],
+        "action_taken": "keep_as_numeric",
+        "failed_parse_samples": [],
+        "sample_values": [
+          "116320",
+          "105150",
+          "102920",
+          "102310",
+          "101820"
+        ],
+        "reason": "Numeric-looking text coerced to numeric (parse_frac=1.000 \u2265 0.95)."
+      }
+    },
+    {
+      "bug": "Store_ID_trailing_space_as_feature",
+      "caught": true,
+      "detail": {
+        "column_name": "Store ID ",
+        "inferred_type": "id",
+        "n_rows": 896,
+        "n_unique": 896,
+        "null_frac": 0.0,
+        "numeric_parse_frac": 1.0,
+        "issues": [
+          "likely_identifier"
+        ],
+        "action_taken": "exclude_as_id",
+        "failed_parse_samples": [],
+        "sample_values": [
+          "650",
+          "869",
+          "433",
+          "409",
+          "759"
+        ],
+        "reason": "Excluded as likely identifier \u2014 override if this is a real feature. (name_looks_like_id, sequential_surrogate_key, uniqueness=1.000)"
+      }
+    },
+    {
+      "bug": "positive_label_1_on_High_Medium_Low",
+      "caught": true,
+      "present": [
+        "High",
+        "Low",
+        "Medium"
+      ]
+    },
+    {
+      "bug": "EmployeeNumber_as_feature",
+      "caught": true
+    },
+    {
+      "bug": "HR_constants_still_required",
+      "caught": true
+    },
+    {
+      "bug": "Gender_OverTime_zeroed_as_numeric",
+      "caught": true,
+      "gender": "categorical",
+      "overtime": "categorical"
+    },
+    {
+      "bug": "positive_label_1_on_Yes_No_Attrition",
+      "caught": true
+    },
+    {
+      "bug": "constants_removed_from_feature_list",
+      "caught": true
+    },
+    {
+      "bug": "customerID_as_feature",
+      "caught": true
+    },
+    {
+      "bug": "TotalCharges_numeric_object",
+      "caught": true,
+      "parse_frac": 1.0
+    },
+    {
+      "bug": "positive_label_1_on_Yes_No_Churn",
+      "caught": true,
+      "suggested": "Yes"
+    }
+  ],
+  "all_caught": true,
+  "n_caught": 11,
+  "n_total": 11,
+  "datasets": {
+    "superstore": {
+      "excluded_as_id": [
+        "Store ID "
+      ],
+      "dropped_as_constant": []
+    },
+    "hr": {
+      "excluded_as_id": [
+        "EmployeeNumber"
+      ],
+      "dropped_as_constant": [
+        "EmployeeCount",
+        "Over18",
+        "StandardHours"
+      ],
+      "n_features_after": 30
+    },
+    "telco": {
+      "excluded_as_id": [
+        "customerID"
+      ],
+      "dropped_as_constant": []
+    }
+  }
+}

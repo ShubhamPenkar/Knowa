@@ -1,4 +1,4 @@
-"""Prediction API routes."""
+"""Prediction API routes (demo / fixed-schema churn path)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from app.schemas import (
     CustomerResponse,
 )
 from app.services.prediction_service import PredictionService
+from app.ml.feature_validation import FeatureValidationError
 
 router = APIRouter()
 
@@ -22,7 +23,7 @@ async def create_prediction(
 ):
     """
     Create a new churn prediction.
-    
+
     Provide either:
     - `customer_id`: For existing customer
     - `features`: For new/anonymous prediction
@@ -34,36 +35,15 @@ async def create_prediction(
             features=request.features.model_dump() if request.features else None
         )
         return result
+    except FeatureValidationError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 
-@router.get("/{prediction_id}", response_model=PredictionResponse)
-async def get_prediction(
-    prediction_id: str,
-    db: Session = Depends(get_db)
-):
-    """Get a specific prediction by ID."""
-    service = PredictionService(db)
-    result = service.get_prediction(prediction_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Prediction not found")
-    return result
-
-
-@router.get("/customer/{customer_id}", response_model=list[PredictionResponse])
-async def get_customer_predictions(
-    customer_id: str,
-    limit: int = 10,
-    db: Session = Depends(get_db)
-):
-    """Get prediction history for a customer."""
-    service = PredictionService(db)
-    return service.get_customer_predictions(customer_id, limit=limit)
-
-
+# Static path segments MUST be registered before /{prediction_id}
 @router.post("/customer", response_model=CustomerResponse)
 async def create_customer(
     customer: CustomerCreate,
@@ -80,6 +60,17 @@ async def create_customer(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/customer/{customer_id}", response_model=list[PredictionResponse])
+async def get_customer_predictions(
+    customer_id: str,
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """Get prediction history for a customer."""
+    service = PredictionService(db)
+    return service.get_customer_predictions(customer_id, limit=limit)
+
+
 @router.get("/customer/{customer_id}/latest", response_model=PredictionResponse)
 async def get_latest_prediction(
     customer_id: str,
@@ -90,4 +81,17 @@ async def get_latest_prediction(
     result = service.get_latest_prediction(customer_id)
     if not result:
         raise HTTPException(status_code=404, detail="No predictions found for customer")
+    return result
+
+
+@router.get("/{prediction_id}", response_model=PredictionResponse)
+async def get_prediction(
+    prediction_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get a specific prediction by ID."""
+    service = PredictionService(db)
+    result = service.get_prediction(prediction_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Prediction not found")
     return result

@@ -1,0 +1,445 @@
+{
+  "project_id": "6073ce25-10bc-4ca8-aef3-c2b2186935e0",
+  "class_counts": {
+    "No": 1233,
+    "Yes": 237
+  },
+  "positive_label": "Yes",
+  "positive_count": 237,
+  "label_ok": true,
+  "id_like_in_dataset": [],
+  "id_like_in_selected": [],
+  "constants": {
+    "EmployeeCount": {
+      "present": true,
+      "nunique": 1,
+      "sample": [
+        "1"
+      ],
+      "in_selected_features": true,
+      "is_constant": true
+    },
+    "StandardHours": {
+      "present": true,
+      "nunique": 1,
+      "sample": [
+        "80"
+      ],
+      "in_selected_features": true,
+      "is_constant": true
+    },
+    "Over18": {
+      "present": true,
+      "nunique": 1,
+      "sample": [
+        "Y"
+      ],
+      "in_selected_features": true,
+      "is_constant": true
+    }
+  },
+  "fresh_fit_dropped": [
+    "EmployeeCount",
+    "Over18",
+    "StandardHours"
+  ],
+  "fresh_fit_dropped_reasons": {
+    "EmployeeCount": "constant",
+    "Over18": "constant",
+    "StandardHours": "constant"
+  },
+  "fresh_fit_numeric": [
+    "Age",
+    "BusinessTravel",
+    "DailyRate",
+    "Department",
+    "DistanceFromHome",
+    "Education",
+    "EducationField",
+    "EmployeeNumber",
+    "EnvironmentSatisfaction",
+    "Gender",
+    "HourlyRate",
+    "JobInvolvement",
+    "JobLevel",
+    "JobRole",
+    "JobSatisfaction",
+    "MaritalStatus",
+    "MonthlyIncome",
+    "MonthlyRate",
+    "NumCompaniesWorked",
+    "OverTime",
+    "PercentSalaryHike",
+    "PerformanceRating",
+    "RelationshipSatisfaction",
+    "StockOptionLevel",
+    "TotalWorkingYears",
+    "TrainingTimesLastYear",
+    "WorkLifeBalance",
+    "YearsAtCompany",
+    "YearsInCurrentRole",
+    "YearsSinceLastPromotion",
+    "YearsWithCurrManager"
+  ],
+  "fresh_fit_categorical": [],
+  "miscoerce_flags": [],
+  "column_typing": [
+    {
+      "col": "Age",
+      "dtype": "int64",
+      "nunique": 43,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "BusinessTravel",
+      "dtype": "str",
+      "nunique": 3,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "DailyRate",
+      "dtype": "int64",
+      "nunique": 886,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "Department",
+      "dtype": "str",
+      "nunique": 3,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "DistanceFromHome",
+      "dtype": "int64",
+      "nunique": 29,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "Education",
+      "dtype": "int64",
+      "nunique": 5,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "EducationField",
+      "dtype": "str",
+      "nunique": 6,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "EmployeeCount",
+      "dtype": "int64",
+      "nunique": 1,
+      "mostly_numeric": true,
+      "pipeline_role": "dropped:constant",
+      "id_like": false
+    },
+    {
+      "col": "EmployeeNumber",
+      "dtype": "int64",
+      "nunique": 1470,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "EnvironmentSatisfaction",
+      "dtype": "int64",
+      "nunique": 4,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "Gender",
+      "dtype": "str",
+      "nunique": 2,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "HourlyRate",
+      "dtype": "int64",
+      "nunique": 71,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "JobInvolvement",
+      "dtype": "int64",
+      "nunique": 4,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "JobLevel",
+      "dtype": "int64",
+      "nunique": 5,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "JobRole",
+      "dtype": "str",
+      "nunique": 9,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "JobSatisfaction",
+      "dtype": "int64",
+      "nunique": 4,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "MaritalStatus",
+      "dtype": "str",
+      "nunique": 3,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "MonthlyIncome",
+      "dtype": "int64",
+      "nunique": 1349,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "MonthlyRate",
+      "dtype": "int64",
+      "nunique": 1427,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "NumCompaniesWorked",
+      "dtype": "int64",
+      "nunique": 10,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "Over18",
+      "dtype": "str",
+      "nunique": 1,
+      "mostly_numeric": false,
+      "pipeline_role": "dropped:constant",
+      "id_like": false
+    },
+    {
+      "col": "OverTime",
+      "dtype": "str",
+      "nunique": 2,
+      "mostly_numeric": false,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "PercentSalaryHike",
+      "dtype": "int64",
+      "nunique": 15,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "PerformanceRating",
+      "dtype": "int64",
+      "nunique": 2,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "RelationshipSatisfaction",
+      "dtype": "int64",
+      "nunique": 4,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "StandardHours",
+      "dtype": "int64",
+      "nunique": 1,
+      "mostly_numeric": true,
+      "pipeline_role": "dropped:constant",
+      "id_like": false
+    },
+    {
+      "col": "StockOptionLevel",
+      "dtype": "int64",
+      "nunique": 4,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "TotalWorkingYears",
+      "dtype": "int64",
+      "nunique": 40,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "TrainingTimesLastYear",
+      "dtype": "int64",
+      "nunique": 7,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "WorkLifeBalance",
+      "dtype": "int64",
+      "nunique": 4,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "YearsAtCompany",
+      "dtype": "int64",
+      "nunique": 37,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "YearsInCurrentRole",
+      "dtype": "int64",
+      "nunique": 19,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "YearsSinceLastPromotion",
+      "dtype": "int64",
+      "nunique": 16,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    },
+    {
+      "col": "YearsWithCurrManager",
+      "dtype": "int64",
+      "nunique": 18,
+      "mostly_numeric": true,
+      "pipeline_role": "numeric",
+      "id_like": false
+    }
+  ],
+  "active_model": null,
+  "post_fix": {
+    "positive_counts": {
+      "No": 1233,
+      "Yes": 237
+    },
+    "numeric": [
+      "Age",
+      "DailyRate",
+      "DistanceFromHome",
+      "Education",
+      "EnvironmentSatisfaction",
+      "HourlyRate",
+      "JobInvolvement",
+      "JobLevel",
+      "JobSatisfaction",
+      "MonthlyIncome",
+      "MonthlyRate",
+      "NumCompaniesWorked",
+      "PercentSalaryHike",
+      "PerformanceRating",
+      "RelationshipSatisfaction",
+      "StockOptionLevel",
+      "TotalWorkingYears",
+      "TrainingTimesLastYear",
+      "WorkLifeBalance",
+      "YearsAtCompany",
+      "YearsInCurrentRole",
+      "YearsSinceLastPromotion",
+      "YearsWithCurrManager"
+    ],
+    "categorical": [
+      "BusinessTravel",
+      "Department",
+      "EducationField",
+      "Gender",
+      "JobRole",
+      "MaritalStatus",
+      "OverTime"
+    ],
+    "dropped": [
+      "EmployeeCount",
+      "Over18",
+      "StandardHours",
+      "EmployeeNumber"
+    ],
+    "dropped_reasons": {
+      "EmployeeCount": "constant",
+      "Over18": "constant",
+      "StandardHours": "constant",
+      "EmployeeNumber": "id_column_auto_excluded"
+    },
+    "feature_columns_after_train": [
+      "Age",
+      "BusinessTravel",
+      "DailyRate",
+      "Department",
+      "DistanceFromHome",
+      "Education",
+      "EducationField",
+      "EnvironmentSatisfaction",
+      "Gender",
+      "HourlyRate",
+      "JobInvolvement",
+      "JobLevel",
+      "JobRole",
+      "JobSatisfaction",
+      "MaritalStatus",
+      "MonthlyIncome",
+      "MonthlyRate",
+      "NumCompaniesWorked",
+      "OverTime",
+      "PercentSalaryHike",
+      "PerformanceRating",
+      "RelationshipSatisfaction",
+      "StockOptionLevel",
+      "TotalWorkingYears",
+      "TrainingTimesLastYear",
+      "WorkLifeBalance",
+      "YearsAtCompany",
+      "YearsInCurrentRole",
+      "YearsSinceLastPromotion",
+      "YearsWithCurrManager"
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "project_id": "8352b4a9-fe90-4d8b-a893-3a494d56c7a2",
+  "project_name": "Superstore Analysis",
+  "dataset_id": "6ebd5a0a-39c3-489b-b8c0-09bdf85ca8e8",
+  "dataset_name": "Superstore Sales Performance Analysis ",
+  "config": {
+    "target": "Performance",
+    "positive_label": "High",
+    "features": [
+      "Store ID ",
+      "Store_Area",
+      "Items_Available",
+      "Daily_Customer_Count",
+      "Store_Sales"
+    ],
+    "problem_type": "binary_classification",
+    "n_rows_raw": 896,
+    "label_counts": {
+      "High": 605,
+      "Medium": 274,
+      "Low": 17
+    }
+  },
+  "routing": {
+    "strategy": "foundation_model",
+    "reason": "Rows=537 \u2264 10000 and features=5 \u2264 500 (cat=0%, missing=0.0%); foundation model preferred for small/medium tabular data",
+    "row_count": 537,
+    "feature_count": 5,
+    "categorical_fraction": 0.0,
+    "missing_density": 0.0,
+    "forced": false,
+    "backend": "hist_gradient_boosting",
+    "n_train": 537,
+    "n_calib": 179,
+    "n_test": 180,
+    "metrics_snapshot": {
+      "ensemble_auc_roc": 0.5835217637083098,
+      "ensemble_accuracy": 0.6833333333333333,
+      "ensemble_brier": 0.2215485611044524,
+      "conformal_quantile": 0.7,
+      "prob_calibration_fitted": 1.0
+    }
+  },
+  "train_metrics": {
+    "version": "v1",
+    "accuracy": 0.6833333333333333,
+    "auc_roc": 0.5835217637083098,
+    "f1_score": 0.8067796610169492
+  },
+  "onboarding_findings": [
+    {
+      "area": "onboarding",
+      "severity": "critical",
+      "title": "target_positive_label='1' does not match any Performance values",
+      "note": "Actual labels: {'High': 605, 'Medium': 274, 'Low': 17}. With pos='1', all y=0 \u2192 useless model. Product draft left default/wrong label."
+    },
+    {
+      "area": "onboarding",
+      "severity": "warn",
+      "title": "Column names with trailing/leading spaces",
+      "note": "['Store ID ']"
+    },
+    {
+      "area": "onboarding",
+      "severity": "warn",
+      "title": "Store_Sales stored/detected as object/text",
+      "note": "Looks numeric-as-string; nunique=816; coerce nulls=1"
+    },
+    {
+      "area": "onboarding",
+      "severity": "gap",
+      "title": "3-class Performance forced into binary_classification",
+      "note": "Only one positive class (High) vs rest; Medium collapse not offered in UI."
+    },
+    {
+      "area": "onboarding",
+      "severity": "warn",
+      "title": "Store ID included as model feature",
+      "note": "Identity column likely leakage/noise for performance prediction."
+    }
+  ]
+}

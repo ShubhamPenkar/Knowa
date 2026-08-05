@@ -6,8 +6,11 @@ from typing import Any, Optional
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from app.ml.models import get_model, EnsembleModel
+from app.ml.models import get_model
+from app.ml.model_loader import build_model_for_strategy, write_route_meta
+from app.ml.router import route_training
 from app.ml.pipelines.preprocessing import preprocess_dataframe, get_feature_names
+from app.config import get_settings
 
 
 class TrainingPipeline:
@@ -23,7 +26,7 @@ class TrainingPipeline:
     
     def __init__(
         self,
-        model_type: str = "ensemble",
+        model_type: str = "auto",
         model_path: str = "./data/models",
         test_size: float = 0.2,
         random_state: int = 42
@@ -32,7 +35,7 @@ class TrainingPipeline:
         Initialize training pipeline.
         
         Args:
-            model_type: Type of model to train
+            model_type: Type of model to train ("auto" uses Phase 1b router)
             model_path: Directory to save models
             test_size: Fraction for test set
             random_state: Random seed
@@ -42,6 +45,7 @@ class TrainingPipeline:
         self.test_size = test_size
         self.random_state = random_state
         self.model = None
+        self.routing_decision = None
     
     def train(
         self,
@@ -58,6 +62,8 @@ class TrainingPipeline:
         Returns:
             Training results including metrics
         """
+        settings = get_settings()
+
         # Preprocess
         X, y, _ = preprocess_dataframe(df, target_column=target_column)
         
@@ -69,9 +75,28 @@ class TrainingPipeline:
             stratify=y
         )
         
-        # Initialize model
-        if self.model_type == "ensemble":
-            self.model = EnsembleModel()
+        # Initialize model (auto → router; ensemble/foundation explicit)
+        if self.model_type in ("auto", "routed"):
+            force = None
+            if settings.routing_mode in ("foundation_model", "ensemble"):
+                force = settings.routing_mode
+            self.routing_decision = route_training(
+                X_train,
+                max_foundation_rows=settings.foundation_max_rows,
+                max_foundation_features=settings.foundation_max_features,
+                force_strategy=force,
+            )
+            resolved = self.routing_decision.strategy
+            self.model = build_model_for_strategy(resolved)
+            self.model_type = resolved
+        elif self.model_type in ("ensemble", "foundation", "foundation_model"):
+            strategy = (
+                "foundation_model"
+                if self.model_type in ("foundation", "foundation_model")
+                else "ensemble"
+            )
+            self.model = build_model_for_strategy(strategy)
+            self.model_type = strategy
         else:
             self.model = get_model(self.model_type)
         
@@ -94,18 +119,29 @@ class TrainingPipeline:
             "training_samples": len(X_train),
             "test_samples": len(X_test),
             "feature_names": get_feature_names(),
+            "routing": (
+                self.routing_decision.to_dict() if self.routing_decision else None
+            ),
         }
     
     def _save_model(self) -> None:
         """Save trained model."""
         os.makedirs(self.model_path, exist_ok=True)
         
-        if self.model_type == "ensemble":
-            save_path = os.path.join(self.model_path, "ensemble")
+        if self.model_type in ("ensemble", "foundation_model", "foundation"):
+            dirname = "foundation" if self.model_type in ("foundation", "foundation_model") else "ensemble"
+            save_path = os.path.join(self.model_path, dirname)
+            self.model.save(save_path)
+            if self.routing_decision:
+                write_route_meta(
+                    save_path,
+                    self.routing_decision.strategy,
+                    reason=self.routing_decision.reason,
+                    extra=self.routing_decision.to_dict(),
+                )
         else:
             save_path = os.path.join(self.model_path, f"{self.model_type}.joblib")
-        
-        self.model.save(save_path)
+            self.model.save(save_path)
     
     def _save_training_data(self, X_train: pd.DataFrame) -> None:
         """Save training data for LIME explainer."""
