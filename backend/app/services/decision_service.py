@@ -203,6 +203,7 @@ class DecisionService:
         notes: Optional[str] = None,
         close: bool = False,
         schedule_next: bool = True,
+        recheck_interval_days: Optional[int] = None,
     ) -> dict[str, Any]:
         """Record a 30/60/90 check-in; optionally close or schedule next."""
         project = self._get_project(project_id)
@@ -218,6 +219,8 @@ class DecisionService:
             raise ValueError("Decision not found")
         if d.status == "cancelled":
             raise ValueError("Cannot check in a cancelled decision")
+        if d.status == "closed":
+            raise ValueError("Decision is already closed")
 
         now = datetime.utcnow()
         d.last_checkin_at = now
@@ -232,40 +235,130 @@ class DecisionService:
                 d.outcome_notes += "\n---\n"
             d.outcome_notes += f"[{now.isoformat()}Z] {notes.strip()}"
 
-        # Lightweight autopsy stub (full narrative templates later)
-        d.autopsy_narrative = self._build_autopsy_stub(d, project)
-
         if close:
             d.status = "closed"
             d.closed_at = now
             d.recheck_at = None
         elif schedule_next:
+            if recheck_interval_days is not None:
+                interval = int(recheck_interval_days)
+                if interval not in VALID_INTERVALS:
+                    raise ValueError("recheck_interval_days must be 30, 60, or 90")
+                d.recheck_interval_days = interval
             d.status = "committed"
             d.recheck_at = now + timedelta(days=int(d.recheck_interval_days or 30))
+        else:
+            # Keep open without bumping the next recheck date
+            d.status = "committed"
 
+        d.autopsy_narrative = self._build_autopsy(d, project)
         d.updated_at = now
         self.db.commit()
         self.db.refresh(d)
+
+        # Bridge to A7: stamp prediction when we have a known yes/no (don't wipe with unknown)
+        if d.prediction_id and d.actual_outcome:
+            kind = self._normalize_binary_outcome(d.actual_outcome, project)
+            if kind in ("positive", "negative"):
+                try:
+                    from app.services.project_service import ProjectService
+
+                    ProjectService(self.db, self.org_id).record_feedback(
+                        d.prediction_id,
+                        d.actual_outcome,
+                        action_taken=d.action_code,
+                        project_id=project_id,
+                    )
+                except Exception:
+                    # Check-in already saved; A7 sync is best-effort
+                    pass
+
         return self._format(d, project, include_snapshot=True)
 
-    def _build_autopsy_stub(self, d: Decision, project: Project) -> str:
-        outcome = project.target_description or project.target_column or "outcome"
+    def _normalize_binary_outcome(self, raw: Optional[str], project: Project) -> Optional[str]:
+        """Map free-text outcome to positive / negative / unknown (classification)."""
+        if not raw:
+            return None
+        low = str(raw).strip().lower()
+        if not low:
+            return None
+        pos = str(project.target_positive_label or "1").strip().lower()
+        if low in ("unknown", "unk", "n/a", "na", "pending"):
+            return "unknown"
+        if low in ("positive", "yes", "1", "true", "y") or low == pos:
+            return "positive"
+        if low in ("negative", "no", "0", "false", "n"):
+            return "negative"
+        # Non-positive label text often means the event did not happen
+        if pos and low != pos:
+            return "negative"
+        return "unknown"
+
+    def _outcome_label(self, project: Project) -> str:
+        """Prefer a real business label; ignore placeholder descriptions like 'outcome'."""
+        desc = (project.target_description or "").strip()
+        col = (project.target_column or "").strip()
+        generic = {"", "outcome", "the outcome", "target", "label", "y", "result"}
+        if desc and desc.lower() not in generic:
+            return desc
+        return col or desc or "the outcome"
+
+    def _build_autopsy(self, d: Decision, project: Project) -> str:
+        """What we did / what we expected / what happened — business narrative."""
+        outcome_label = self._outcome_label(project)
         parts = [
             f"Check-in #{int(d.checkin_count or 0)} for “{d.action_name}”.",
         ]
         if d.probability_at_commit is not None:
             parts.append(
-                f"At commit, chance of {outcome} was {float(d.probability_at_commit):.0%}."
+                f"When this was saved, chance of {outcome_label} was "
+                f"{float(d.probability_at_commit):.0%}."
             )
         if d.expected_lift is not None:
+            lift_pp = float(d.expected_lift) * 100
+            direction = "down" if lift_pp < 0 else "up" if lift_pp > 0 else "unchanged"
             parts.append(
-                f"Expected illustrative shift was {float(d.expected_lift) * 100:+.0f} pp."
+                f"Playbook expectation was an illustrative {abs(lift_pp):.0f} pp move {direction}."
             )
-        if d.actual_outcome:
-            parts.append(f"Logged outcome so far: {d.actual_outcome}.")
+        elif d.expected_probability_after is not None:
+            parts.append(
+                f"Playbook expected chance after action around "
+                f"{float(d.expected_probability_after):.0%}."
+            )
+
+        kind = self._normalize_binary_outcome(d.actual_outcome, project)
+        if kind == "positive":
+            parts.append(f"Logged result: {outcome_label} did occur.")
+            if d.expected_lift is not None and float(d.expected_lift) < 0:
+                parts.append(
+                    "That goes against the hoped-for improvement — treat this action as "
+                    "not clearly effective for similar cases until more evidence accumulates."
+                )
+            elif d.expected_lift is not None and float(d.expected_lift) > 0:
+                parts.append(
+                    "Result aligns with an action that was expected to raise risk — "
+                    "review whether this follow-up was the right lever."
+                )
+            else:
+                parts.append("Compare this result with similar open cases before scaling the action.")
+        elif kind == "negative":
+            parts.append(f"Logged result: {outcome_label} did not occur.")
+            if d.expected_lift is not None and float(d.expected_lift) < 0:
+                parts.append(
+                    "Outcome matches the hoped-for direction (risk reduced / event avoided). "
+                    "This is weak evidence the action helped — keep logging to confirm."
+                )
+            else:
+                parts.append(
+                    "Favorable non-event so far; keep watching if the case was already low risk."
+                )
+        elif kind == "unknown":
+            parts.append("Outcome still marked unknown — close later when the result is clear.")
         else:
             parts.append("Outcome still open — keep watching until the next recheck.")
-        parts.append("B3 autopsy stub — fuller narrative templates come in a later slice.")
+
+        if d.status == "closed":
+            parts.append("Follow-up closed.")
         return " ".join(parts)
 
     def _format(

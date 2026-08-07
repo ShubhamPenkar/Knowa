@@ -24,6 +24,14 @@ export default function ProjectDetail() {
   const [spotLoading, setSpotLoading] = useState(false);
   const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [ledger, setLedger] = useState(null);
+  const [checkInTarget, setCheckInTarget] = useState(null);
+  const [checkInOutcome, setCheckInOutcome] = useState('');
+  const [checkInNotes, setCheckInNotes] = useState('');
+  const [checkInInterval, setCheckInInterval] = useState(30);
+  const [checkInMode, setCheckInMode] = useState('reschedule'); // reschedule | close | keep
+  const [checkInSaving, setCheckInSaving] = useState(false);
+  const [checkInError, setCheckInError] = useState('');
+  const [lastAutopsy, setLastAutopsy] = useState(null);
 
   useEffect(() => {
     if (token && id) fetchProject();
@@ -114,22 +122,66 @@ export default function ProjectDetail() {
     }
   };
 
-  const checkInDecision = async (decisionId) => {
+  const openCheckIn = (decision) => {
+    setCheckInTarget(decision);
+    setCheckInOutcome(decision.actual_outcome || '');
+    setCheckInNotes('');
+    setCheckInInterval(decision.recheck_interval_days || 30);
+    setCheckInMode('reschedule');
+    setCheckInError('');
+    setLastAutopsy(null);
+  };
+
+  const closeCheckIn = () => {
+    if (checkInSaving) return;
+    setCheckInTarget(null);
+    setCheckInError('');
+  };
+
+  const submitCheckIn = async () => {
+    if (!checkInTarget) return;
+    setCheckInSaving(true);
+    setCheckInError('');
     try {
-      const res = await fetch(`/api/projects/${id}/decisions/${decisionId}/check-in`, {
+      const body = {
+        notes: checkInNotes.trim() || null,
+        actual_outcome: checkInOutcome || null,
+        close: checkInMode === 'close',
+        schedule_next: checkInMode === 'reschedule',
+      };
+      if (checkInMode === 'reschedule') {
+        body.recheck_interval_days = Number(checkInInterval) || 30;
+      }
+      const res = await fetch(`/api/projects/${id}/decisions/${checkInTarget.id}/check-in`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          notes: 'Manual check-in from project ledger.',
-          schedule_next: true,
-        }),
+        body: JSON.stringify(body),
       });
-      if (res.ok) fetchLedger();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data.detail;
+        let message = 'Could not save update';
+        if (typeof detail === 'string') message = detail;
+        else if (Array.isArray(detail) && detail.length) {
+          message = detail
+            .map((e) => (typeof e === 'string' ? e : e?.msg || JSON.stringify(e)))
+            .join('; ');
+        }
+        setCheckInError(message);
+        return;
+      }
+      setLastAutopsy(data.autopsy_narrative || null);
+      await fetchLedger();
+      await fetchFeedbackSummary();
+      setCheckInTarget(null);
     } catch (err) {
       console.error(err);
+      setCheckInError('Could not save update');
+    } finally {
+      setCheckInSaving(false);
     }
   };
 
@@ -552,35 +604,55 @@ export default function ProjectDetail() {
               <h2 className="font-display text-lg font-semibold text-ink">Your follow-ups</h2>
               <p className="text-sm text-[var(--muted)] mt-1">
                 {ledger.plain_summary || 'Actions you saved from cases.'}
+                {ledger.due_for_recheck > 0
+                  ? ` ${ledger.due_for_recheck} due for a check-in.`
+                  : ''}
               </p>
             </div>
+            {lastAutopsy && (
+              <div className="px-5 py-3 border-b border-mist bg-teal-soft/40 text-sm text-ink">
+                <div className="text-[11px] uppercase tracking-wide text-teal mb-1">Latest check-in</div>
+                <p>{lastAutopsy}</p>
+              </div>
+            )}
             <ul className="divide-y divide-mist">
               {ledger.decisions.slice(0, 8).map((d) => {
                 const statusLabel =
-                  d.status === 'open'
-                    ? 'In progress'
-                    : d.status === 'closed'
-                      ? 'Done'
-                      : d.status === 'cancelled'
-                        ? 'Cancelled'
-                        : String(d.status || '').replace(/_/g, ' ');
+                  d.status === 'committed'
+                    ? 'Scheduled'
+                    : d.status === 'checking'
+                      ? 'In review'
+                      : d.status === 'closed'
+                        ? 'Done'
+                        : d.status === 'cancelled'
+                          ? 'Cancelled'
+                          : d.status === 'proposed'
+                            ? 'Proposed'
+                            : String(d.status || '').replace(/_/g, ' ');
                 return (
                   <li
                     key={d.id}
                     className="px-5 py-3 flex flex-wrap items-start justify-between gap-3 text-sm"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium text-ink">{d.action_name}</div>
                       <p className="text-xs text-[var(--muted)] mt-1">
                         {statusLabel}
                         {d.recheck_at ? ` · check back ${String(d.recheck_at).slice(0, 10)}` : ''}
                         {d.due_for_recheck ? ' · due now' : ''}
+                        {d.actual_outcome ? ` · outcome: ${d.actual_outcome}` : ''}
+                        {d.checkin_count > 0 ? ` · ${d.checkin_count} update(s)` : ''}
                       </p>
+                      {d.autopsy_narrative && (
+                        <p className="text-xs text-[var(--muted)] mt-2 max-w-2xl leading-relaxed">
+                          {d.autopsy_narrative}
+                        </p>
+                      )}
                     </div>
                     {d.status !== 'closed' && d.status !== 'cancelled' && (
                       <button
                         type="button"
-                        onClick={() => checkInDecision(d.id)}
+                        onClick={() => openCheckIn(d)}
                         className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
                       >
                         Update
@@ -592,6 +664,152 @@ export default function ProjectDetail() {
             </ul>
           </section>
         )}
+
+      {checkInTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="checkin-title"
+          onClick={closeCheckIn}
+        >
+          <div
+            className="w-full max-w-md border border-mist bg-surface shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-mist">
+              <h2 id="checkin-title" className="font-display text-lg font-semibold text-ink">
+                Update follow-up
+              </h2>
+              <p className="text-sm text-[var(--muted)] mt-1">{checkInTarget.action_name}</p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-2">
+                  What happened?
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: 'yes', label: 'Yes — outcome occurred' },
+                    { value: 'no', label: 'No — did not occur' },
+                    { value: 'unknown', label: 'Still unknown' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setCheckInOutcome(opt.value)}
+                      className={`text-xs px-3 py-1.5 border rounded-control ${
+                        checkInOutcome === opt.value
+                          ? 'border-teal text-teal'
+                          : 'border-mist text-ink hover:border-teal'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="checkin-notes"
+                  className="block text-[11px] uppercase tracking-wide text-[var(--muted)] mb-2"
+                >
+                  Notes
+                </label>
+                <textarea
+                  id="checkin-notes"
+                  rows={3}
+                  value={checkInNotes}
+                  onChange={(e) => setCheckInNotes(e.target.value)}
+                  placeholder="What did you try? Anything unexpected?"
+                  className="w-full bg-paper border border-mist px-3 py-2 text-sm text-ink rounded-control focus:outline-none focus:border-teal"
+                />
+              </div>
+
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-2">
+                  Next step
+                </div>
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 text-sm text-ink cursor-pointer">
+                    <input
+                      type="radio"
+                      name="checkin-mode"
+                      checked={checkInMode === 'reschedule'}
+                      onChange={() => setCheckInMode('reschedule')}
+                      className="mt-1"
+                    />
+                    <span>
+                      Check back again
+                      {checkInMode === 'reschedule' && (
+                        <span className="ml-2 inline-flex gap-1">
+                          {[30, 60, 90].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setCheckInInterval(n)}
+                              className={`text-xs px-2 py-0.5 border rounded-control ${
+                                checkInInterval === n
+                                  ? 'border-teal text-teal'
+                                  : 'border-mist text-[var(--muted)]'
+                              }`}
+                            >
+                              {n}d
+                            </button>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-ink cursor-pointer">
+                    <input
+                      type="radio"
+                      name="checkin-mode"
+                      checked={checkInMode === 'close'}
+                      onChange={() => setCheckInMode('close')}
+                      className="mt-1"
+                    />
+                    <span>Close as done</span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-ink cursor-pointer">
+                    <input
+                      type="radio"
+                      name="checkin-mode"
+                      checked={checkInMode === 'keep'}
+                      onChange={() => setCheckInMode('keep')}
+                      className="mt-1"
+                    />
+                    <span>Keep open (same recheck date)</span>
+                  </label>
+                </div>
+              </div>
+
+              {checkInError && (
+                <p className="text-sm text-coral">{checkInError}</p>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-mist flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCheckIn}
+                disabled={checkInSaving}
+                className="btn-ghost text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitCheckIn}
+                disabled={checkInSaving}
+                className="btn-primary text-sm"
+              >
+                {checkInSaving ? 'Saving…' : 'Save update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isReady && project.problem_type !== 'regression' && (
         <details className="mb-4 border border-mist group">

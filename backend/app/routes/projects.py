@@ -91,6 +91,7 @@ class DecisionCheckInRequest(BaseModel):
     notes: str | None = None
     close: bool = False
     schedule_next: bool = True
+    recheck_interval_days: int | None = None
 
 
 # =============================================================================
@@ -579,6 +580,7 @@ async def check_in_decision(
             notes=request.notes,
             close=request.close,
             schedule_next=request.schedule_next,
+            recheck_interval_days=request.recheck_interval_days,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
