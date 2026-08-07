@@ -11,6 +11,31 @@ function humanize(name) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function featureInputMeta(col) {
+  const fl = String(col || '')
+    .toLowerCase()
+    .replace(/_/g, '')
+    .replace(/-/g, '');
+  const likert = [
+    'jobsatisfaction',
+    'environmentsatisfaction',
+    'relationshipsatisfaction',
+    'jobinvolvement',
+    'worklifebalance',
+    'performancerating',
+  ];
+  if (likert.includes(fl)) {
+    return { type: 'number', min: 1, max: 4, step: 1, hint: 'Scale 1–4 in this dataset' };
+  }
+  if (fl === 'education') {
+    return { type: 'number', min: 1, max: 5, step: 1, hint: 'Scale 1–5' };
+  }
+  if (fl === 'stockoptionlevel') {
+    return { type: 'number', min: 0, max: 3, step: 1, hint: 'Scale 0–3' };
+  }
+  return { type: 'text' };
+}
+
 function pct(p) {
   if (p == null || Number.isNaN(Number(p))) return '—';
   return `${(Number(p) * 100).toFixed(0)}%`;
@@ -29,6 +54,8 @@ export default function WhatIf() {
   const [baseRow, setBaseRow] = useState(null);
   const [modifiedValues, setModifiedValues] = useState({});
   const [baselinePrediction, setBaselinePrediction] = useState(null);
+  const [scenarioLevers, setScenarioLevers] = useState(null);
+  const [leversLoading, setLeversLoading] = useState(false);
   const [simulationResult, setSimulationResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [simulating, setSimulating] = useState(false);
@@ -79,6 +106,7 @@ export default function WhatIf() {
     setBaseRow(row);
     setModifiedValues({});
     setSimulationResult(null);
+    setScenarioLevers(null);
     setError('');
 
     const features = {};
@@ -127,15 +155,44 @@ export default function WhatIf() {
     } catch (err) {
       console.error(err);
     }
+
+    // Rank dials by actual movement for this case (not SHAP-only)
+    setLeversLoading(true);
+    try {
+      const leversRes = await fetch(`/api/projects/${projectId}/scenario-levers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ base_features: features }),
+      });
+      if (leversRes.ok) {
+        const leversData = await leversRes.json();
+        setScenarioLevers(leversData);
+        // Keep full field list visible by default — focus is opt-in
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setLeversLoading(false);
   };
 
   const handleFeatureChange = (feature, value) => {
-    const parsed =
-      value === ''
-        ? undefined
-        : !Number.isNaN(Number(value)) && value.trim() !== ''
-          ? Number(value)
-          : value;
+    let parsed = value;
+    if (value === '' || value == null) {
+      parsed = undefined;
+    } else if (typeof value === 'number') {
+      parsed = Number.isFinite(value) ? value : undefined;
+    } else {
+      const s = String(value).trim();
+      // Coerce plain numerics; keep Yes/No and other categoricals as strings
+      if (s !== '' && /^-?\d+(\.\d+)?$/.test(s)) {
+        parsed = Number(s);
+      } else {
+        parsed = value;
+      }
+    }
     setModifiedValues((prev) => ({ ...prev, [feature]: parsed }));
   };
 
@@ -220,12 +277,15 @@ export default function WhatIf() {
   );
 
   const leverFeatures = useMemo(() => {
+    // Prefer dials proven to move this case; fall back to explanation drivers
+    const fromProbe = scenarioLevers?.feature_names || [];
+    if (fromProbe.length) return new Set(fromProbe);
     const drivers =
       baselinePrediction?.explanations?.drivers ||
       baselinePrediction?.explanations?.shap?.top_features ||
       [];
     return new Set(drivers.map((d) => d.feature));
-  }, [baselinePrediction]);
+  }, [scenarioLevers, baselinePrediction]);
 
   const columnsToShow = useMemo(() => {
     const cols = project?.feature_columns || [];
@@ -270,13 +330,12 @@ export default function WhatIf() {
         <Link to={`/projects/${projectId}`} className="text-sm text-teal hover:underline">
           ← Back to project
         </Link>
-        <p className="page-kicker mt-4 mb-1">Phase 5 · Scenario</p>
+        <p className="page-kicker mt-4 mb-1">What-if</p>
         <h1 className="font-display text-3xl font-semibold text-ink tracking-tight">
           What if we changed something?
         </h1>
         <p className="mt-2 text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
-          Pick a person or account, tweak the levers that drive {outcomeLabel.toLowerCase()}, and
-          compare the estimated chance before vs after — with a re-ranked next-step plan.
+          Pick a person, change dials that actually move their estimate, and compare before vs after.
         </p>
       </header>
 
@@ -285,7 +344,7 @@ export default function WhatIf() {
           <div className="px-5 py-4 border-b border-mist">
             <h2 className="font-display text-lg font-semibold text-ink">Choose a starting case</h2>
             <p className="text-sm text-[var(--muted)] mt-1">
-              Held-out sample from prepare. Click a row to load the baseline.
+              Click a row to load the starting point, then adjust the dials.
             </p>
           </div>
           <div className="overflow-x-auto max-h-[28rem]">
@@ -293,7 +352,7 @@ export default function WhatIf() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Known</th>
+                  <th>Dataset label</th>
                   {(project.feature_columns || []).slice(0, 5).map((col) => (
                     <th key={col}>{humanize(col)}</th>
                   ))}
@@ -335,7 +394,7 @@ export default function WhatIf() {
               <div className="border border-mist px-5 py-5">
                 <div className="flex justify-between items-start gap-4">
                   <div>
-                    <p className="page-kicker mb-1">Baseline</p>
+                    <p className="page-kicker mb-1">Right now</p>
                     <p className="font-display text-3xl font-semibold tabular-nums text-ink">
                       {isReg
                         ? Number(baselinePrediction.predicted_value).toFixed(2)
@@ -364,41 +423,73 @@ export default function WhatIf() {
               </div>
             )}
 
-            {/* Suggested tweaks */}
-            {baselinePrediction?.explanations?.drivers && (
+            {/* Suggested levers — ranked by actual movement */}
+            {(leversLoading || (scenarioLevers?.levers && scenarioLevers.levers.length > 0)) && (
               <div className="border border-mist px-5 py-4">
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-3">
-                  Suggested levers (from “why”)
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-1">
+                  Dials that move this case
                 </h3>
-                <ul className="space-y-2">
-                  {(baselinePrediction.explanations.drivers || [])
-                    .filter((d) => Number(d.impact) > 0)
-                    .slice(0, 4)
-                    .map((d) => (
-                      <li
-                        key={d.feature}
-                        className="flex flex-wrap items-center justify-between gap-2 text-sm border-b border-mist/70 pb-2"
-                      >
-                        <span className="text-ink">
-                          <span className="font-medium">{humanize(d.feature)}</span>
-                          <span className="text-[var(--muted)]"> · currently raises risk</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="text-xs text-teal hover:underline"
-                          onClick={() => {
-                            setFilterLever(true);
-                            // scroll-ish focus: mark for edit
-                            const el = document.getElementById(`feat-${d.feature}`);
-                            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el?.querySelector('input,select')?.focus();
-                          }}
+                <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
+                  {leversLoading
+                    ? 'Checking which changes actually shift the estimate…'
+                    : scenarioLevers?.plain_summary ||
+                      'Ranked by real before/after impact — not only explanation drivers.'}
+                </p>
+                {!leversLoading && (
+                  <ul className="space-y-2">
+                    {(scenarioLevers.levers || []).slice(0, 6).map((t) => {
+                      const delta = Number(t.expected_delta);
+                      const moves = t.moves_score !== false && Math.abs(delta) >= 0.005;
+                      return (
+                        <li
+                          key={t.feature}
+                          className="flex flex-wrap items-center justify-between gap-2 text-sm border-b border-mist/70 pb-2"
                         >
-                          Edit this
-                        </button>
-                      </li>
-                    ))}
-                </ul>
+                          <span className="text-ink min-w-0">
+                            <span className="font-medium">{humanize(t.label || t.feature)}</span>
+                            {!moves && (
+                              <span className="ml-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                                weak mover
+                              </span>
+                            )}
+                            {t.hint && (
+                              <span className="block text-xs text-[var(--muted)] mt-0.5">
+                                {t.hint}
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {Number.isFinite(delta) && Math.abs(delta) >= 0.005 && (
+                              <span
+                                className={`text-xs tabular-nums ${
+                                  delta < 0 ? 'text-teal' : 'text-coral'
+                                }`}
+                              >
+                                {delta > 0 ? '+' : ''}
+                                {(delta * 100).toFixed(0)} pts
+                              </span>
+                            )}
+                            {t.suggested_value !== undefined && (
+                              <button
+                                type="button"
+                                className="text-xs text-teal hover:underline"
+                                onClick={() => {
+                                  setFilterLever(true);
+                                  applySuggestion(t.feature, t.suggested_value);
+                                  const el = document.getElementById(`feat-${t.feature}`);
+                                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  el?.querySelector('input,select')?.focus();
+                                }}
+                              >
+                                Set to {String(t.suggested_value)}
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             )}
 
@@ -410,6 +501,9 @@ export default function WhatIf() {
                   <p className="text-sm text-[var(--muted)] mt-0.5">
                     {Object.keys(activeChanges).length} change
                     {Object.keys(activeChanges).length === 1 ? '' : 's'} ready
+                    {filterLever && leverFeatures.size > 0
+                      ? ` · showing ${columnsToShow.length} moving dials`
+                      : ''}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -417,8 +511,9 @@ export default function WhatIf() {
                     type="button"
                     className="btn-secondary text-sm"
                     onClick={() => setFilterLever((v) => !v)}
+                    disabled={leverFeatures.size === 0}
                   >
-                    {filterLever ? 'Show all fields' : 'Focus key drivers'}
+                    {filterLever ? 'Show all fields' : 'Focus dials that move score'}
                   </button>
                   <button type="button" className="btn-secondary text-sm" onClick={resetModifications}>
                     Reset
@@ -446,6 +541,7 @@ export default function WhatIf() {
                   const isModified = activeChanges[col] !== undefined;
                   const display =
                     modifiedValues[col] !== undefined ? modifiedValues[col] : originalValue;
+                  const meta = featureInputMeta(col);
                   return (
                     <div
                       id={`feat-${col}`}
@@ -462,7 +558,10 @@ export default function WhatIf() {
                       </label>
                       <div className="flex gap-2">
                         <input
-                          type="text"
+                          type={meta.type}
+                          min={meta.min}
+                          max={meta.max}
+                          step={meta.step}
                           value={display ?? ''}
                           onChange={(e) => handleFeatureChange(col, e.target.value)}
                           className="flex-1 bg-transparent border border-mist px-2 py-1.5 text-ink focus:border-teal outline-none"
@@ -483,7 +582,10 @@ export default function WhatIf() {
                           </button>
                         )}
                       </div>
-                      <p className="text-xs text-[var(--muted)] mt-1">Original: {String(originalValue)}</p>
+                      <p className="text-xs text-[var(--muted)] mt-1">
+                        Original: {String(originalValue)}
+                        {meta.hint ? ` · ${meta.hint}` : ''}
+                      </p>
                     </div>
                   );
                 })}
@@ -498,6 +600,14 @@ export default function WhatIf() {
                   <p className="text-sm text-ink leading-relaxed max-w-2xl">
                     {simulationResult.plain_summary}
                   </p>
+                  {Array.isArray(simulationResult.warnings) &&
+                    simulationResult.warnings.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-sm text-coral list-disc pl-5">
+                        {simulationResult.warnings.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    )}
                   {Array.isArray(simulationResult.key_insights) &&
                     simulationResult.key_insights.length > 0 && (
                       <ul className="mt-3 space-y-1.5 text-sm text-[var(--muted)] list-disc pl-5">
@@ -508,6 +618,13 @@ export default function WhatIf() {
                         ))}
                       </ul>
                     )}
+                  {!isReg && Math.abs(Number(simulationResult.impact) || 0) < 0.005 && (
+                    <div className="mt-4 px-3 py-3 border border-mist text-sm text-[var(--muted)] leading-relaxed">
+                      This dial didn&apos;t change the estimate for this person. Use a suggested
+                      lever on the right (often Overtime or pay) — those are ranked by how much
+                      they actually move <em>this</em> case.
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-px bg-mist">
@@ -541,9 +658,9 @@ export default function WhatIf() {
                     <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Impact</div>
                     <div
                       className={`font-display text-2xl font-semibold tabular-nums mt-1 ${
-                        Number(simulationResult.impact) < 0
+                        Number(simulationResult.impact) < -0.005
                           ? 'text-teal'
-                          : Number(simulationResult.impact) > 0
+                          : Number(simulationResult.impact) > 0.005
                             ? 'text-coral'
                             : 'text-ink'
                       }`}
@@ -551,10 +668,17 @@ export default function WhatIf() {
                       {Number(simulationResult.impact) > 0 ? '+' : ''}
                       {isReg
                         ? Number(simulationResult.impact).toFixed(2)
-                        : `${(Number(simulationResult.impact) * 100).toFixed(1)} pp`}
+                        : `${(Number(simulationResult.impact) * 100).toFixed(
+                            Math.abs(Number(simulationResult.impact) * 100) < 1 &&
+                              Number(simulationResult.impact) !== 0
+                              ? 1
+                              : 0
+                          )} pts`}
                     </div>
                     <div className="text-xs text-[var(--muted)] mt-1">
-                      {simulationResult.risk_level_change || simulationResult.direction}
+                      {Math.abs(Number(simulationResult.impact) || 0) < 0.005
+                        ? 'no change'
+                        : simulationResult.risk_level_change || simulationResult.direction}
                     </div>
                   </div>
                 </div>
@@ -614,8 +738,7 @@ export default function WhatIf() {
                       Re-ranked next steps
                     </h4>
                     <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
-                      Impact language in these ranks is illustrative (catalog heuristics), not a
-                      re-simulated outcome.
+                      Rough ranking from the playbook — run another scenario to confirm.
                     </p>
                     <ol className="space-y-3 text-sm">
                       {simulationResult.recommendations.slice(0, 3).map((r, i) => (
@@ -629,7 +752,7 @@ export default function WhatIf() {
                           {r.expected_probability_reduction > 0.01 && (
                             <p className="text-xs text-[var(--muted)] mt-1 tabular-nums">
                               Illustrative est. ~−
-                              {(Number(r.expected_probability_reduction) * 100).toFixed(0)} pp
+                              {(Number(r.expected_probability_reduction) * 100).toFixed(0)} pts
                             </p>
                           )}
                         </li>
@@ -648,7 +771,7 @@ export default function WhatIf() {
                 How to use this
               </h3>
               <ol className="list-decimal pl-4 space-y-2 text-[var(--muted)] leading-relaxed">
-                <li>Change levers that raise risk in the baseline “why”.</li>
+                <li>Start from “Dials that move this case” — those are probed for real score change.</li>
                 <li>Run the scenario to see before vs after chance.</li>
                 <li>Read re-ranked actions as a guide — not a guarantee.</li>
               </ol>
@@ -678,7 +801,7 @@ export default function WhatIf() {
                               }`}
                             >
                               {imp > 0 ? '+' : ''}
-                              {(imp * 100).toFixed(1)} pp
+                              {(imp * 100).toFixed(0)} pts
                             </span>
                             <span className="text-xs text-[var(--muted)]">
                               {new Date(item.timestamp).toLocaleTimeString()}
@@ -696,31 +819,61 @@ export default function WhatIf() {
               </div>
             )}
 
-            {simulationResult?.suggested_tweaks?.length > 0 && (
+            {(scenarioLevers?.levers?.length > 0 || simulationResult?.suggested_tweaks?.length > 0) && (
               <div className="border border-mist">
                 <div className="px-4 py-3 border-b border-mist">
                   <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Try dialing
                   </h3>
+                  <p className="text-xs text-[var(--muted)] mt-1">
+                    Only dials with a measured before/after shift for this person.
+                  </p>
                 </div>
                 <ul className="divide-y divide-mist">
-                  {simulationResult.suggested_tweaks.map((t, i) => (
-                    <li key={`${t.feature}-${i}`} className="px-4 py-3 text-sm">
-                      <div className="font-medium text-ink">{humanize(t.label || t.feature)}</div>
-                      {t.hint && (
-                        <p className="text-xs text-[var(--muted)] mt-1 leading-relaxed">{t.hint}</p>
-                      )}
-                      {t.suggested_value !== undefined && (
-                        <button
-                          type="button"
-                          className="mt-2 text-xs text-teal hover:underline"
-                          onClick={() => applySuggestion(t.feature, t.suggested_value)}
-                        >
-                          Set to {String(t.suggested_value)}
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                  {(
+                    (scenarioLevers?.levers?.length
+                      ? scenarioLevers.levers
+                      : simulationResult?.suggested_tweaks) || []
+                  )
+                    .slice(0, 6)
+                    .map((t, i) => {
+                    const delta = Number(t.expected_delta);
+                    const hasDelta = Number.isFinite(delta);
+                    return (
+                      <li key={`${t.feature}-${i}`} className="px-4 py-3 text-sm">
+                        <div className="flex justify-between gap-2 items-start">
+                          <div className="font-medium text-ink">
+                            {humanize(t.label || t.feature)}
+                          </div>
+                          {hasDelta && Math.abs(delta) >= 0.005 && (
+                            <span
+                              className={`text-xs tabular-nums shrink-0 ${
+                                delta < 0 ? 'text-teal' : 'text-coral'
+                              }`}
+                            >
+                              {delta > 0 ? '+' : ''}
+                              {(delta * 100).toFixed(0)} pts
+                            </span>
+                          )}
+                        </div>
+                        {t.hint && (
+                          <p className="text-xs text-[var(--muted)] mt-1 leading-relaxed">{t.hint}</p>
+                        )}
+                        {t.suggested_value !== undefined && (
+                          <button
+                            type="button"
+                            className="mt-2 text-xs text-teal hover:underline"
+                            onClick={() => applySuggestion(t.feature, t.suggested_value)}
+                          >
+                            Set to {String(t.suggested_value)}
+                            {hasDelta && Math.abs(delta) >= 0.005
+                              ? ` (est. ${(delta * 100).toFixed(0)} pts)`
+                              : ''}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

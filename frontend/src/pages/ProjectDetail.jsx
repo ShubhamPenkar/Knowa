@@ -336,7 +336,7 @@ export default function ProjectDetail() {
 
       <div className="page-header">
         <div>
-          <p className="page-kicker">Project · Decisions</p>
+          <p className="page-kicker">Project</p>
           <h1 className="page-title">{project.name}</h1>
           {project.description && <p className="page-sub">{project.description}</p>}
           {!project.description && (
@@ -369,38 +369,35 @@ export default function ProjectDetail() {
         <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">{deleteError}</div>
       )}
 
-      <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 mb-8 text-sm border-y border-mist py-4">
+      <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 mb-8 text-sm border-y border-mist py-4">
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">We&apos;re watching</dt>
+          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Watching for</dt>
           <dd className="font-medium text-ink mt-0.5 capitalize">{outcomeLabel}</dd>
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Signals used</dt>
-          <dd className="font-medium text-ink mt-0.5">{project.feature_columns?.length || 0} factors</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Kind of question</dt>
+          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Using</dt>
           <dd className="font-medium text-ink mt-0.5">
-            {project.problem_type === 'regression' ? 'How much / how many' : 'Will it happen?'}
+            {project.feature_columns?.length || 0} signals from your data
           </dd>
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Last prepared</dt>
+          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Updated</dt>
           <dd className="font-medium text-ink mt-0.5">
-            {project.active_model?.version
-              ? project.active_model.trained_at
-                ? new Date(project.active_model.trained_at).toLocaleDateString()
-                : project.active_model.version
-              : '—'}
+            {project.active_model?.trained_at
+              ? new Date(project.active_model.trained_at).toLocaleDateString()
+              : isReady
+                ? 'Ready'
+                : '—'}
           </dd>
         </div>
       </dl>
 
       {(project.status === 'created' || project.status === 'draft') && (
         <section className="surface p-6 mb-8">
-          <h2 className="font-display text-lg font-semibold text-ink">Prepare this project</h2>
+          <h2 className="font-display text-lg font-semibold text-ink">Turn on guidance</h2>
           <p className="text-sm text-[var(--muted)] mt-1 mb-4 max-w-lg">
-            Learn patterns from your data so you can rank who needs care for {outcomeLabel.toLowerCase()} and why.
+            We&apos;ll learn from your data who needs attention for {outcomeLabel.toLowerCase()} — and
+            why — so your team can act.
           </p>
           {trainError && (
             <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">
@@ -408,269 +405,48 @@ export default function ProjectDetail() {
             </div>
           )}
           <button type="button" onClick={handleTrain} disabled={training} className="btn-primary">
-            {training ? 'Preparing…' : 'Prepare project'}
+            {training ? 'Getting ready…' : 'Get started'}
           </button>
         </section>
       )}
 
-      {isReady && readiness && (
-        <section className="mb-8">
-          <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
-            <div>
-              <h2 className="font-display text-lg font-semibold text-ink">How to use this</h2>
-              <p className="text-sm text-[var(--muted)]">Guidance quality for day-to-day decisions</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link to={`/projects/${id}/whatif`} className="btn-secondary text-sm">
-                Try a scenario
-              </Link>
-              <button type="button" onClick={handleTrain} disabled={training} className="btn-ghost text-sm">
-                {training ? 'Refreshing…' : 'Refresh with latest data'}
-              </button>
-            </div>
-          </div>
-          <div className="border border-mist px-5 py-5 max-w-2xl">
-            <p className="font-display text-xl font-semibold text-ink">{readiness.label}</p>
-            <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">{readiness.detail}</p>
-            <p className="mt-3 text-sm text-ink">
-              Next: pick a person or account in the list, read why they stand out, and choose an action — or simulate one first.
-            </p>
-          </div>
-        </section>
-      )}
-
-      {/* Spot-check: known outcomes vs predictions on held-out rows */}
-      {isReady && project.problem_type !== 'regression' && (
-        <section className="mb-8 border border-mist">
-          <div className="px-5 py-4 border-b border-mist flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="page-kicker">Verification</p>
-              <h2 className="font-display text-lg font-semibold text-ink mt-0.5">
-                Does this match known outcomes?
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={fetchSpotCheck}
-              disabled={spotLoading}
-              className="btn-ghost text-sm"
-            >
-              {spotLoading ? 'Checking…' : 'Re-run check'}
+      {isReady && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <p className="text-sm text-[var(--muted)]">
+            {readiness ? (
+              <>
+                <span className="text-ink font-medium">{readiness.label}</span>
+                <span> — {readiness.detail}</span>
+              </>
+            ) : (
+              'Open a person or account to see risk and next steps.'
+            )}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Link to={`/projects/${id}/whatif`} className="btn-secondary text-sm">
+              Try a what-if
+            </Link>
+            <button type="button" onClick={handleTrain} disabled={training} className="btn-ghost text-sm">
+              {training ? 'Updating…' : 'Update with latest data'}
             </button>
           </div>
-          <div className="px-5 py-5">
-            {spotLoading && !spotCheck && (
-              <p className="text-sm text-[var(--muted)]">Comparing held-out labels to predictions…</p>
-            )}
-            {spotCheck && spotCheck.supported === false && (
-              <p className="text-sm text-[var(--muted)]">{spotCheck.message}</p>
-            )}
-            {spotCheck && spotCheck.n === 0 && (
-              <p className="text-sm text-[var(--muted)]">
-                {spotCheck.message || 'No held-out rows to score yet.'}
-              </p>
-            )}
-            {spotCheck && spotCheck.n > 0 && (
-              <>
-                <p className="font-display text-xl font-semibold text-ink">{spotCheck.grade_label}</p>
-                <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed max-w-2xl">
-                  {spotCheck.grade_detail}
-                </p>
-                <p className="mt-3 text-sm text-ink max-w-2xl">{spotCheck.plain_summary}</p>
-                <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-px bg-mist border border-mist">
-                  <div className="bg-paper px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Yes/No match</div>
-                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                      {Math.round((spotCheck.agree_rate || 0) * 100)}%
-                    </div>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      {spotCheck.agree_count}/{spotCheck.n} held-out rows
-                    </p>
-                  </div>
-                  <div className="bg-paper px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
-                      High-risk → true Yes
-                    </div>
-                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                      {spotCheck.high_risk_precision != null
-                        ? `${Math.round(spotCheck.high_risk_precision * 100)}%`
-                        : '—'}
-                    </div>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      {spotCheck.flagged_high || 0} flagged high
-                    </p>
-                  </div>
-                  <div className="bg-paper px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
-                      Low-risk → true No
-                    </div>
-                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                      {spotCheck.low_risk_true_negative_rate != null
-                        ? `${Math.round(spotCheck.low_risk_true_negative_rate * 100)}%`
-                        : '—'}
-                    </div>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      {spotCheck.calm_low || 0} calm calls
-                    </p>
-                  </div>
-                  <div className="bg-paper px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Soft ranges</div>
-                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                      {Math.round((spotCheck.soft_signal_share || 0) * 100)}%
-                    </div>
-                    <p className="text-xs text-[var(--muted)] mt-1">of scored cases</p>
-                  </div>
-                </div>
-                <p className="mt-4 text-xs text-[var(--muted)] max-w-2xl">
-                  Soft ranges flag mid-priority scores or nearly open residual bands — not every fat
-                  residual bar (those often look wide even when ranking is clear). Held-out check
-                  answers “is the compass pointing the right way?” — not whether every % is destiny.
-                </p>
-              </>
-            )}
-          </div>
-        </section>
-      )}
-
-      {isReady && project.problem_type !== 'regression' && feedbackSummary && (
-        <section className="mb-8 border border-mist">
-          <div className="px-5 py-4 border-b border-mist">
-            <p className="page-kicker">Learning log (A7)</p>
-            <h2 className="font-display text-lg font-semibold text-ink mt-0.5">
-              Outcomes you recorded
-            </h2>
-          </div>
-          <div className="px-5 py-5">
-            <p className="text-sm text-ink leading-relaxed max-w-2xl">
-              {feedbackSummary.plain_summary}
-            </p>
-            <div className="mt-4 grid sm:grid-cols-3 gap-px bg-mist">
-              <div className="bg-paper px-3 py-3">
-                <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Logged</div>
-                <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                  {feedbackSummary.with_feedback || 0}
-                </div>
-                <p className="text-xs text-[var(--muted)] mt-1">
-                  of {feedbackSummary.total_predictions || 0} predictions
-                </p>
-              </div>
-              <div className="bg-paper px-3 py-3">
-                <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
-                  Model match
-                </div>
-                <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                  {feedbackSummary.model_match_rate != null
-                    ? `${Math.round(feedbackSummary.model_match_rate * 100)}%`
-                    : '—'}
-                </div>
-                <p className="text-xs text-[var(--muted)] mt-1">on known Yes/No logs</p>
-              </div>
-              <div className="bg-paper px-3 py-3">
-                <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
-                  Actions tracked
-                </div>
-                <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                  {Object.keys(feedbackSummary.action_effectiveness || {}).length}
-                </div>
-                <p className="text-xs text-[var(--muted)] mt-1">types with outcome + action</p>
-              </div>
-            </div>
-            {Array.isArray(feedbackSummary.action_effectiveness_ranked) &&
-              feedbackSummary.action_effectiveness_ranked.length > 0 && (
-                <div className="mt-4 border-t border-mist pt-4">
-                  <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-2">
-                    Action hit rate
-                  </div>
-                  <ul className="space-y-2">
-                    {feedbackSummary.action_effectiveness_ranked.slice(0, 5).map((a) => (
-                      <li
-                        key={a.action_code}
-                        className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
-                      >
-                        <span className="text-ink font-medium">
-                          {a.action_name || a.action_code}
-                        </span>
-                        <span className="tabular-nums text-[var(--muted)]">
-                          {a.success_n}/{a.n} avoided
-                          {!a.reliable ? ' · small n' : ''}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-          </div>
-        </section>
-      )}
-
-      {isReady && project.problem_type !== 'regression' && (
-        <section className="mb-8 border border-mist">
-          <div className="px-5 py-4 border-b border-mist">
-            <p className="page-kicker">Decision ledger (B3)</p>
-            <h2 className="font-display text-lg font-semibold text-ink mt-0.5">
-              Committed actions
-            </h2>
-          </div>
-          <div className="px-5 py-5">
-            <p className="text-sm text-ink leading-relaxed max-w-2xl">
-              {ledger?.plain_summary ||
-                'No decisions committed yet. Open a case, pick an action, and commit it with a 30/60/90 recheck.'}
-            </p>
-            {Array.isArray(ledger?.decisions) && ledger.decisions.length > 0 ? (
-              <ul className="mt-4 divide-y divide-mist border border-mist">
-                {ledger.decisions.slice(0, 12).map((d) => (
-                  <li
-                    key={d.id}
-                    className="px-4 py-3 flex flex-wrap items-start justify-between gap-3 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium text-ink">{d.action_name}</div>
-                      <p className="text-xs text-[var(--muted)] mt-1 leading-relaxed">
-                        {d.status}
-                        {d.probability_at_commit != null
-                          ? ` · at ${(d.probability_at_commit * 100).toFixed(0)}%`
-                          : ''}
-                        {d.recheck_at
-                          ? ` · recheck ${String(d.recheck_at).slice(0, 10)}`
-                          : ''}
-                        {d.due_for_recheck ? ' · due now' : ''}
-                      </p>
-                      {d.autopsy_narrative && (
-                        <p className="text-xs text-[var(--muted)] mt-2 max-w-xl leading-relaxed">
-                          {d.autopsy_narrative}
-                        </p>
-                      )}
-                    </div>
-                    {d.status !== 'closed' && d.status !== 'cancelled' && (
-                      <button
-                        type="button"
-                        onClick={() => checkInDecision(d.id)}
-                        className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink"
-                      >
-                        Check in
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        </section>
+        </div>
       )}
 
       {isReady && rows.length > 0 && (
-        <section className="grid lg:grid-cols-5 gap-8">
+        <section className="grid lg:grid-cols-5 gap-8 mb-10">
           <div className="lg:col-span-3 min-w-0">
-            <h2 className="font-display text-lg font-semibold text-ink mb-1">Who to review</h2>
+            <h2 className="font-display text-lg font-semibold text-ink mb-1">Who needs attention?</h2>
             <p className="text-sm text-[var(--muted)] mb-4">
-              Known outcome is from your data. Click a row to compare it with the estimated chance.
+              Click a row to open their brief. “In data” is the labeled outcome in your dataset
+              (when available) — not something the model “knew” in advance.
             </p>
             <div className="surface overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>Known outcome</th>
+                    <th>In data</th>
                     {featurePreviewCols.map((col) => (
                       <th key={col} className="truncate max-w-[6rem]">
                         {String(col).replace(/[_-]+/g, ' ')}
@@ -696,7 +472,10 @@ export default function ProjectDetail() {
                         tabIndex={0}
                         role="button"
                         aria-pressed={selected}
-                        className={`cursor-pointer ${selected ? 'bg-teal-soft/30' : ''}`}
+                        aria-label={`Open case ${idx + 1}`}
+                        className={`cursor-pointer transition-colors hover:bg-mist/40 ${
+                          selected ? 'bg-teal-soft/30 ring-1 ring-inset ring-teal/30' : ''
+                        }`}
                       >
                         <td className="text-[var(--muted)]">{idx + 1}</td>
                         <td>
@@ -729,18 +508,18 @@ export default function ProjectDetail() {
                 </div>
               )}
               {predicting && (
-                <div className="surface p-6 text-sm text-[var(--muted)]">Building the case view…</div>
+                <div className="surface p-6 text-sm text-[var(--muted)]">Opening brief…</div>
               )}
               {!predicting && !prediction && (
                 <div className="surface p-6">
-                  <p className="page-kicker">Case brief</p>
-                  <h3 className="font-display text-lg font-semibold text-ink mt-1">Select someone</h3>
-                  <p className="text-sm text-muted mt-2 leading-relaxed">
-                    You&apos;ll see estimated chance of {outcomeLabel.toLowerCase()}, known outcome (if any), why,
-                    and next steps.
+                  <p className="page-kicker">Brief</p>
+                  <h3 className="font-display text-lg font-semibold text-ink mt-1">
+                    Select someone to begin
+                  </h3>
+                  <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed">
+                    You&apos;ll see how likely {outcomeLabel.toLowerCase()} is, what&apos;s driving
+                    it, and what to do next.
                   </p>
-                  <div className="mt-6 h-2 rounded-[2px] bg-mist" aria-hidden="true" />
-                  <p className="mt-3 text-xs text-muted">Waiting for a selection</p>
                 </div>
               )}
               {!predicting && prediction && (
@@ -756,12 +535,198 @@ export default function ProjectDetail() {
                   simulateHref={`/projects/${id}/whatif${
                     selectedRowIdx != null ? `?row=${selectedRowIdx}` : ''
                   }`}
-                  simulateLabel="What if we changed something?"
+                  simulateLabel="Explore a what-if"
                 />
               )}
             </div>
           </div>
         </section>
+      )}
+
+      {isReady &&
+        project.problem_type !== 'regression' &&
+        Array.isArray(ledger?.decisions) &&
+        ledger.decisions.length > 0 && (
+          <section className="mb-8 border border-mist">
+            <div className="px-5 py-4 border-b border-mist">
+              <h2 className="font-display text-lg font-semibold text-ink">Your follow-ups</h2>
+              <p className="text-sm text-[var(--muted)] mt-1">
+                {ledger.plain_summary || 'Actions you saved from cases.'}
+              </p>
+            </div>
+            <ul className="divide-y divide-mist">
+              {ledger.decisions.slice(0, 8).map((d) => {
+                const statusLabel =
+                  d.status === 'open'
+                    ? 'In progress'
+                    : d.status === 'closed'
+                      ? 'Done'
+                      : d.status === 'cancelled'
+                        ? 'Cancelled'
+                        : String(d.status || '').replace(/_/g, ' ');
+                return (
+                  <li
+                    key={d.id}
+                    className="px-5 py-3 flex flex-wrap items-start justify-between gap-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium text-ink">{d.action_name}</div>
+                      <p className="text-xs text-[var(--muted)] mt-1">
+                        {statusLabel}
+                        {d.recheck_at ? ` · check back ${String(d.recheck_at).slice(0, 10)}` : ''}
+                        {d.due_for_recheck ? ' · due now' : ''}
+                      </p>
+                    </div>
+                    {d.status !== 'closed' && d.status !== 'cancelled' && (
+                      <button
+                        type="button"
+                        onClick={() => checkInDecision(d.id)}
+                        className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
+                      >
+                        Update
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+      {isReady && project.problem_type !== 'regression' && (
+        <details className="mb-4 border border-mist group">
+          <summary className="px-5 py-4 cursor-pointer list-none hover:bg-mist/20">
+            <span className="font-display text-base font-semibold text-ink">Quality & learning</span>
+            <span className="block text-sm text-[var(--muted)] mt-1">
+              Optional — how well guidance matches real outcomes
+              {spotCheck?.n > 0
+                ? ` · ${Math.round((spotCheck.agree_rate || 0) * 100)}% matched so far`
+                : ''}
+            </span>
+          </summary>
+          <div className="px-5 py-5 border-t border-mist space-y-8">
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h3 className="font-medium text-ink">Does the ranking help?</h3>
+                <button
+                  type="button"
+                  onClick={fetchSpotCheck}
+                  disabled={spotLoading}
+                  className="btn-ghost text-sm"
+                >
+                  {spotLoading ? 'Checking…' : 'Refresh'}
+                </button>
+              </div>
+              {spotLoading && !spotCheck && (
+                <p className="text-sm text-[var(--muted)]">Checking against known outcomes…</p>
+              )}
+              {spotCheck && spotCheck.supported === false && (
+                <p className="text-sm text-[var(--muted)]">{spotCheck.message}</p>
+              )}
+              {spotCheck && spotCheck.n === 0 && (
+                <p className="text-sm text-[var(--muted)]">
+                  {spotCheck.message || 'Not enough known outcomes to check yet.'}
+                </p>
+              )}
+              {spotCheck && spotCheck.n > 0 && (
+                <>
+                  <p className="text-sm text-ink max-w-2xl leading-relaxed">
+                    {spotCheck.plain_summary}
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-px bg-mist border border-mist">
+                    <div className="bg-paper px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                        Matched known outcomes
+                      </div>
+                      <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+                        {Math.round((spotCheck.agree_rate || 0) * 100)}%
+                      </div>
+                    </div>
+                    <div className="bg-paper px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                        Right when flagged high
+                      </div>
+                      <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+                        {spotCheck.high_risk_precision != null
+                          ? `${Math.round(spotCheck.high_risk_precision * 100)}%`
+                          : '—'}
+                      </div>
+                    </div>
+                    <div className="bg-paper px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                        Right when flagged low
+                      </div>
+                      <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+                        {spotCheck.low_risk_true_negative_rate != null
+                          ? `${Math.round(spotCheck.low_risk_true_negative_rate * 100)}%`
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {feedbackSummary && (
+              <div>
+                <h3 className="font-medium text-ink mb-2">Outcomes your team recorded</h3>
+                <p className="text-sm text-[var(--muted)] leading-relaxed max-w-2xl mb-4">
+                  {feedbackSummary.plain_summary}
+                </p>
+                <div className="grid sm:grid-cols-3 gap-px bg-mist border border-mist">
+                  <div className="bg-paper px-3 py-3">
+                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                      Recorded
+                    </div>
+                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+                      {feedbackSummary.with_feedback || 0}
+                    </div>
+                    <p className="text-xs text-[var(--muted)] mt-1">
+                      of {feedbackSummary.total_predictions || 0} cases reviewed
+                    </p>
+                  </div>
+                  <div className="bg-paper px-3 py-3">
+                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                      Estimate matched
+                    </div>
+                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+                      {feedbackSummary.model_match_rate != null
+                        ? `${Math.round(feedbackSummary.model_match_rate * 100)}%`
+                        : '—'}
+                    </div>
+                  </div>
+                  <div className="bg-paper px-3 py-3">
+                    <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                      Action types tracked
+                    </div>
+                    <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
+                      {Object.keys(feedbackSummary.action_effectiveness || {}).length}
+                    </div>
+                  </div>
+                </div>
+                {Array.isArray(feedbackSummary.action_effectiveness_ranked) &&
+                  feedbackSummary.action_effectiveness_ranked.length > 0 && (
+                    <ul className="mt-4 space-y-2">
+                      {feedbackSummary.action_effectiveness_ranked.slice(0, 5).map((a) => (
+                        <li
+                          key={a.action_code}
+                          className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
+                        >
+                          <span className="text-ink font-medium">
+                            {a.action_name || a.action_code}
+                          </span>
+                          <span className="tabular-nums text-[var(--muted)]">
+                            favorable in {a.success_n}/{a.n} logged cases
+                            {!a.reliable ? ' · small sample' : ''}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+              </div>
+            )}
+          </div>
+        </details>
       )}
     </div>
   );

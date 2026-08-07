@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrustSpine } from './TrustSpine';
-import { HalftoneGlow } from './HalftoneGlow';
 import { assessTrust, matchLabel } from '../lib/trustAssessment';
 
 export type ExplanationDriver = {
@@ -130,11 +129,9 @@ type Props = {
   knownOutcome?: boolean | null;
   outcomeYesLabel?: string;
   outcomeNoLabel?: string;
-  /** A7 basic feedback log (optional) */
   projectId?: string;
   authToken?: string | null;
   onFeedbackSaved?: (fb: NonNullable<PredictionPayload['feedback']>) => void;
-  /** B3 decision ledger callback */
   onDecisionCommitted?: (decision: Record<string, unknown>) => void;
 };
 
@@ -149,18 +146,10 @@ function humanize(name: string): string {
 function attentionCopy(risk?: string, isSoft?: boolean): string {
   const r = String(risk || '').toLowerCase();
   if (r === 'critical' || r === 'high') {
-    return isSoft ? 'Needs attention (soft)' : 'Needs attention';
+    return isSoft ? 'Needs a closer look' : 'Needs attention';
   }
-  if (r === 'medium') return isSoft ? 'Watch closely (soft)' : 'Watch closely';
-  return isSoft ? 'Likely stable (soft range)' : 'Looking stable';
-}
-
-function consistencyTone(level?: string): string {
-  const l = String(level || '').toLowerCase();
-  if (l === 'high') return 'border-teal/30 bg-teal-soft/20';
-  if (l === 'medium' || l === 'single_method') return 'border-mist bg-paper';
-  if (l === 'low' || l === 'unavailable') return 'border-coral/40 bg-coral-soft';
-  return 'border-mist';
+  if (r === 'medium') return isSoft ? 'Keep an eye on this' : 'Watch closely';
+  return isSoft ? 'Looking stable — still verify' : 'Looking stable';
 }
 
 /**
@@ -170,7 +159,7 @@ export function PredictionPanel({
   result,
   children,
   simulateHref,
-  simulateLabel = 'Test a different plan',
+  simulateLabel = 'Explore a what-if',
   knownOutcome = null,
   outcomeYesLabel = 'Yes',
   outcomeNoLabel = 'No',
@@ -220,7 +209,6 @@ export function PredictionPanel({
     })) ??
     [];
 
-  const methods = result.explanations?.methods_available ?? [];
   const explainError = result.explanations?.error;
 
   const [fbOutcome, setFbOutcome] = useState(() => {
@@ -256,7 +244,7 @@ export function PredictionPanel({
 
   const submitDecision = async () => {
     if (!canCommit || !decAction) {
-      setDecError('Choose an action to commit.');
+      setDecError('Choose an action first.');
       return;
     }
     setDecSaving(true);
@@ -288,7 +276,7 @@ export function PredictionPanel({
               : null,
           decision_summary:
             result.decision_summary?.description ||
-            `Committed “${chosen?.action_name || code}” with a ${decInterval}-day recheck.`,
+            `Saved “${chosen?.action_name || code}” — check back in ${decInterval} days.`,
           recheck_interval_days: decInterval,
           case_snapshot: {
             drivers: result.explanations?.drivers || null,
@@ -298,9 +286,9 @@ export function PredictionPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setDecError(data.detail || 'Could not commit decision');
+        setDecError(data.detail || 'Could not save follow-up');
       } else {
-        setDecStatus(data.plain_summary || 'Decision committed to ledger.');
+        setDecStatus(data.plain_summary || 'Follow-up saved.');
         onDecisionCommitted?.(data);
       }
     } catch (e) {
@@ -331,9 +319,9 @@ export function PredictionPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFbError(data.detail || 'Could not save feedback');
+        setFbError(data.detail || 'Could not save');
       } else {
-        setFbStatus(data.plain_summary || 'Outcome logged.');
+        setFbStatus(data.plain_summary || 'Saved — thanks.');
         setFbMatch(data.model_matched_outcome);
         onFeedbackSaved?.(data);
       }
@@ -344,358 +332,92 @@ export function PredictionPanel({
   };
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       {!isReg && (
-        <div className="border-b border-mist pb-5">
-          <p className="page-kicker mb-1">This case</p>
+        <div>
+          <p className="page-kicker mb-1">Brief</p>
           <p className="font-display text-2xl font-semibold text-ink tracking-tight">
             {brief?.headline || attentionCopy(result.risk_level, trust.isSoft)}
           </p>
           <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">
             {brief?.summary || trust.summary}
           </p>
-          <p className="mt-2 text-sm text-ink">
-            Best guess:{' '}
+          <p className="mt-3 text-sm text-ink">
+            About{' '}
             <span className="font-semibold tabular-nums">{(point * 100).toFixed(0)}%</span>{' '}
-            chance of {outcome.toLowerCase()}.
+            chance of {outcome.toLowerCase()}
+            {trust.isSoft ? ' — treat as a guide, not a sure thing.' : '.'}
           </p>
-
           {knownOutcome != null && (
-            <div
-              className={`mt-4 px-3 py-3 border text-sm ${
-                agreement === 'agrees'
-                  ? 'border-teal/30 bg-teal-soft/20'
-                  : agreement === 'conflicts'
-                    ? 'border-coral/40 bg-coral-soft'
-                    : 'border-mist'
-              }`}
-            >
-              <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-                Check against known data
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-ink">
-                <span>
-                  Known outcome:{' '}
-                  <strong>{knownOutcome ? outcomeYesLabel : outcomeNoLabel}</strong>
-                </span>
-                <span>
-                  Call at 50%:{' '}
-                  <strong>{point >= 0.5 ? outcomeYesLabel : outcomeNoLabel}</strong>
-                </span>
-              </div>
-              <p className="mt-1.5 text-[var(--muted)]">
-                {agreement === 'agrees' &&
-                  'Matches the held-out label for this row — good sign for this case.'}
-                {agreement === 'conflicts' &&
-                  'Disagrees with the held-out label — open drivers and treat as a miss to learn from.'}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      <TrustSpine
-        point={point}
-        lower={lower}
-        upper={upper}
-        level={level}
-        lowConfidence={trust.isSoft}
-        abstentionReason={result.abstention_reason}
-        disagreement={null}
-        domain={isReg ? undefined : [0, 1]}
-        outcomeLabel={title}
-        businessCopy
-        badgeLabel={trust.badge}
-        rangeNote={trust.rangeNote}
-      />
-
-      {simulateHref && (
-        <HalftoneGlow
-          className="min-h-[9.5rem] w-full rounded-control border border-mist"
-          background="#0A0908"
-          focalPoints={[
-            { x: 0.36, y: 0.5, color: '#FF5A1F' },
-            { x: 0.64, y: 0.5, color: '#00C8B4' },
-          ]}
-          dotSpacing={12}
-          maxDotRadius={4.5}
-          glowRadius={180}
-          animated={false}
-        >
-          <Link
-            to={simulateHref}
-            className="inline-flex items-center justify-center px-6 py-3 text-sm font-semibold tracking-wide text-ink bg-paper/40 border border-ink/20 hover:border-teal/60 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal rounded-control transition-colors backdrop-blur-[1px]"
-          >
-            {simulateLabel}
-          </Link>
-        </HalftoneGlow>
-      )}
-
-      {canLog && (
-        <div className="border border-mist px-3 py-4 text-sm space-y-3">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-              Log real outcome (A7)
-            </div>
-            <p className="text-[var(--muted)] leading-relaxed">
-              When you know what happened, record it so we can score model hits and action
-              effectiveness. This is a basic log — not a 30/60/90 decision autopsy.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ['positive', outcomeYesLabel],
-                ['negative', outcomeNoLabel],
-                ['unknown', 'Unknown'],
-              ] as const
-            ).map(([val, label]) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setFbOutcome(val)}
-                className={`px-3 py-1.5 text-xs border ${
-                  fbOutcome === val
-                    ? 'border-teal bg-teal-soft/30 text-ink'
-                    : 'border-mist text-[var(--muted)] hover:text-ink'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {result.recommendations && result.recommendations.length > 0 && (
-            <div>
-              <label className="block text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-                Action taken (optional)
-              </label>
-              <select
-                value={fbAction}
-                onChange={(e) => setFbAction(e.target.value)}
-                className="w-full bg-paper border border-mist px-2 py-2 text-ink text-sm"
-              >
-                <option value="">None / not recorded</option>
-                {result.recommendations.map((r, i) => {
-                  const code = r.action_code || r.action_name || r.name || `action_${i}`;
-                  return (
-                    <option key={code} value={code}>
-                      {r.action_name || r.name || code}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={submitFeedback}
-            disabled={fbSaving || !fbOutcome}
-            className="px-4 py-2 text-sm font-medium border border-ink/20 hover:border-teal text-ink disabled:opacity-50"
-          >
-            {fbSaving ? 'Saving…' : 'Save outcome'}
-          </button>
-          {fbError && <p className="text-coral text-xs">{fbError}</p>}
-          {fbStatus && (
             <p
-              className={`text-xs leading-relaxed ${
-                fbMatch === false
-                  ? 'text-coral'
-                  : fbMatch === true
-                    ? 'text-teal'
+              className={`mt-3 text-sm ${
+                agreement === 'agrees'
+                  ? 'text-teal'
+                  : agreement === 'conflicts'
+                    ? 'text-coral'
                     : 'text-[var(--muted)]'
               }`}
             >
-              {fbStatus}
+              {agreement === 'agrees' &&
+                `Matches the labeled outcome in your dataset (${knownOutcome ? outcomeYesLabel : outcomeNoLabel}).`}
+              {agreement === 'conflicts' &&
+                `Dataset label is ${knownOutcome ? outcomeYesLabel : outcomeNoLabel} — dig into why below.`}
             </p>
           )}
-        </div>
-      )}
-
-      {consistency && consistency.plain && (
-        <div className={`px-3 py-3 border text-sm ${consistencyTone(consistency.trust_level)}`}>
-          <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-            Why trust check
-            {consistency.score != null && (
-              <span className="ml-2 normal-case tracking-normal text-ink font-medium tabular-nums">
-                {Math.round(Number(consistency.score) * 100)}% agreement · {consistency.trust_level}
-              </span>
-            )}
-          </div>
-          <p className="text-ink leading-relaxed">{consistency.plain}</p>
-          {methods.length > 0 && (
-            <p className="mt-1.5 text-xs text-[var(--muted)]">
-              Methods: {methods.map((m) => m.toUpperCase()).join(' + ')}
-            </p>
-          )}
-        </div>
-      )}
-
-      {explainError && (
-        <p className="text-sm text-coral">Could not explain this case: {explainError}</p>
-      )}
-
-      {(brief?.theme_rollup?.length || primaryLever) && (
-        <div className="space-y-3">
-          {brief?.theme_rollup && brief.theme_rollup.length > 0 && (
-            <div>
-              <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
-                Themes in this case
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {brief.theme_rollup.map((t) => (
-                  <span
-                    key={t.category}
-                    className="text-xs border border-mist px-2.5 py-1 text-ink"
-                  >
-                    {t.label}
-                    <span className="text-[var(--muted)]"> · {t.count}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {primaryLever?.suggestion && (
-            <div className="border border-mist px-3 py-3 text-sm">
-              <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-                Highest-leverage next focus
-              </div>
-              <p className="font-medium text-ink">
-                {primaryLever.display_name || humanize(String(primaryLever.feature || 'Driver'))}
-              </p>
-              <p className="mt-1 text-[var(--muted)] leading-relaxed">{primaryLever.suggestion}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {result.insights && result.insights.length > 0 && (
-        <div>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-3">
-            In plain language
-          </h4>
-          <ul className="space-y-3">
-            {result.insights.slice(0, 5).map((ins, i) => (
-              <li key={i} className="text-sm text-ink leading-relaxed border-l-2 border-mist pl-3">
-                {ins.text || ins.message || ins.reason}
-                {ins.suggestion && (
-                  <span className="block mt-1 text-[var(--muted)]">{ins.suggestion}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {drivers.length > 0 && (
-        <div>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-3">
-            Why we think this
-          </h4>
-          <ul className="space-y-2.5">
-            {drivers.slice(0, 5).map((f) => {
-              const impact = Number(f.impact ?? 0);
-              const up = f.direction === 'increases' || impact > 0;
-              const strength =
-                f.strength ||
-                (Math.abs(impact) >= 0.12
-                  ? 'strong'
-                  : Math.abs(impact) >= 0.04
-                    ? 'moderate'
-                    : 'mild');
-              return (
-                <li key={f.feature} className="text-sm border-b border-mist/80 pb-2">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-ink font-medium">{f.label || humanize(f.feature)}</span>
-                    <span className={`shrink-0 font-medium ${up ? 'text-coral' : 'text-teal'}`}>
-                      {strength === 'strong'
-                        ? 'Strong · '
-                        : strength === 'moderate'
-                          ? 'Moderate · '
-                          : 'Mild · '}
-                      {up ? 'raises risk' : 'lowers risk'}
-                    </span>
-                  </div>
-                  {f.text && <p className="mt-1 text-[var(--muted)] leading-relaxed">{f.text}</p>}
-                </li>
-              );
-            })}
-          </ul>
         </div>
       )}
 
       {result.recommendations && result.recommendations.length > 0 && (
         <div>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-3">
-            What to do next
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal mb-3">
+            Suggested next step
           </h4>
-          <p className="text-xs text-[var(--muted)] mb-4 leading-relaxed">
-            Ranked action catalog. Impact numbers are illustrative heuristics, not a
-            re-simulated outcome for this case.
-          </p>
-          {result.decision_summary && (
-            <div className="mb-4 border border-mist px-3 py-3 text-sm">
-              <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-                Decision strategy
-              </div>
-              <p className="font-medium text-ink">{result.decision_summary.strategy}</p>
-              {result.decision_summary.description && (
-                <p className="mt-1 text-[var(--muted)] leading-relaxed">
-                  {result.decision_summary.description}
-                </p>
-              )}
-              {result.decision_summary.expected_new_probability != null &&
-                result.decision_summary.current_probability != null && (
-                  <p className="mt-2 text-xs text-ink tabular-nums">
-                    Illustrative stack estimate:{" "}
-                    {(result.decision_summary.current_probability * 100).toFixed(0)}% →{" "}
-                    {(result.decision_summary.expected_new_probability * 100).toFixed(0)}%
-                    <span className="text-[var(--muted)]">
-                      {" "}
-                      (catalog heuristic, not re-simulated)
-                    </span>
-                  </p>
-                )}
-            </div>
+          {trust.isSoft && (
+            <p className="text-sm text-[var(--muted)] mb-3 leading-relaxed">
+              Certainty is soft on this case — prefer lighter check-ins first, and confirm with a
+              what-if before big spends.
+            </p>
           )}
-          <ol className="space-y-5">
-            {result.recommendations.slice(0, 4).map((r, i) => {
+          {result.decision_summary?.strategy && (
+            <p className="text-sm text-ink mb-3 leading-relaxed">
+              {result.decision_summary.strategy}
+              {result.decision_summary.description
+                ? ` — ${result.decision_summary.description}`
+                : ''}
+            </p>
+          )}
+          <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
+            Playbook suggestions ranked for this case. Impact labels are guides — run a what-if to
+            see a real before/after for this person.
+          </p>
+          <ol className="space-y-4">
+            {result.recommendations.slice(0, 3).map((r, i) => {
               const impact = Number(r.impact_score ?? 0);
               const cost = Number(r.cost_score ?? 0);
-              const rel = Number(r.relevance_score ?? 0);
-              const final = Number(r.final_score ?? 0);
+              const effort =
+                cost <= 0.35 ? 'Low effort' : cost <= 0.65 ? 'Medium effort' : 'Higher effort';
+              let punch =
+                impact >= 0.65 ? 'High potential' : impact >= 0.4 ? 'Solid potential' : 'Light touch';
+              if (trust.isSoft && impact >= 0.4) {
+                punch = 'Worth testing carefully';
+              }
               return (
-                <li key={r.action_code || r.action_name || r.name || i} className="text-sm border-b border-mist/80 pb-4 last:border-0">
-                  <div className="flex justify-between gap-3 items-start">
-                    <div className="font-medium text-ink">
-                      {i + 1}. {r.action_name || r.name}
-                    </div>
-                    <span className="shrink-0 text-xs tabular-nums text-[var(--muted)]">
-                      Rank score {(final * 100).toFixed(0)}
-                    </span>
+                <li
+                  key={r.action_code || r.action_name || r.name || i}
+                  className="text-sm border border-mist rounded-control px-3 py-3"
+                >
+                  <div className="font-medium text-ink">
+                    {i + 1}. {r.action_name || r.name}
                   </div>
-                  {r.description && (
-                    <p className="mt-1 text-[var(--muted)] leading-relaxed">{r.description}</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    {punch} · {effort}
+                    {r.implementation_time ? ` · ${r.implementation_time}` : ''}
+                  </p>
+                  {(r.description || r.reasoning) && (
+                    <p className="mt-2 text-[var(--muted)] leading-relaxed">
+                      {r.reasoning || r.description}
+                    </p>
                   )}
-                  {r.reasoning && (
-                    <p className="mt-1.5 text-ink/90 leading-relaxed">{r.reasoning}</p>
-                  )}
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
-                    <ScoreBar label="Illustrative impact" value={impact} tone="coral" />
-                    <ScoreBar label="Low cost" value={1 - cost} tone="teal" />
-                    <ScoreBar label="Relevance" value={rel} tone="teal" />
-                  </div>
-                  {r.expected_probability_reduction != null &&
-                    r.expected_probability_reduction > 0.01 && (
-                      <p className="mt-2 text-xs text-[var(--muted)] tabular-nums">
-                        Illustrative est. ~−
-                        {(r.expected_probability_reduction * 100).toFixed(0)} pp
-                        {r.implementation_time ? ` · ${r.implementation_time}` : ""}
-                        <span className="block mt-0.5">
-                          {r.impact_disclaimer ||
-                            "Catalog heuristic — not a re-simulated outcome"}
-                        </span>
-                      </p>
-                    )}
                 </li>
               );
             })}
@@ -704,16 +426,12 @@ export function PredictionPanel({
       )}
 
       {canCommit && (
-        <div className="border border-mist px-3 py-4 text-sm space-y-3">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
-              Commit to ledger (B3)
-            </div>
-            <p className="text-[var(--muted)] leading-relaxed">
-              Turn a recommended action into an accountable decision with a scheduled
-              recheck. This is the decision ledger — not just an A7 outcome stamp.
-            </p>
-          </div>
+        <div className="border border-teal/25 bg-teal-soft/10 px-3 py-4 text-sm space-y-3 rounded-control">
+          <div className="text-[11px] uppercase tracking-wide text-teal">Save a follow-up</div>
+          <p className="text-[var(--muted)] leading-relaxed">
+            Lock in what you&apos;ll do and when you&apos;ll check back. Any expected lift stored
+            here is a playbook estimate until you confirm with a what-if or a real outcome.
+          </p>
           <div>
             <label className="block text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
               Action
@@ -721,7 +439,7 @@ export function PredictionPanel({
             <select
               value={decAction}
               onChange={(e) => setDecAction(e.target.value)}
-              className="w-full bg-paper border border-mist px-2 py-2 text-ink text-sm"
+              className="w-full bg-paper border border-mist px-2 py-2 text-ink text-sm rounded-control"
             >
               {(result.recommendations || []).map((r, i) => {
                 const code = r.action_code || r.action_name || r.name || `action_${i}`;
@@ -739,13 +457,13 @@ export function PredictionPanel({
                 key={d}
                 type="button"
                 onClick={() => setDecInterval(d)}
-                className={`px-3 py-1.5 text-xs border ${
+                className={`px-3 py-1.5 text-xs border rounded-control ${
                   decInterval === d
                     ? 'border-teal bg-teal-soft/30 text-ink'
                     : 'border-mist text-[var(--muted)] hover:text-ink'
                 }`}
               >
-                {d}-day recheck
+                {d} days
               </button>
             ))}
           </div>
@@ -753,40 +471,185 @@ export function PredictionPanel({
             type="button"
             onClick={submitDecision}
             disabled={decSaving || !decAction}
-            className="px-4 py-2 text-sm font-medium border border-ink/20 hover:border-teal text-ink disabled:opacity-50"
+            className="btn-primary text-sm"
           >
-            {decSaving ? 'Committing…' : 'Commit decision'}
+            {decSaving ? 'Saving…' : 'Save follow-up'}
           </button>
           {decError && <p className="text-coral text-xs">{decError}</p>}
           {decStatus && <p className="text-teal text-xs leading-relaxed">{decStatus}</p>}
         </div>
       )}
 
-      {children}
-    </div>
-  );
-}
+      {simulateHref && (
+        <Link to={simulateHref} className="btn-secondary text-sm w-full">
+          {simulateLabel || 'Explore a what-if'}
+        </Link>
+      )}
 
-function ScoreBar({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: 'coral' | 'teal';
-}) {
-  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
-  const bar = tone === 'coral' ? 'bg-coral' : 'bg-teal';
-  return (
-    <div>
-      <div className="flex justify-between text-[var(--muted)] mb-1">
-        <span>{label}</span>
-        <span className="tabular-nums">{pct}</span>
-      </div>
-      <div className="h-1 bg-mist">
-        <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
-      </div>
+      {(brief?.theme_rollup?.length ||
+        primaryLever ||
+        (result.insights && result.insights.length > 0) ||
+        drivers.length > 0) && (
+        <div className="space-y-4 border-t border-mist pt-5">
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            Why it looks this way
+          </h4>
+          {brief?.theme_rollup && brief.theme_rollup.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {brief.theme_rollup.map((t) => (
+                <span
+                  key={t.category}
+                  className="text-xs border border-mist px-2.5 py-1 text-ink rounded-control"
+                >
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          )}
+          {primaryLever?.suggestion && (
+            <p className="text-sm text-ink leading-relaxed">
+              <span className="font-medium">
+                {primaryLever.display_name || humanize(String(primaryLever.feature || 'Driver'))}
+              </span>
+              <span className="text-[var(--muted)]"> — {primaryLever.suggestion}</span>
+            </p>
+          )}
+          {result.insights && result.insights.length > 0 && (
+            <ul className="space-y-2.5">
+              {result.insights.slice(0, 4).map((ins, i) => (
+                <li key={i} className="text-sm text-ink leading-relaxed border-l-2 border-mist pl-3">
+                  {ins.text || ins.message || ins.reason}
+                  {ins.suggestion && (
+                    <span className="block mt-1 text-[var(--muted)]">{ins.suggestion}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {drivers.length > 0 && !(result.insights && result.insights.length > 0) && (
+            <ul className="space-y-2">
+              {drivers.slice(0, 4).map((f) => {
+                const impact = Number(f.impact ?? 0);
+                const up = f.direction === 'increases' || impact > 0;
+                return (
+                  <li key={f.feature} className="text-sm flex justify-between gap-3">
+                    <span className="text-ink">{f.label || humanize(f.feature)}</span>
+                    <span className={`shrink-0 ${up ? 'text-coral' : 'text-teal'}`}>
+                      {up ? 'raises risk' : 'lowers risk'}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {explainError && (
+        <p className="text-sm text-coral">Could not explain this case: {explainError}</p>
+      )}
+
+      <details className="border border-mist rounded-control group">
+        <summary className="px-3 py-3 cursor-pointer text-sm list-none hover:bg-mist/20">
+          <span className="font-medium text-ink">How sure should you be?</span>
+          <span className="block text-xs text-[var(--muted)] mt-0.5">{trust.badge}</span>
+        </summary>
+        <div className="px-3 pb-4 space-y-4 border-t border-mist pt-3">
+          <TrustSpine
+            point={point}
+            lower={lower}
+            upper={upper}
+            level={level}
+            lowConfidence={trust.isSoft}
+            abstentionReason={result.abstention_reason}
+            disagreement={null}
+            domain={isReg ? undefined : [0, 1]}
+            outcomeLabel={title}
+            businessCopy
+            badgeLabel={trust.badge}
+            rangeNote={trust.rangeNote}
+          />
+          {consistency?.plain && (
+            <p className="text-sm text-[var(--muted)] leading-relaxed">{consistency.plain}</p>
+          )}
+        </div>
+      </details>
+
+      {canLog && (
+        <details className="border border-mist rounded-control">
+          <summary className="px-3 py-3 cursor-pointer text-sm list-none hover:bg-mist/20">
+            <span className="font-medium text-ink">Record what happened</span>
+            <span className="block text-xs text-[var(--muted)] mt-0.5">
+              After you know the real result
+            </span>
+          </summary>
+          <div className="px-3 pb-4 space-y-3 border-t border-mist pt-3 text-sm">
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['positive', outcomeYesLabel],
+                  ['negative', outcomeNoLabel],
+                  ['unknown', 'Unknown'],
+                ] as const
+              ).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setFbOutcome(val)}
+                  className={`px-3 py-1.5 text-xs border rounded-control ${
+                    fbOutcome === val
+                      ? 'border-teal bg-teal-soft/30 text-ink'
+                      : 'border-mist text-[var(--muted)] hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {result.recommendations && result.recommendations.length > 0 && (
+              <select
+                value={fbAction}
+                onChange={(e) => setFbAction(e.target.value)}
+                className="w-full bg-paper border border-mist px-2 py-2 text-ink text-sm rounded-control"
+              >
+                <option value="">Action taken (optional)</option>
+                {result.recommendations.map((r, i) => {
+                  const code = r.action_code || r.action_name || r.name || `action_${i}`;
+                  return (
+                    <option key={code} value={code}>
+                      {r.action_name || r.name || code}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={submitFeedback}
+              disabled={fbSaving || !fbOutcome}
+              className="btn-secondary text-sm"
+            >
+              {fbSaving ? 'Saving…' : 'Save what happened'}
+            </button>
+            {fbError && <p className="text-coral text-xs">{fbError}</p>}
+            {fbStatus && (
+              <p
+                className={`text-xs leading-relaxed ${
+                  fbMatch === false
+                    ? 'text-coral'
+                    : fbMatch === true
+                      ? 'text-teal'
+                      : 'text-[var(--muted)]'
+                }`}
+              >
+                {fbStatus}
+              </p>
+            )}
+          </div>
+        </details>
+      )}
+
+      {children}
     </div>
   );
 }

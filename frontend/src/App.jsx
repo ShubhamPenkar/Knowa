@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/common/Layout'
 
@@ -9,8 +9,12 @@ import Datasets from './pages/Datasets'
 import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import AnalyticsSaaS from './pages/AnalyticsSaaS'
-import Explainability from './pages/Explainability'
 import WhatIf from './pages/WhatIf'
+
+function ExplainabilityRedirect() {
+  const { projectId } = useParams()
+  return <Navigate to={`/projects/${projectId}`} replace />
+}
 
 function Loader() {
   return (
@@ -47,7 +51,7 @@ function AppRoutes() {
         <Route path="datasets" element={<Datasets />} />
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:id" element={<ProjectDetail />} />
-        <Route path="projects/:projectId/explainability" element={<Explainability />} />
+        <Route path="projects/:projectId/explainability" element={<ExplainabilityRedirect />} />
         <Route path="projects/:projectId/whatif" element={<WhatIf />} />
         <Route path="analytics" element={<AnalyticsSaaS />} />
       </Route>

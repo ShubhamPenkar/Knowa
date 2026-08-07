@@ -59,7 +59,7 @@ export default function Datasets() {
         <div>
           <p className="page-kicker">Data</p>
           <h1 className="page-title">Datasets</h1>
-          <p className="page-sub">CSV sources for training — foundation for every decision.</p>
+          <p className="page-sub">Spreadsheets and CSVs you connect to decision projects.</p>
         </div>
         <button type="button" onClick={() => setShowUpload(true)} className="btn-primary">
           Upload dataset
@@ -116,7 +116,7 @@ export default function Datasets() {
       {datasets.length === 0 ? (
         <div className="empty-state">
           <h3 className="font-display text-xl font-semibold">No datasets yet</h3>
-          <p className="text-sm text-[var(--muted)] mt-2 mb-6">Upload a CSV to begin training.</p>
+          <p className="text-sm text-[var(--muted)] mt-2 mb-6">Upload a CSV to get started.</p>
           <button type="button" className="btn-primary" onClick={() => setShowUpload(true)}>
             Upload dataset
           </button>

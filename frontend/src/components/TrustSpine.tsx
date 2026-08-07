@@ -110,7 +110,7 @@ export function TrustSpine({
         </div>
         {lowConfidence ? (
           <span className="badge bg-coral-soft text-ink border border-coral/30" role="status">
-            {badgeLabel || (businessCopy ? 'Soft signal' : 'Low confidence')}
+            {badgeLabel || (businessCopy ? 'Less sure — verify first' : 'Low confidence')}
           </span>
         ) : (
           <span className="badge bg-teal-soft/60 text-ink border border-teal/20">
@@ -182,9 +182,9 @@ export function TrustSpine({
             {abstentionReason}
           </p>
         )}
-        {lowConfidence && businessCopy && !rangeNote?.includes('teal bar') && (
+        {lowConfidence && businessCopy && (
           <p className="text-sm text-ink border-l-2 border-coral pl-3 mt-2">
-            Prefer lighter actions first when the range is soft.
+            Prefer lighter actions first when certainty is soft.
           </p>
         )}
       </figcaption>

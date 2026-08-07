@@ -188,7 +188,7 @@ export default function Projects() {
           <p className="page-kicker">Workspace</p>
           <h1 className="page-title">Projects</h1>
           <p className="page-sub">
-            Models you can train, explain, and act on — with calibrated confidence.
+            Connect a dataset, prepare guidance, then review cases and choose next steps.
           </p>
         </div>
         <button type="button" onClick={() => setShowCreate(true)} className="btn-primary">
@@ -205,7 +205,10 @@ export default function Projects() {
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-ink/40 flex items-start justify-center overflow-y-auto py-10 px-4">
           <div className="bg-surface border border-mist rounded-control w-full max-w-2xl p-6 animate-page-in">
-            <h2 className="font-display text-xl font-semibold text-ink mb-4">Create project</h2>
+            <h2 className="font-display text-xl font-semibold text-ink mb-1">Create project</h2>
+            <p className="text-sm text-[var(--muted)] mb-4">
+              Name it, pick your data, and tell us what you want to predict.
+            </p>
             {error && (
               <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">
                 {error}
@@ -258,12 +261,12 @@ export default function Projects() {
               {selectedDataset && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Problem type</label>
+                    <label className="block text-sm font-medium mb-1">What kind of question?</label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        ['binary_classification', 'Classification'],
-                        ['regression', 'Regression'],
-                      ].map(([val, label]) => (
+                        ['binary_classification', 'Will it happen?', 'Yes / No risk (churn, attrition…)'],
+                        ['regression', 'How much?', 'A number (spend, score…)'],
+                      ].map(([val, label, hint]) => (
                         <label
                           key={val}
                           className={`border rounded-control p-3 text-sm cursor-pointer ${
@@ -293,7 +296,8 @@ export default function Projects() {
                               }
                             }}
                           />
-                          {label}
+                          <span className="font-medium text-ink block">{label}</span>
+                          <span className="text-xs text-[var(--muted)] mt-0.5 block">{hint}</span>
                         </label>
                       ))}
                     </div>
@@ -360,7 +364,7 @@ export default function Projects() {
                   {newProject.target_column && (
                     <div>
                       <div className="flex justify-between items-center mb-1">
-                        <label className="text-sm font-medium">Features</label>
+                        <label className="text-sm font-medium">What signals to use</label>
                         <button type="button" className="text-xs text-teal font-medium" onClick={selectAllFeatures}>
                           Select all
                         </button>
@@ -407,13 +411,14 @@ export default function Projects() {
 
       {projects.length === 0 ? (
         <div className="empty-state">
-          <h3 className="font-display text-xl font-semibold text-ink">No projects yet</h3>
+          <h3 className="font-display text-xl font-semibold text-ink">Start with a project</h3>
           <p className="text-[var(--muted)] mt-2 mb-6 max-w-sm mx-auto text-sm">
-            Create a project to train a model and open the confidence spine on real rows.
+            A project links your data to guidance you can act on — who needs attention, why, and what
+            to try.
           </p>
           {datasets.length > 0 ? (
             <button type="button" onClick={() => setShowCreate(true)} className="btn-primary">
-              Create project
+              Create your first project
             </button>
           ) : (
             <Link to="/datasets" className="btn-primary">
@@ -423,7 +428,16 @@ export default function Projects() {
         </div>
       ) : (
         <ul className="divide-y divide-mist border-y border-mist">
-          {projects.map((project) => (
+          {projects.map((project) => {
+            const ready = project.status === 'ready' || project.status === 'trained';
+            const statusLabel = ready
+              ? 'Ready'
+              : project.status === 'error'
+                ? 'Needs attention'
+                : project.status === 'created' || project.status === 'draft'
+                  ? 'Needs setup'
+                  : String(project.status || '').replace(/_/g, ' ');
+            return (
             <li key={project.id}>
               <div
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 cursor-pointer group"
@@ -437,21 +451,23 @@ export default function Projects() {
                     {project.name}
                   </h3>
                   <p className="text-sm text-[var(--muted)] mt-0.5">
-                    Target {project.target_column}
-                    {project.feature_count != null ? ` · ${project.feature_count} features` : ''}
+                    Watching{' '}
+                    {(project.target_description || project.target_column || 'outcome')
+                      .replace(/[_-]+/g, ' ')}
+                    {project.feature_count != null ? ` · ${project.feature_count} factors` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span
                     className={`badge ${
-                      project.status === 'ready' || project.status === 'trained'
+                      ready
                         ? 'bg-teal-soft/50 text-ink border border-teal/20'
                         : project.status === 'error'
                           ? 'bg-coral-soft text-ink'
                           : 'bg-mist text-ink'
                     }`}
                   >
-                    {project.status}
+                    {statusLabel}
                   </span>
                   {(user?.role === 'owner' || user?.role === 'admin') && (
                     <button
@@ -469,7 +485,8 @@ export default function Projects() {
                 </div>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

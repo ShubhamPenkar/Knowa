@@ -1468,17 +1468,17 @@ class ProjectService:
                 elif any(x in fl for x in ("jobsatisfaction", "environmentsatisfaction", "relationshipsatisfaction")):
                     try:
                         v = int(float(cur))
-                        if v <= 2:
-                            alt = min(4, v + 1)
-                            hint = "Simulate a one-step satisfaction improvement."
+                        if v < 4:
+                            alt = 4
+                            hint = "Job satisfaction scores only run 1–4 here — try the top score."
                     except (TypeError, ValueError):
                         alt = None
                 elif "worklifebalance" in fl:
                     try:
                         v = int(float(cur))
-                        if v <= 2:
-                            alt = min(4, v + 1)
-                            hint = "Simulate a work–life balance improvement."
+                        if v < 4:
+                            alt = 4
+                            hint = "Work–life balance scores run 1–4 — try raising to 4."
                     except (TypeError, ValueError):
                         alt = None
                 elif "distancefromhome" in fl:
@@ -1553,6 +1553,363 @@ class ProjectService:
 
         return _json_safe(suggestions)
 
+    @staticmethod
+    def _feature_value_bounds(feature: str, domain: str) -> Optional[tuple[float, float]]:
+        """Known ordinal ranges so what-if dials stay in-distribution."""
+        from app.recommendations.domains import DOMAIN_HR_ATTRITION
+
+        fl = str(feature).lower().replace("_", "").replace("-", "")
+        if domain == DOMAIN_HR_ATTRITION:
+            if fl in {
+                "jobsatisfaction",
+                "environmentsatisfaction",
+                "relationshipsatisfaction",
+                "jobinvolvement",
+                "worklifebalance",
+                "performancerating",
+            }:
+                return (1.0, 4.0)
+            if fl == "education":
+                return (1.0, 5.0)
+            if fl == "stockoptionlevel":
+                return (0.0, 3.0)
+        return None
+
+    def _sanitize_scenario_mods(
+        self,
+        *,
+        modified: dict[str, Any],
+        domain: str,
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Clamp OOD dials (e.g. JobSatisfaction 10 when train range is 1–4)."""
+        out: dict[str, Any] = {}
+        notes: list[str] = []
+        for key, val in (modified or {}).items():
+            bounds = self._feature_value_bounds(key, domain)
+            if bounds is None:
+                out[key] = val
+                continue
+            lo, hi = bounds
+            try:
+                num = float(val)
+            except (TypeError, ValueError):
+                out[key] = val
+                continue
+            clamped = min(hi, max(lo, num))
+            # keep ints for Likert-style fields
+            if float(clamped).is_integer():
+                clamped_val: Any = int(clamped)
+            else:
+                clamped_val = clamped
+            out[key] = clamped_val
+            if abs(clamped - num) > 1e-9:
+                label = " ".join(
+                    w.capitalize()
+                    for w in str(key).replace("_", " ").replace("-", " ").split()
+                )
+                notes.append(
+                    f"{label} only runs from {int(lo)}–{int(hi)} in this dataset; "
+                    f"used {clamped_val} instead of {val}."
+                )
+        return out, notes
+
+    def _rank_tweaks_by_impact(
+        self,
+        project_id: str,
+        base_features: dict[str, Any],
+        suggestions: list[dict[str, Any]],
+        baseline_prob: float,
+        *,
+        domain: str,
+    ) -> list[dict[str, Any]]:
+        """Keep / order dial suggestions by actual score movement for this case."""
+        if not suggestions:
+            return []
+        ranked: list[dict[str, Any]] = []
+        for s in suggestions:
+            feat = s.get("feature")
+            alt = s.get("suggested_value")
+            if feat is None or alt is None:
+                continue
+            safe_mods, _ = self._sanitize_scenario_mods(
+                modified={feat: alt}, domain=domain
+            )
+            alt = safe_mods.get(feat, alt)
+            try:
+                combined = {**(base_features or {}), feat: alt}
+                pred = self.predict(
+                    project_id,
+                    _json_safe(combined) or {},
+                    include_explanations=False,
+                    include_recommendations=False,
+                    persist=False,
+                    source="simulation",
+                )
+                after = float(pred.get("probability") or pred.get("predicted_value") or 0)
+                delta = after - float(baseline_prob)
+            except Exception:
+                delta = 0.0
+                after = float(baseline_prob)
+            row = {
+                **s,
+                "suggested_value": alt,
+                "expected_delta": round(delta, 4),
+                "expected_probability": round(after, 4),
+            }
+            ranked.append(row)
+        # Prefer levers that actually move the needle (risk down first)
+        ranked.sort(key=lambda r: (abs(float(r.get("expected_delta") or 0)),), reverse=True)
+        meaningful = [r for r in ranked if abs(float(r.get("expected_delta") or 0)) >= 0.005]
+        return _json_safe(meaningful or ranked[:2])
+
+    def _probe_fallback_levers(
+        self,
+        project_id: str,
+        base_features: dict[str, Any],
+        baseline_prob: float,
+        *,
+        domain: str,
+        project: Project,
+    ) -> list[dict[str, Any]]:
+        """Probe common dials and return those that move this case's score."""
+        from app.recommendations.domains import DOMAIN_HR_ATTRITION
+
+        candidates: list[tuple[str, Any, str]] = []
+        feats = set(project.feature_columns or [])
+        colmap = {str(c).lower(): c for c in feats}
+
+        def has(name: str) -> Optional[str]:
+            return colmap.get(name.lower())
+
+        if domain == DOMAIN_HR_ATTRITION:
+            ot = has("OverTime")
+            if ot and str(base_features.get(ot, "")).lower() in ("yes", "y", "true", "1"):
+                candidates.append((ot, "No", "Turn off overtime"))
+            elif ot and str(base_features.get(ot, "")).lower() in ("no", "n", "false", "0"):
+                candidates.append((ot, "Yes", "Contrast: turn overtime on"))
+
+            bt = has("BusinessTravel")
+            if bt and "frequent" in str(base_features.get(bt, "")).lower():
+                candidates.append((bt, "Travel_Rarely", "Reduce travel load"))
+
+            for col_name, hi, hint in (
+                ("JobSatisfaction", 4, "Raise job satisfaction to 4"),
+                ("EnvironmentSatisfaction", 4, "Raise environment satisfaction to 4"),
+                ("RelationshipSatisfaction", 4, "Raise relationship satisfaction to 4"),
+                ("WorkLifeBalance", 4, "Raise work–life balance to 4"),
+                ("JobInvolvement", 4, "Raise job involvement to 4"),
+            ):
+                real = has(col_name)
+                if not real:
+                    continue
+                try:
+                    cur = int(float(base_features.get(real)))
+                except (TypeError, ValueError):
+                    continue
+                if cur < hi:
+                    candidates.append((real, hi, hint))
+                elif cur > 1:
+                    candidates.append((real, 1, f"Contrast: drop {col_name} to 1"))
+
+            mi = has("MonthlyIncome")
+            if mi:
+                try:
+                    cur = float(base_features.get(mi))
+                    candidates.append((mi, round(cur * 1.1, 2), "Try a ~10% pay bump"))
+                    candidates.append((mi, round(cur * 0.9, 2), "Contrast: ~10% pay cut"))
+                except (TypeError, ValueError):
+                    pass
+
+            dist = has("DistanceFromHome")
+            if dist:
+                try:
+                    cur = float(base_features.get(dist))
+                    if cur >= 10:
+                        candidates.append(
+                            (dist, max(1, round(cur * 0.5, 1)), "Shorter commute / hybrid proxy")
+                        )
+                except (TypeError, ValueError):
+                    pass
+
+            ysp = has("YearsSinceLastPromotion")
+            if ysp:
+                try:
+                    cur = int(float(base_features.get(ysp)))
+                    if cur >= 2:
+                        candidates.append((ysp, 0, "Simulate a recent promotion"))
+                except (TypeError, ValueError):
+                    pass
+
+            stock = has("StockOptionLevel")
+            if stock:
+                try:
+                    cur = int(float(base_features.get(stock)))
+                    if cur <= 0:
+                        candidates.append((stock, 1, "Grant stock options (level 1)"))
+                except (TypeError, ValueError):
+                    pass
+
+            train = has("TrainingTimesLastYear")
+            if train:
+                try:
+                    cur = int(float(base_features.get(train)))
+                    candidates.append((train, cur + 1, "Add one training cycle"))
+                except (TypeError, ValueError):
+                    pass
+        else:
+            # Telco / generic churn-style dials
+            for col_name, alt, hint in (
+                ("Contract", "Two year", "Longer contract"),
+                ("Contract", "One year", "One-year contract"),
+                ("TechSupport", "Yes", "Add tech support"),
+                ("OnlineSecurity", "Yes", "Add online security"),
+                ("OnlineBackup", "Yes", "Add online backup"),
+                ("DeviceProtection", "Yes", "Add device protection"),
+                ("PaperlessBilling", "No", "Turn off paperless billing"),
+            ):
+                real = has(col_name)
+                if not real:
+                    continue
+                cur = base_features.get(real)
+                if str(cur) == str(alt):
+                    continue
+                candidates.append((real, alt, hint))
+
+            for col_name, factor, hint in (
+                ("MonthlyCharges", 0.85, "Lower monthly charges ~15%"),
+                ("tenure", None, "Add 12 months tenure"),
+            ):
+                real = has(col_name)
+                if not real:
+                    continue
+                try:
+                    cur = float(base_features.get(real))
+                except (TypeError, ValueError):
+                    continue
+                if col_name.lower() == "tenure":
+                    candidates.append((real, int(cur) + 12, hint))
+                else:
+                    candidates.append((real, round(cur * float(factor), 2), hint))
+
+        probes: list[dict[str, Any]] = []
+        seen_keys: set[str] = set()
+        for feat, alt, hint in candidates:
+            key = f"{feat}|{alt}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            real = feat if feat in feats else colmap.get(str(feat).lower())
+            if not real:
+                continue
+            try:
+                pred = self.predict(
+                    project_id,
+                    _json_safe({**(base_features or {}), real: alt}) or {},
+                    include_explanations=False,
+                    include_recommendations=False,
+                    persist=False,
+                    source="simulation",
+                )
+                after = float(pred.get("probability") or 0)
+                delta = after - float(baseline_prob)
+            except Exception:
+                continue
+            probes.append({
+                "feature": real,
+                "label": real,
+                "suggested_value": alt,
+                "current": _json_safe((base_features or {}).get(real)),
+                "hint": hint,
+                "expected_delta": round(delta, 4),
+                "expected_probability": round(after, 4),
+                "moves_score": abs(delta) >= 0.005,
+            })
+
+        # Prefer risk-reducing movers first
+        probes.sort(
+            key=lambda r: (
+                0 if r.get("moves_score") else 1,
+                float(r.get("expected_delta") or 0),
+            )
+        )
+        return _json_safe(probes[:12])
+
+    def _probe_driver_nudges(
+        self,
+        project_id: str,
+        base_features: dict[str, Any],
+        baseline_prob: float,
+        original_pred: dict[str, Any],
+        *,
+        domain: str,
+    ) -> list[dict[str, Any]]:
+        """Nudge top risk-raising drivers so focus mode has several editable dials."""
+        factors = (
+            original_pred.get("explanations", {}).get("drivers")
+            or original_pred.get("explanations", {}).get("shap", {}).get("top_features")
+            or []
+        )
+        out: list[dict[str, Any]] = []
+        for f in factors[:8]:
+            feat = f.get("feature")
+            if not feat or feat not in (base_features or {}):
+                continue
+            impact = float(f.get("impact") or 0)
+            if impact <= 0:
+                continue
+            cur = base_features.get(feat)
+            alt = None
+            hint = f"Shows up in “why” — test whether changing it moves the score"
+            bounds = self._feature_value_bounds(feat, domain)
+            try:
+                if bounds is not None:
+                    lo, hi = bounds
+                    v = float(cur)
+                    alt = int(hi) if v < hi else int(lo)
+            except (TypeError, ValueError):
+                alt = None
+
+            if alt is None:
+                try:
+                    v = float(cur)
+                    alt = round(v * 0.85, 2) if abs(v) > 1e-9 else v + 1
+                    if abs(float(alt) - v) < 1e-9:
+                        alt = v + 1
+                    hint = f"Nudge {feat} and re-score"
+                except (TypeError, ValueError):
+                    s = str(cur).strip().lower()
+                    if s in ("yes", "y", "true", "1"):
+                        alt = "No"
+                    elif s in ("no", "n", "false", "0"):
+                        alt = "Yes"
+                    else:
+                        continue
+
+            try:
+                pred = self.predict(
+                    project_id,
+                    _json_safe({**(base_features or {}), feat: alt}) or {},
+                    include_explanations=False,
+                    include_recommendations=False,
+                    persist=False,
+                    source="simulation",
+                )
+                after = float(pred.get("probability") or 0)
+                delta = after - float(baseline_prob)
+            except Exception:
+                continue
+            out.append({
+                "feature": feat,
+                "label": f.get("label") or feat,
+                "suggested_value": alt,
+                "current": _json_safe(cur),
+                "hint": hint,
+                "expected_delta": round(delta, 4),
+                "expected_probability": round(after, 4),
+                "moves_score": abs(delta) >= 0.005,
+            })
+        return out
+
     def _scenario_key_insights(
         self,
         *,
@@ -1566,6 +1923,18 @@ class ProjectService:
 
         insights: list[str] = []
         hr = domain == DOMAIN_HR_ATTRITION
+        moved = abs(prob_change) >= 0.005
+
+        if change_log and not moved:
+            labels = ", ".join(
+                str(c.get("label") or c.get("feature")) for c in change_log[:3]
+            )
+            insights.append(
+                f"Changing {labels} did not move this person's estimate — "
+                f"other signals are driving the score. Try a stronger lever below."
+            )
+            return insights
+
         for c in change_log[:5]:
             feat = str(c.get("feature") or "")
             fl = feat.lower().replace("_", "")
@@ -1582,7 +1951,7 @@ class ProjectService:
                     )
                 elif "jobsatisfaction" in fl or "worklifebalance" in fl:
                     insights.append(
-                        f"Improving {label} ({before} → {after}) addresses a people-ops driver."
+                        f"Improving {label} ({before} → {after}) is a people-ops lever for this case."
                     )
                 elif "monthlyincome" in fl:
                     insights.append(
@@ -1625,6 +1994,10 @@ class ProjectService:
             insights.append(
                 f"Warning: chance of {ol} rises by about {prob_change * 100:.0f} percentage points."
             )
+        elif moved:
+            insights.append(
+                f"Net effect: chance of {ol} shifts by about {prob_change * 100:+.1f} points."
+            )
         return insights
 
     def _scenario_plain_summary(
@@ -1661,8 +2034,12 @@ class ProjectService:
             )
         pp = change * 100
         if abs(pp) < 0.5:
-            move = "barely moves"
-        elif pp < 0:
+            return (
+                f"With {n} change(s) ({change_bits or 'no real diffs'}), chance of "
+                f"{label} stays about {before:.0%} — this lever does not move the estimate "
+                f"for this person. Use “Dials that move this case” or show all fields."
+            )
+        if pp < 0:
             move = f"drops about {abs(pp):.0f} percentage points"
         else:
             move = f"rises about {pp:.0f} percentage points"
@@ -1704,6 +2081,27 @@ class ProjectService:
         # Only real diffs — ignore no-ops
         change_log = self._diff_features(base_features, modified_features or {})
         real_mods = {c["feature"]: (modified_features or {}).get(c["feature"]) for c in change_log}
+        real_mods, clamp_notes = self._sanitize_scenario_mods(
+            modified=real_mods, domain=domain
+        )
+        # Drop mods that clamp back to the baseline (e.g. JS 4→10→4)
+        effective_mods: dict[str, Any] = {}
+        for k, v in real_mods.items():
+            before = (base_features or {}).get(k)
+            if str(_json_safe(before)) == str(_json_safe(v)):
+                continue
+            effective_mods[k] = v
+        real_mods = effective_mods
+        change_log = self._diff_features(base_features, real_mods)
+        # If user dialed something but clamp wiped the effective change, keep intent in warnings
+        if not change_log and clamp_notes:
+            for note in list(clamp_notes):
+                if "instead of" in note and "does not change" not in note:
+                    clamp_notes.append(
+                        "After clamping to the valid range, the value matches the original — "
+                        "so the estimate cannot move on this dial alone."
+                    )
+                    break
 
         original = self.predict(
             project_id,
@@ -1725,6 +2123,9 @@ class ProjectService:
         )
 
         suggested = self._suggested_tweaks(base_features or {}, original, project)
+
+        # User requested a change that clamped to a no-op — still explain honestly
+        noop_request = bool(clamp_notes) and not change_log
 
         if is_regression:
             original_val = float(original.get("predicted_value") or 0)
@@ -1755,6 +2156,7 @@ class ProjectService:
                 "direction": direction,
                 "modified_features": real_mods,
                 "change_log": change_log,
+                "warnings": clamp_notes,
                 "driver_shift": self._driver_shift(
                     original.get("explanations", {}).get("drivers")
                     or (original.get("explanations") or {}).get("shap", {}).get("top_features"),
@@ -1787,6 +2189,32 @@ class ProjectService:
             else "unchanged"
         )
 
+        suggested = self._rank_tweaks_by_impact(
+            project_id,
+            base_features or {},
+            suggested,
+            original_prob,
+            domain=domain,
+        )
+        if abs(prob_change) < 0.005 and (change_log or noop_request):
+            fallback = self._probe_fallback_levers(
+                project_id,
+                base_features or {},
+                original_prob,
+                domain=domain,
+                project=project,
+            )
+            # Prefer probed levers that move the needle
+            seen = {s.get("feature") for s in suggested}
+            for f in fallback:
+                if f.get("feature") not in seen:
+                    suggested.append(f)
+                    seen.add(f.get("feature"))
+            suggested = sorted(
+                suggested,
+                key=lambda r: float(r.get("expected_delta") or 0),
+            )
+
         from app.ml.soft_range import interval_is_soft
 
         def _soft(pred: dict) -> dict:
@@ -1801,6 +2229,33 @@ class ProjectService:
 
         before_soft = _soft(original)
         after_soft = _soft(modified)
+
+        key_insights = self._scenario_key_insights(
+            change_log=change_log,
+            prob_change=prob_change,
+            outcome_label=outcome_label,
+            domain=domain,
+        )
+        if noop_request and not key_insights:
+            key_insights = [
+                "That dial is already at (or clamped to) its original value, so the estimate did not move. "
+                "Use “Dials that move this case,” or show all fields."
+            ]
+
+        plain = self._scenario_plain_summary(
+            outcome_label=outcome_label,
+            is_regression=False,
+            before=original_prob,
+            after=modified_prob,
+            change=prob_change,
+            change_log=change_log or (
+                [{"label": "requested dial", "before": "—", "after": "clamped to original"}]
+                if noop_request
+                else []
+            ),
+            risk_level_change=risk_change,
+            domain=domain,
+        )
 
         return {
             "original": {
@@ -1827,28 +2282,15 @@ class ProjectService:
             "direction": risk_change,
             "modified_features": real_mods,
             "change_log": change_log,
+            "warnings": clamp_notes,
             "driver_shift": self._driver_shift(
                 original.get("explanations", {}).get("drivers")
                 or (original.get("explanations") or {}).get("shap", {}).get("top_features"),
                 modified.get("explanations", {}).get("drivers")
                 or (modified.get("explanations") or {}).get("shap", {}).get("top_features"),
             ),
-            "plain_summary": self._scenario_plain_summary(
-                outcome_label=outcome_label,
-                is_regression=False,
-                before=original_prob,
-                after=modified_prob,
-                change=prob_change,
-                change_log=change_log,
-                risk_level_change=risk_change,
-                domain=domain,
-            ),
-            "key_insights": self._scenario_key_insights(
-                change_log=change_log,
-                prob_change=prob_change,
-                outcome_label=outcome_label,
-                domain=domain,
-            ),
+            "plain_summary": plain,
+            "key_insights": key_insights,
             "suggested_tweaks": suggested,
             "domain": domain,
             "recommendations": modified.get("recommendations") or [],
@@ -1856,6 +2298,136 @@ class ProjectService:
             "original_explanations": original.get("explanations"),
             "modified_explanations": modified.get("explanations"),
             "insight_brief_after": modified.get("insight_brief"),
+        }
+
+    def scenario_levers(
+        self,
+        project_id: str,
+        base_features: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Rank what-if dials by *actual* score movement for this case.
+
+        SHAP "drivers" explain contribution; they are not always the dials that
+        move the estimate when changed. What-if focus should use this list.
+        """
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        if project.problem_type == "regression":
+            return {
+                "levers": [],
+                "plain_summary": "Scenario levers are ranked for yes/no outcomes.",
+                "feature_names": [],
+            }
+
+        from app.recommendations.domains import detect_domain
+
+        domain = detect_domain(
+            feature_columns=project.feature_columns,
+            features=base_features,
+            project_name=project.name,
+            target_column=project.target_column,
+            target_description=project.target_description,
+        )
+
+        original = self.predict(
+            project_id,
+            _json_safe(base_features) or {},
+            include_explanations=True,
+            include_recommendations=False,
+            persist=False,
+            source="simulation",
+        )
+        baseline = float(original.get("probability") or 0)
+        suggested = self._suggested_tweaks(base_features or {}, original, project)
+        ranked = self._rank_tweaks_by_impact(
+            project_id,
+            base_features or {},
+            suggested,
+            baseline,
+            domain=domain,
+        )
+        fallback = self._probe_fallback_levers(
+            project_id,
+            base_features or {},
+            baseline,
+            domain=domain,
+            project=project,
+        )
+        driver_nudges = self._probe_driver_nudges(
+            project_id,
+            base_features or {},
+            baseline,
+            original,
+            domain=domain,
+        )
+
+        by_feat: dict[str, dict[str, Any]] = {}
+        for row in list(ranked or []) + list(fallback or []) + list(driver_nudges or []):
+            feat = row.get("feature")
+            if not feat:
+                continue
+            prev = by_feat.get(feat)
+            if prev is None or abs(float(row.get("expected_delta") or 0)) > abs(
+                float(prev.get("expected_delta") or 0)
+            ):
+                by_feat[feat] = row
+
+        all_rows = sorted(
+            by_feat.values(),
+            key=lambda r: (
+                0 if abs(float(r.get("expected_delta") or 0)) >= 0.005 else 1,
+                float(r.get("expected_delta") or 0),
+            ),
+        )
+        moving = [
+            r for r in all_rows if abs(float(r.get("expected_delta") or 0)) >= 0.005
+        ]
+        # Focus list: all movers, then fill up to 6 editable dials so UI isn't a single box
+        focus_rows: list[dict[str, Any]] = list(moving)
+        for r in all_rows:
+            if len(focus_rows) >= 6:
+                break
+            if r.get("feature") in {x.get("feature") for x in focus_rows}:
+                continue
+            focus_rows.append(r)
+
+        # Sidebar “dials that move” prefers true movers; still show fill-ins if few
+        display_levers = moving[:8] if moving else focus_rows[:6]
+        if len(display_levers) < 3:
+            for r in focus_rows:
+                if r.get("feature") in {x.get("feature") for x in display_levers}:
+                    continue
+                display_levers.append(r)
+                if len(display_levers) >= 5:
+                    break
+
+        names = [r.get("feature") for r in focus_rows if r.get("feature")]
+        n_move = len(moving)
+        if n_move >= 2:
+            plain = (
+                f"{n_move} dials change this person's estimate. "
+                f"Focus shows {len(names)} related fields to edit."
+            )
+        elif n_move == 1:
+            plain = (
+                "Only one dial strongly moves this estimate; focus also includes nearby "
+                "fields from the explanation so you can compare."
+            )
+        else:
+            plain = (
+                "Few dials move this estimate much. Focus still shows related fields — "
+                "or use Show all fields."
+            )
+
+        return {
+            "levers": _json_safe(display_levers),
+            "feature_names": names,
+            "baseline_probability": baseline,
+            "plain_summary": plain,
+            "domain": domain,
+            "moving_count": n_move,
         }
     
     # =========================================================================
@@ -2224,7 +2796,7 @@ class ProjectService:
                 if not best.get("reliable"):
                     plain += " — still a small sample (<3)."
                 plain += ". "
-            plain += "Basic learning log (A7), not a 30/60/90 autopsy ledger."
+            plain += "This is a basic outcome log — not a full follow-up autopsy."
 
         return {
             "project_id": project_id,

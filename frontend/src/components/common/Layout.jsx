@@ -50,7 +50,7 @@ function Layout() {
               KNOWA
             </span>
             <span className="block mt-2 text-[11px] text-muted tracking-wide truncate max-w-[11rem]">
-              {organization?.name || 'Decision intelligence'}
+              {organization?.name || 'Decide with clarity'}
             </span>
           </Link>
         </div>

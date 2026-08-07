@@ -50,6 +50,11 @@ class SimulateRequest(BaseModel):
     modified_features: dict
 
 
+class ScenarioLeversRequest(BaseModel):
+    """Rank what-if dials by actual score movement for this case."""
+    base_features: dict
+
+
 class BatchPredictRequest(BaseModel):
     """Triage scoring for many rows (no per-row SHAP/LIME)."""
     rows: list[dict]
@@ -407,6 +412,25 @@ async def simulate(
             modified_features=request.modified_features,
         )
         return result
+    except FeatureValidationError as e:
+        raise HTTPException(status_code=400, detail=e.as_detail())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{project_id}/scenario-levers")
+async def scenario_levers(
+    project_id: str,
+    request: ScenarioLeversRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Levers ranked by how much they move *this* case (not SHAP-only)."""
+    from app.ml.feature_validation import FeatureValidationError
+
+    service = ProjectService(db, auth.org_id)
+    try:
+        return service.scenario_levers(project_id, request.base_features)
     except FeatureValidationError as e:
         raise HTTPException(status_code=400, detail=e.as_detail())
     except ValueError as e:

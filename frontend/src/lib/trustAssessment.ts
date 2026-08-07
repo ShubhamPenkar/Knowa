@@ -114,39 +114,36 @@ export function assessTrust(opts: {
 
   if (isSoft) {
     if (soft.reason === 'near_full_band') {
-      badge = 'Range nearly open';
+      badge = 'Wide uncertainty';
       summary =
-        'The plausible range covers almost everything — the point estimate is a weak plan by itself. Confirm with context.';
+        'The likely range is almost everything — use the % as a starting point and confirm with context.';
       rangeNote =
-        'When the residual band fills most of 0–100%, treat the tick as directional only.';
+        'When the likely range covers nearly 0–100%, treat the estimate as directional only.';
     } else if (soft.reason === 'backend_abstention') {
-      badge = 'Low certainty flag';
+      badge = 'Less sure on this one';
       summary =
-        'Uncertainty policy flagged this estimate. Prefer a lighter next step until you can confirm.';
-      rangeNote =
-        'Soft because the model’s uncertainty gate fired — not only because the residual bar looks wide.';
+        'We flagged this estimate as less reliable. Prefer a lighter next step until you can confirm.';
+      rangeNote = 'Start with a lighter action while you gather more context.';
     } else {
       // mid_priority
-      badge = 'Mid-range priority';
+      badge = 'Borderline priority';
       summary =
-        'The chance sits between calm and act. Ranking still works; treat the exact % loosely.';
+        'This sits between “calm” and “act.” Still useful for ranking — don’t over-weight the exact %.';
       rangeNote =
-        'Soft for mid-band scores. Clear low / clear high stays firm even when residual bars look fat.';
+        'Mid-range cases are soft by design. Clear high or low risk stays firmer.';
     }
   } else {
     badge = 'Clear enough to plan';
     if (p >= 0.6) {
       summary =
-        'Higher chance of the outcome and a clear priority band. Reasonable to plan intervention.';
+        'Higher chance of the outcome and a clear priority. Reasonable to plan an intervention.';
     } else if (p >= 0.4) {
-      summary =
-        'Moderate chance — still a usable watch list item.';
+      summary = 'Moderate chance — a sensible watch-list item.';
     } else {
       summary =
-        'Lower chance of the outcome. Fine to deprioritize vs elevated cases (residual bars can still look wide).';
+        'Lower chance of the outcome. Fine to deprioritize versus elevated cases.';
     }
-    rangeNote =
-      'Soft is reserved for mid-range scores or nearly open residual bands — not every wide residual bar.';
+    rangeNote = 'Best estimate (tick) with a realistic range around it.';
   }
 
   return {

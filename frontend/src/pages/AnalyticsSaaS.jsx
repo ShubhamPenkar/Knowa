@@ -329,7 +329,9 @@ export default function AnalyticsSaaS() {
 
             {/* What drives this */}
             <section className="lg:col-span-2">
-              <h2 className="font-display text-lg font-semibold text-ink mb-1">What usually drives it</h2>
+              <h2 className="font-display text-lg font-semibold text-ink mb-1">
+                What usually shows up in explanations
+              </h2>
               <p className="text-sm text-[var(--muted)] mb-4">
                 Patterns that most often push {outcomeName.toLowerCase()} up or down for this project.
               </p>
@@ -359,7 +361,9 @@ export default function AnalyticsSaaS() {
               )}
               <div className="mt-8 border-l-2 border-teal pl-4">
                 <p className="text-sm text-ink leading-relaxed">
-                  Use these as a checklist when reviewing borderline cases — they are the levers that tend to change the outcome.
+                  These are common explanation factors across the model — useful for review, but not
+                  a guarantee that changing them will move a specific person&apos;s score. Confirm
+                  with a what-if on that case.
                 </p>
               </div>
             </section>
