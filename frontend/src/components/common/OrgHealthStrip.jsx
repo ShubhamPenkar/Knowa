@@ -18,7 +18,8 @@ export default function OrgHealthStrip({ projectId, variant = 'default' }) {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch('/api/projects/org-health', {
+        const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+        const res = await fetch(`/api/projects/org-health${qs}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (!res.ok) {
@@ -37,7 +38,7 @@ export default function OrgHealthStrip({ projectId, variant = 'default' }) {
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [token, projectId])
 
   if (error && !health) {
     return null

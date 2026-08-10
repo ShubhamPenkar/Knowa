@@ -143,8 +143,15 @@ function Layout() {
         </div>
 
         <div className="m-3 mt-auto p-3 border-t border-mist">
-          <div className="text-sm font-medium text-ink truncate">{user?.name}</div>
-          <div className="text-xs text-muted truncate mt-0.5">{user?.email}</div>
+          <Link
+            to="/settings"
+            className="block rounded-control hover:bg-mist/30 transition-colors -mx-1 px-1 py-1"
+            title="Open settings"
+          >
+            <div className="text-sm font-medium text-ink truncate">{user?.name}</div>
+            <div className="text-xs text-muted truncate mt-0.5">{user?.email}</div>
+            <div className="mt-1.5 text-[11px] font-medium text-teal">Settings</div>
+          </Link>
           <button
             type="button"
             onClick={logout}
@@ -178,10 +185,17 @@ function Layout() {
         {mobileOpen && (
           <div id="mobile-nav" className="px-3 pb-4 border-t border-mist bg-paper">
             <Nav onNavigate={() => setMobileOpen(false)} />
+            <Link
+              to="/settings"
+              onClick={() => setMobileOpen(false)}
+              className="mt-3 ml-3 block text-sm text-teal font-medium"
+            >
+              Settings
+            </Link>
             <button
               type="button"
               onClick={logout}
-              className="mt-3 ml-3 text-sm text-muted"
+              className="mt-2 ml-3 text-sm text-muted"
             >
               Sign out
             </button>

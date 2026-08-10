@@ -48,6 +48,34 @@ class APIKeyResponse(BaseModel):
     created_at: str
 
 
+class UpdateProfileRequest(BaseModel):
+    name: str
+
+
+class UpdateOrganizationRequest(BaseModel):
+    name: str | None = None
+    industry: str | None = None
+
+
+def _org_payload(org) -> dict:
+    return {
+        "id": org.id,
+        "name": org.name,
+        "slug": org.slug,
+        "plan": org.plan,
+        "industry": org.industry,
+    }
+
+
+def _user_payload(user) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+    }
+
+
 # =============================================================================
 # Routes
 # =============================================================================
@@ -83,18 +111,8 @@ async def signup(request: SignupRequest, db: Session = Depends(get_db)):
         return {
             "access_token": token,
             "token_type": "bearer",
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "name": user.name,
-                "role": user.role,
-            },
-            "organization": {
-                "id": org.id,
-                "name": org.name,
-                "slug": org.slug,
-                "plan": org.plan,
-            },
+            "user": _user_payload(user),
+            "organization": _org_payload(org),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -115,18 +133,8 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role,
-        },
-        "organization": {
-            "id": org.id,
-            "name": org.name,
-            "slug": org.slug,
-            "plan": org.plan,
-        },
+        "user": _user_payload(user),
+        "organization": _org_payload(org),
     }
 
 
@@ -134,24 +142,57 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
 async def get_current_user(auth: AuthContext = Depends(get_auth_context)):
     """Get current authenticated user/organization."""
     return {
-        "organization": {
-            "id": auth.organization.id,
-            "name": auth.organization.name,
-            "slug": auth.organization.slug,
-            "plan": auth.organization.plan,
-        },
-        "user": {
-            "id": auth.user.id if auth.user else None,
-            "email": auth.user.email if auth.user else None,
-            "name": auth.user.name if auth.user else None,
-            "role": auth.user.role if auth.user else None,
-        } if auth.user else None,
+        "organization": _org_payload(auth.organization),
+        "user": _user_payload(auth.user) if auth.user else None,
         "api_key": {
             "id": auth.api_key.id if auth.api_key else None,
             "name": auth.api_key.name if auth.api_key else None,
         } if auth.api_key else None,
         "scopes": auth.scopes,
     }
+
+
+@router.patch("/me")
+async def update_current_user(
+    request: UpdateProfileRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Update the signed-in user's profile (display name)."""
+    if not auth.user:
+        raise HTTPException(status_code=403, detail="User session required")
+    auth_service = AuthService(db)
+    try:
+        user = auth_service.update_user_profile(auth.user.id, name=request.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"user": _user_payload(user)}
+
+
+@router.patch("/organization")
+async def update_organization(
+    request: UpdateOrganizationRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Update workspace name / industry (owner or admin)."""
+    if not auth.user:
+        raise HTTPException(status_code=403, detail="User session required")
+    if auth.user.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Owner or admin access required")
+    if request.name is None and request.industry is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    auth_service = AuthService(db)
+    try:
+        org = auth_service.update_organization(
+            auth.org_id,
+            name=request.name,
+            industry=request.industry,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"organization": _org_payload(org)}
 
 
 @router.get("/members")

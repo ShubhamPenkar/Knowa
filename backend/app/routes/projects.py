@@ -203,12 +203,13 @@ async def list_projects(
 
 @router.get("/org-health")
 async def org_health(
+    project_id: str | None = None,
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
 ):
     """Org pulse: follow-ups due, soft cases, ready-project guidance quality."""
     service = ProjectService(db, auth.org_id)
-    return service.org_health()
+    return service.org_health(project_id=project_id)
 
 
 @router.post("/decisions/recheck-sweep")
@@ -794,10 +795,11 @@ async def list_predictions(
     project_id: str,
     limit: int = 50,
     entity_id: str | None = None,
+    soft_only: bool = False,
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db)
 ):
-    """List predictions for project."""
+    """List predictions for project. soft_only=true returns Don't-act (low_confidence) rows."""
     from app.db.models import ProjectPrediction
     
     service = ProjectService(db, auth.org_id)
@@ -809,6 +811,8 @@ async def list_predictions(
     
     if entity_id:
         query = query.filter(ProjectPrediction.entity_id == entity_id)
+    if soft_only:
+        query = query.filter(ProjectPrediction.low_confidence.is_(True))
     
     predictions = query.order_by(ProjectPrediction.created_at.desc()).limit(limit).all()
     

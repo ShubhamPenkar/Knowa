@@ -108,6 +108,46 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  const updateProfile = async ({ name }) => {
+    let res;
+    try {
+      res = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      });
+    } catch {
+      throw new Error('Cannot reach API. Is the backend running on port 8000?');
+    }
+    const data = await parseJsonResponse(res, 'Could not update profile');
+    if (!res.ok) throw new Error(formatErrorDetail(data.detail, 'Could not update profile'));
+    setUser(data.user);
+    return data.user;
+  };
+
+  const updateOrganization = async (payload) => {
+    let res;
+    try {
+      res = await fetch('/api/auth/organization', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw new Error('Cannot reach API. Is the backend running on port 8000?');
+    }
+    const data = await parseJsonResponse(res, 'Could not update workspace');
+    if (!res.ok) throw new Error(formatErrorDetail(data.detail, 'Could not update workspace'));
+    setOrganization(data.organization);
+    return data.organization;
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
@@ -116,7 +156,20 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, organization, token, loading, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        organization,
+        token,
+        loading,
+        login,
+        signup,
+        logout,
+        updateProfile,
+        updateOrganization,
+        refreshMe: fetchMe,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

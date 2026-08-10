@@ -156,6 +156,27 @@ export function assessTrust(opts: {
   };
 }
 
+/** Plain-language Don't-act reason for queue rows and banners. */
+export function softReasonLabel(reason: SoftReason | string | null | undefined): string {
+  switch (reason) {
+    case 'near_full_band':
+      return 'Likely range is too wide'
+    case 'mid_priority':
+      return 'Borderline priority'
+    case 'backend_abstention':
+      return 'Model is less sure'
+    case 'regression_wide':
+      return 'Wide estimate range'
+    case 'none':
+    case null:
+    case undefined:
+    case '':
+      return ''
+    default:
+      return 'Elevated uncertainty'
+  }
+}
+
 export function matchLabel(
   knownYes: boolean | null | undefined,
   probability: number

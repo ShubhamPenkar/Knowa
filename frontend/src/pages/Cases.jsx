@@ -6,6 +6,7 @@ import ProjectPicker from '../components/common/ProjectPicker'
 import OrgHealthStrip from '../components/common/OrgHealthStrip'
 import Spinner from '../components/common/Spinner'
 import { getLastProjectId, setLastProjectId } from '../lib/lastProject'
+import { softReasonLabel } from '../lib/trustAssessment'
 
 function resolveEntityId(row, idx) {
   if (!row) return `row-${idx}`
@@ -58,6 +59,7 @@ export default function Cases() {
   const [knownOutcome, setKnownOutcome] = useState(null)
   const [softScan, setSoftScan] = useState([])
   const [softScanLoading, setSoftScanLoading] = useState(false)
+  const [softScanError, setSoftScanError] = useState('')
   const [storedSoft, setStoredSoft] = useState([])
   const predictSeq = useRef(0)
 
@@ -121,7 +123,7 @@ export default function Cases() {
           fetch(`/api/projects/${projectId}/test-data?limit=30`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
-          fetch(`/api/projects/${projectId}/predictions?limit=80`, {
+          fetch(`/api/projects/${projectId}/predictions?soft_only=true&limit=100`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ])
@@ -131,7 +133,7 @@ export default function Cases() {
         else setTestData(null)
         if (predRes.ok) {
           const preds = await predRes.json()
-          setStoredSoft((preds || []).filter((p) => p.low_confidence))
+          setStoredSoft(Array.isArray(preds) ? preds : [])
         } else {
           setStoredSoft([])
         }
@@ -148,11 +150,14 @@ export default function Cases() {
   useEffect(() => {
     if (!token || !projectId || !project || !testData?.rows?.length) {
       setSoftScan([])
+      setSoftScanError('')
+      setSoftScanLoading(false)
       return
     }
     let cancelled = false
     ;(async () => {
       setSoftScanLoading(true)
+      setSoftScanError('')
       try {
         const rows = (testData.rows || []).slice(0, 20)
         const res = await fetch(`/api/projects/${projectId}/predict/batch`, {
@@ -171,11 +176,20 @@ export default function Cases() {
         if (res.ok) {
           const soft = (data.results || []).filter((r) => r.ok && (r.soft_case || r.low_confidence))
           setSoftScan(soft)
+          setSoftScanError('')
         } else {
           setSoftScan([])
+          setSoftScanError(
+            typeof data.detail === 'string'
+              ? data.detail
+              : 'Could not scan the Don\u2019t-act queue'
+          )
         }
-      } catch {
-        if (!cancelled) setSoftScan([])
+      } catch (err) {
+        if (!cancelled) {
+          setSoftScan([])
+          setSoftScanError(err?.message || 'Could not scan the Don\u2019t-act queue')
+        }
       }
       if (!cancelled) setSoftScanLoading(false)
     })()
@@ -250,6 +264,27 @@ export default function Cases() {
     .replace(/[_-]+/g, ' ')
     .trim()
 
+  // Live sample softs that aren't already in the logged queue (entity match)
+  const loggedEntityIds = useMemo(() => {
+    const ids = new Set()
+    for (const p of storedSoft) {
+      if (p.entity_id) ids.add(String(p.entity_id))
+    }
+    return ids
+  }, [storedSoft])
+
+  const sampleSoftOnly = useMemo(
+    () =>
+      softScan.filter((item) => {
+        const eid = item.entity_id != null ? String(item.entity_id) : ''
+        return !eid || !loggedEntityIds.has(eid)
+      }),
+    [softScan, loggedEntityIds]
+  )
+
+  const loggedDontActCount = storedSoft.length
+  const sampleDontActCount = sampleSoftOnly.length
+
   const handlePredictRow = async (row, idx) => {
     if (!project) return
     const seq = ++predictSeq.current
@@ -304,7 +339,10 @@ export default function Cases() {
   const openSoftScanCase = async (item) => {
     const idx = item.index
     const row = rows[idx]
-    if (!row) return
+    if (!row) {
+      setPredictError('That sample row is no longer loaded — refresh Cases and try again.')
+      return
+    }
     await handlePredictRow(row, idx)
   }
 
@@ -400,11 +438,13 @@ export default function Cases() {
               {
                 id: 'dont-act',
                 label: `Don't act${
-                  softScan.length + storedSoft.length
-                    ? ` (${softScan.length + storedSoft.length})`
-                    : softScanLoading
-                      ? '…'
-                      : ''
+                  softScanLoading && !loggedDontActCount
+                    ? '…'
+                    : loggedDontActCount
+                      ? ` (${loggedDontActCount})`
+                      : softScanError
+                        ? ' (!)'
+                        : ''
                 }`,
               },
             ].map((tab) => (
@@ -510,24 +550,38 @@ export default function Cases() {
                       Don&apos;t act yet
                     </h2>
                     <p className="text-sm text-[var(--muted)] mb-4">
-                      Cases where the score isn&apos;t firm enough to trust for a big spend.
+                      <span className="text-ink tabular-nums">{loggedDontActCount}</span> logged
+                      {sampleDontActCount
+                        ? ` · ${sampleDontActCount} also soft in this sample (not logged yet)`
+                        : ''}
+                      . Prefer light check-ins when certainty is soft.
                     </p>
-                    {softScanLoading ? (
-                      <div className="border border-mist px-5 py-8 space-y-3" aria-busy="true">
-                        <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
-                          <Spinner className="h-4 w-4" /> Scanning Don&apos;t-act queue…
-                        </div>
-                        <div className="skeleton h-12 w-full" />
-                        <div className="skeleton h-12 w-full" />
+                    {softScanError && loggedDontActCount === 0 && sampleDontActCount === 0 && !softScanLoading ? (
+                      <div className="empty-state py-10">
+                        <h3 className="font-display text-lg font-semibold text-ink mb-2">
+                          Couldn&apos;t scan Don&apos;t act
+                        </h3>
+                        <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
+                          {softScanError}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setFilterMode('all')}
+                          className="btn-secondary text-sm"
+                        >
+                          Browse all sample cases
+                        </button>
                       </div>
-                    ) : softScan.length === 0 && storedSoft.length === 0 ? (
+                    ) : !softScanLoading &&
+                      loggedDontActCount === 0 &&
+                      sampleDontActCount === 0 ? (
                       <div className="empty-state py-10">
                         <h3 className="font-display text-lg font-semibold text-ink mb-2">
                           Queue is clear
                         </h3>
                         <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
-                          Nothing in Don&apos;t act for this sample. That&apos;s good — or open more
-                          cases so low-trust flags can accumulate.
+                          Nothing logged as Don&apos;t act for this project, and this sample looks
+                          firm. Open more cases if you want low-trust flags to accumulate.
                         </p>
                         <button
                           type="button"
@@ -538,71 +592,122 @@ export default function Cases() {
                         </button>
                       </div>
                     ) : (
-                      <ul className="border border-mist divide-y divide-mist">
-                        {softScan.map((item, i) => {
-                          const pct =
-                            item.probability != null
-                              ? Math.round(Number(item.probability) * 100)
-                              : null
-                          return (
-                            <li
-                              key={`scan-${item.index}`}
-                              className="list-row-in"
-                              style={{ animationDelay: `${60 + i * 45}ms` }}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => openSoftScanCase(item)}
-                                className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
-                              >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="badge bg-coral-soft border border-coral/30 text-ink">
-                                    Don&apos;t act
-                                  </span>
-                                  <span className="text-sm text-ink">
-                                    Case #{item.index + 1}
-                                    {item.entity_id ? ` · ${item.entity_id}` : ''}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-[var(--muted)] mt-1">
-                                  {pct != null ? `About ${pct}% likelihood` : 'Elevated uncertainty'}
-                                  {item.soft_reason ? ` · ${item.soft_reason}` : ''}
-                                </p>
-                              </button>
-                            </li>
-                          )
-                        })}
-                        {storedSoft.slice(0, 12).map((pred, i) => (
-                          <li
-                            key={pred.id}
-                            className="list-row-in"
-                            style={{ animationDelay: `${60 + (softScan.length + i) * 45}ms` }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => openStoredSoft(pred)}
-                              className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="badge bg-coral-soft border border-coral/30 text-ink">
-                                  Saved · Don&apos;t act
-                                </span>
-                                <span className="text-sm text-ink">
-                                  {pred.entity_id || pred.id.slice(0, 8)}
-                                </span>
-                              </div>
-                              <p className="text-xs text-[var(--muted)] mt-1">
-                                {pred.probability != null
-                                  ? `About ${Math.round(Number(pred.probability) * 100)}%`
-                                  : 'Stored case'}
-                                {pred.created_at
-                                  ? ` · ${new Date(pred.created_at).toLocaleDateString()}`
-                                  : ''}
-                              </p>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="space-y-6">
+                        {softScanError && (
+                          <p className="text-xs text-coral border border-coral/30 bg-coral-soft/30 px-3 py-2">
+                            Live sample scan issue: {softScanError}. Logged cases below still work.
+                          </p>
+                        )}
+
+                        <div>
+                          <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal mb-2">
+                            Logged ({loggedDontActCount})
+                          </h3>
+                          <p className="text-xs text-[var(--muted)] mb-3">
+                            Matches &quot;Logged don&apos;t act&quot; for this project — saved when you
+                            opened a soft brief.
+                          </p>
+                          {loggedDontActCount === 0 ? (
+                            <p className="text-sm text-[var(--muted)] border border-mist px-4 py-5">
+                              No logged Don&apos;t-act cases yet for this project.
+                            </p>
+                          ) : (
+                            <ul className="border border-mist divide-y divide-mist">
+                              {storedSoft.slice(0, 40).map((pred, i) => (
+                                <li
+                                  key={pred.id}
+                                  className="list-row-in"
+                                  style={{ animationDelay: `${60 + i * 45}ms` }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => openStoredSoft(pred)}
+                                    className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="badge bg-coral-soft border border-coral/30 text-ink">
+                                        Logged
+                                      </span>
+                                      <span className="text-sm text-ink">
+                                        {pred.entity_id || pred.id.slice(0, 8)}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-[var(--muted)] mt-1">
+                                      {pred.probability != null
+                                        ? `About ${Math.round(Number(pred.probability) * 100)}%`
+                                        : 'Stored case'}
+                                      {pred.created_at
+                                        ? ` · ${new Date(pred.created_at).toLocaleDateString()}`
+                                        : ''}
+                                      {' · Model is less sure'}
+                                    </p>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div>
+                          <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal mb-2">
+                            Also soft in this sample
+                            {softScanLoading ? '…' : ` (${sampleDontActCount})`}
+                          </h3>
+                          <p className="text-xs text-[var(--muted)] mb-3">
+                            Live scan — not counted in Logged until you open the brief (that
+                            saves it).
+                          </p>
+                          {softScanLoading ? (
+                            <div className="border border-mist px-4 py-5 flex items-center gap-3 text-sm text-[var(--muted)]">
+                              <Spinner className="h-4 w-4" /> Scanning sample…
+                            </div>
+                          ) : sampleDontActCount === 0 ? (
+                            <p className="text-sm text-[var(--muted)] border border-mist px-4 py-5">
+                              No extra soft cases in the current sample beyond what&apos;s already
+                              logged.
+                            </p>
+                          ) : (
+                            <ul className="border border-mist divide-y divide-mist">
+                              {sampleSoftOnly.map((item, i) => {
+                                const pct =
+                                  item.probability != null
+                                    ? Math.round(Number(item.probability) * 100)
+                                    : null
+                                const reason = softReasonLabel(item.soft_reason)
+                                return (
+                                  <li
+                                    key={`scan-${item.index}`}
+                                    className="list-row-in"
+                                    style={{ animationDelay: `${60 + i * 45}ms` }}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => openSoftScanCase(item)}
+                                      className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="badge bg-mist text-ink border border-mist">
+                                          Sample
+                                        </span>
+                                        <span className="text-sm text-ink">
+                                          Case #{item.index + 1}
+                                          {item.entity_id ? ` · ${item.entity_id}` : ''}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-[var(--muted)] mt-1">
+                                        {pct != null
+                                          ? `About ${pct}% likelihood`
+                                          : 'Elevated uncertainty'}
+                                        {reason ? ` · ${reason}` : ''}
+                                      </p>
+                                    </button>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </>
                 ) : (

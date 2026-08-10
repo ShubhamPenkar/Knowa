@@ -14,6 +14,7 @@ import WhatIfEntry from './pages/WhatIfEntry'
 import Cases from './pages/Cases'
 import Monitoring from './pages/Monitoring'
 import Home from './pages/Home'
+import Settings from './pages/Settings'
 
 function ExplainabilityRedirect() {
   const { projectId } = useParams()
@@ -57,6 +58,7 @@ function AppRoutes() {
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Home />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="cases" element={<Cases />} />
         <Route path="follow-ups" element={<AnalyticsSaaS />} />
         <Route path="analytics" element={<Navigate to="/follow-ups" replace />} />

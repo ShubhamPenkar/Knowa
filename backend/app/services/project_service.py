@@ -184,10 +184,14 @@ class ProjectService:
             Project.is_active == True
         ).order_by(Project.created_at.desc()).all()
 
-    def org_health(self) -> dict[str, Any]:
+    def org_health(self, project_id: Optional[str] = None) -> dict[str, Any]:
         """
         Lightweight org pulse for the homepage strip:
         follow-ups due, soft/low-trust cases, ready-project guidance quality.
+
+        soft_cases is scoped to the focus project (requested or primary ready)
+        so the strip matches Cases → Don't act → Logged for that project.
+        soft_cases_org is the org-wide total.
         """
         from app.services.decision_service import DecisionService
 
@@ -207,12 +211,29 @@ class ProjectService:
         )
         ready_ids = [p.id for p in ready]
 
-        soft_cases = 0
+        soft_cases_org = 0
         if ready_ids:
-            soft_cases = (
+            soft_cases_org = (
                 self.db.query(ProjectPrediction)
                 .filter(
                     ProjectPrediction.project_id.in_(ready_ids),
+                    ProjectPrediction.low_confidence.is_(True),
+                )
+                .count()
+            )
+
+        focus_id = None
+        if project_id and project_id in ready_ids:
+            focus_id = project_id
+        elif ready_ids:
+            focus_id = ready_ids[0]
+
+        soft_cases = 0
+        if focus_id:
+            soft_cases = (
+                self.db.query(ProjectPrediction)
+                .filter(
+                    ProjectPrediction.project_id == focus_id,
                     ProjectPrediction.low_confidence.is_(True),
                 )
                 .count()
@@ -250,8 +271,10 @@ class ProjectService:
         bits = []
         if due_attention:
             bits.append(f"{due_attention} follow-up(s) need check-in")
-        if soft_cases:
-            bits.append(f"{soft_cases} don't-act case(s) — review before big spends")
+        if soft_cases_org:
+            bits.append(
+                f"{soft_cases_org} don't-act case(s) logged — review before big spends"
+            )
         if rough:
             bits.append(f"{rough} project(s) look like a rough guide")
         if not bits:
@@ -268,12 +291,13 @@ class ProjectService:
                 "due_now": due_now,
                 "due_attention": due_attention,
                 "soft_cases": soft_cases,
+                "soft_cases_org": soft_cases_org,
                 "ready_projects": len(ready),
                 "rough_models": rough,
                 "solid_models": solid,
             },
             "plain_summary": " · ".join(bits),
-            "primary_project_id": ready_ids[0] if ready_ids else None,
+            "primary_project_id": focus_id,
         }
     
     def get_project(self, project_id: str) -> Optional[Project]:
@@ -1024,6 +1048,19 @@ class ProjectService:
         if persist:
             safe_features = _json_safe(features)
             safe_shap = _json_safe(shap_values) if shap_values is not None else None
+            trust_meta = {
+                "confidence_interval": _json_safe(result.get("confidence_interval")),
+                "abstention_reason": result.get("abstention_reason"),
+                "model_disagreement": result.get("model_disagreement"),
+                "low_confidence": bool(low_confidence),
+            }
+            # Keep interval/trust on the row so Don't-act hydrate can rebuild the spine
+            if isinstance(safe_shap, dict):
+                safe_shap = {**safe_shap, "_knowa_trust": trust_meta}
+            elif safe_shap is None:
+                safe_shap = {"_knowa_trust": trust_meta}
+            else:
+                safe_shap = {"_values": safe_shap, "_knowa_trust": trust_meta}
             safe_top = _json_safe(top_factors) if top_factors is not None else None
             safe_recs = _json_safe(recommendations) if recommendations is not None else None
             if is_regression:
@@ -3174,6 +3211,69 @@ class ProjectService:
             annotated_drivers = annotate_drivers(drivers, blindspots)
             blindspot_warnings = blindspots.get("warnings") or []
 
+        # Restore conformal interval / abstention so TrustSpine matches Don't-act flags
+        trust_meta = {}
+        shap_blob = prediction.shap_values
+        if isinstance(shap_blob, dict) and isinstance(shap_blob.get("_knowa_trust"), dict):
+            trust_meta = shap_blob.get("_knowa_trust") or {}
+
+        confidence_interval = trust_meta.get("confidence_interval")
+        abstention_reason = trust_meta.get("abstention_reason")
+        model_disagreement = trust_meta.get("model_disagreement")
+        low_confidence = bool(prediction.low_confidence) or bool(
+            trust_meta.get("low_confidence")
+        )
+
+        if confidence_interval is None and prediction.features:
+            try:
+                live = self.predict(
+                    project_id,
+                    prediction.features or {},
+                    entity_id=prediction.entity_id,
+                    include_explanations=False,
+                    include_recommendations=False,
+                    persist=False,
+                    source="hydrate",
+                )
+                confidence_interval = live.get("confidence_interval")
+                abstention_reason = abstention_reason or live.get("abstention_reason")
+                model_disagreement = (
+                    model_disagreement
+                    if model_disagreement is not None
+                    else live.get("model_disagreement")
+                )
+                low_confidence = low_confidence or bool(live.get("low_confidence"))
+            except Exception:
+                confidence_interval = None
+
+        if confidence_interval is None and not is_regression and prediction.probability is not None:
+            # Last resort: wide band so Don't-act cases don't show a fake tight spine
+            from app.ml.soft_range import NEAR_FULL_WIDTH
+
+            p = float(prediction.probability)
+            if low_confidence:
+                confidence_interval = {
+                    "lower": 0.0,
+                    "upper": min(1.0, max(NEAR_FULL_WIDTH, p + 0.35)),
+                    "level": 0.9,
+                    "width": min(1.0, max(NEAR_FULL_WIDTH, p + 0.35)),
+                }
+
+        soft_reason = None
+        if not is_regression and prediction.probability is not None and confidence_interval:
+            from app.ml.soft_range import interval_is_soft
+
+            soft = interval_is_soft(
+                point=float(prediction.probability),
+                lower=float(confidence_interval.get("lower", 0)),
+                upper=float(confidence_interval.get("upper", 1)),
+                low_confidence=low_confidence,
+                is_regression=False,
+            )
+            soft_reason = soft.get("reason")
+            if soft.get("is_soft"):
+                low_confidence = True
+
         return {
             "prediction_id": prediction.id,
             "entity_id": prediction.entity_id,
@@ -3184,7 +3284,11 @@ class ProjectService:
             "problem_type": project.problem_type,
             "target": outcome_label,
             "features": prediction.features or {},
-            "low_confidence": bool(prediction.low_confidence),
+            "low_confidence": low_confidence,
+            "confidence_interval": confidence_interval,
+            "abstention_reason": abstention_reason,
+            "model_disagreement": model_disagreement,
+            "soft_reason": soft_reason,
             "explanations": {
                 "drivers": annotated_drivers,
                 "shap": {"top_features": annotated_drivers},

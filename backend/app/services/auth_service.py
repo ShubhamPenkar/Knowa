@@ -130,6 +130,56 @@ class AuthService:
     def get_user_by_id(self, user_id: str) -> Optional[User]:
         """Get user by ID."""
         return self.db.query(User).filter(User.id == user_id).first()
+
+    def update_user_profile(self, user_id: str, *, name: str) -> User:
+        """Update the authenticated user's display name."""
+        user = self.get_user_by_id(user_id)
+        if not user or not user.is_active:
+            raise ValueError("User not found")
+        cleaned = (name or "").strip()
+        if not cleaned:
+            raise ValueError("Name is required")
+        if len(cleaned) > 100:
+            raise ValueError("Name must be 100 characters or fewer")
+        user.name = cleaned
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def update_organization(
+        self,
+        org_id: str,
+        *,
+        name: Optional[str] = None,
+        industry: Optional[str] = None,
+    ) -> Organization:
+        """Update organization profile fields."""
+        org = (
+            self.db.query(Organization)
+            .filter(Organization.id == org_id, Organization.is_active == True)  # noqa: E712
+            .first()
+        )
+        if not org:
+            raise ValueError("Organization not found")
+
+        if name is not None:
+            cleaned = name.strip()
+            if not cleaned:
+                raise ValueError("Workspace name is required")
+            if len(cleaned) > 100:
+                raise ValueError("Workspace name must be 100 characters or fewer")
+            org.name = cleaned
+
+        if industry is not None:
+            cleaned_ind = industry.strip().lower() if industry.strip() else None
+            allowed = {None, "saas", "ecommerce", "finance", "healthcare", "other"}
+            if cleaned_ind not in allowed:
+                raise ValueError("Invalid industry")
+            org.industry = cleaned_ind
+
+        self.db.commit()
+        self.db.refresh(org)
+        return org
     
     # =========================================================================
     # API Key Management

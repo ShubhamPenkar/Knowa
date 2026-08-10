@@ -11,7 +11,12 @@ export function getLastProjectId() {
 export function setLastProjectId(id) {
   try {
     if (id) localStorage.setItem(KEY, id)
+    else localStorage.removeItem(KEY)
   } catch {
     /* ignore */
   }
+}
+
+export function clearLastProjectId() {
+  setLastProjectId('')
 }

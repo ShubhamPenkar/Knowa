@@ -203,8 +203,20 @@ export function PredictionPanel({
     : Number(result.probability ?? 0);
 
   const ci = result.confidence_interval;
-  const lower = ci?.lower ?? (isReg ? point * 0.9 : Math.max(0, point - 0.15));
-  const upper = ci?.upper ?? (isReg ? point * 1.1 : Math.min(1, point + 0.15));
+  const lower =
+    ci?.lower ??
+    (isReg
+      ? point * 0.9
+      : result.low_confidence
+        ? 0
+        : Math.max(0, point - 0.15));
+  const upper =
+    ci?.upper ??
+    (isReg
+      ? point * 1.1
+      : result.low_confidence
+        ? Math.min(1, Math.max(0.9, point + 0.35))
+        : Math.min(1, point + 0.15));
   const level = ci?.level ?? 0.9;
 
   const trust = assessTrust({
