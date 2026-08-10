@@ -53,6 +53,7 @@
     *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
+      animation-delay: 0s !important;
       transition-duration: 0.01ms !important;
     }
   }
@@ -91,6 +92,11 @@
   .btn-primary {
     @apply btn bg-teal text-paper font-semibold hover:bg-[#00b3a1]
       focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal;
+    transition: transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
   }
 
   .btn-secondary {
@@ -129,7 +135,75 @@
   }
 
   .empty-state {
-    @apply surface p-12 text-center;
+    @apply border border-mist px-8 py-12 md:px-12 text-center;
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+  }
+
+  .shell-stage {
+    background:
+      radial-gradient(
+        ellipse 70% 50% at 8% 0%,
+        color-mix(in srgb, var(--teal) 14%, transparent),
+        transparent 55%
+      ),
+      radial-gradient(
+        ellipse 55% 40% at 100% 8%,
+        color-mix(in srgb, var(--coral) 8%, transparent),
+        transparent 50%
+      ),
+      radial-gradient(
+        ellipse 50% 35% at 70% 100%,
+        color-mix(in srgb, var(--teal) 6%, transparent),
+        transparent 55%
+      );
+  }
+
+  .stage-grid,
+  .auth-grid {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--mist) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--mist) 55%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 75% 70% at 40% 45%, black 20%, transparent 75%);
+  }
+
+  .case-brief-stage {
+    @apply border border-mist overflow-hidden;
+    background:
+      radial-gradient(
+        ellipse 90% 70% at 0% 0%,
+        color-mix(in srgb, var(--teal) 12%, transparent),
+        transparent 55%
+      ),
+      var(--surface);
+  }
+
+  .case-brief-stage .trust-band {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    border-top: 1px solid var(--mist);
+    padding: 1rem 1.25rem 1.25rem;
+  }
+
+  @media (min-width: 768px) {
+    .case-brief-stage .trust-band {
+      padding: 1rem 1.5rem 1.5rem;
+    }
+  }
+
+  .org-pulse {
+    @apply mb-8 border border-mist overflow-hidden;
+    background: color-mix(in srgb, var(--surface) 40%, transparent);
+  }
+
+  .org-pulse-cell {
+    @apply px-4 py-3.5 block transition-colors duration-150;
+    background: var(--paper);
+  }
+
+  .org-pulse-cell:hover {
+    background: color-mix(in srgb, var(--mist) 35%, var(--paper));
   }
 
   .data-table {
@@ -157,32 +231,37 @@
     @apply bg-mist/70 rounded-control animate-pulse;
   }
 
-  .home-flow-row {
-    animation: home-flow-in 0.45s ease-out both;
+  .home-flow-row,
+  .list-row-in {
+    animation: list-row-in 0.45s ease-out both;
   }
 
-  .auth-grid {
-    background-image:
-      linear-gradient(color-mix(in srgb, var(--mist) 55%, transparent) 1px, transparent 1px),
-      linear-gradient(90deg, color-mix(in srgb, var(--mist) 55%, transparent) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 75% 70% at 40% 45%, black 20%, transparent 75%);
+  /* Opacity-only — safe on <tr> (transform breaks table layout) */
+  .list-row-fade {
+    animation: list-row-fade 0.35s ease-out both;
   }
 
-  .auth-fade-in {
-    animation: auth-fade-in 0.55s ease-out both;
+  .auth-fade-in,
+  .stage-fade-in {
+    animation: stage-fade-in 0.55s ease-out both;
   }
 
-  .auth-cta {
+  .case-open {
+    animation: case-open 0.3s ease-out both;
+  }
+
+  .auth-cta,
+  .cta-lift {
     transition: transform 0.15s ease, background-color 0.15s ease;
   }
 
-  .auth-cta:hover:not(:disabled) {
+  .auth-cta:hover:not(:disabled),
+  .cta-lift:hover:not(:disabled) {
     transform: translateY(-1px);
   }
 }
 
-@keyframes home-flow-in {
+@keyframes list-row-in {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -193,10 +272,30 @@
   }
 }
 
-@keyframes auth-fade-in {
+@keyframes list-row-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes stage-fade-in {
   from {
     opacity: 0;
     transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes case-open {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;

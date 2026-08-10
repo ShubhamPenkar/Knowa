@@ -436,34 +436,55 @@ export function PredictionPanel({
   return (
     <div className="space-y-5">
       {!isReg && (
-        <div>
-          <p className="page-kicker mb-1">Brief</p>
-          <p className="font-display text-2xl font-semibold text-ink tracking-tight">
-            {brief?.headline || attentionCopy(result.risk_level, trust.isSoft)}
-          </p>
-          <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">
-            {brief?.summary || trust.summary}
-          </p>
-          <p className="mt-3 text-sm text-ink">
-            About{' '}
-            <span className="font-semibold tabular-nums">{(point * 100).toFixed(0)}%</span>{' '}
-            chance of {outcome.toLowerCase()}
-            {trust.isSoft ? ' — treat as a guide, not a sure thing.' : '.'}
-          </p>
-          {knownOutcome != null && (
-            <p
-              className={`mt-3 text-sm ${
-                agreement === 'agrees'
-                  ? 'text-teal'
-                  : agreement === 'conflicts'
-                    ? 'text-coral'
-                    : 'text-[var(--muted)]'
-              }`}
-            >
-              {agreement === 'agrees' &&
-                `Matches the labeled outcome in your dataset (${knownOutcome ? outcomeYesLabel : outcomeNoLabel}).`}
-              {agreement === 'conflicts' &&
-                `Dataset label is ${knownOutcome ? outcomeYesLabel : outcomeNoLabel} — dig into why below.`}
+        <div className="case-brief-stage">
+          <div className="px-5 pt-5 pb-4 md:px-6 md:pt-6">
+            <p className="page-kicker mb-1">Brief</p>
+            <p className="font-display text-2xl md:text-[1.75rem] font-semibold text-ink tracking-tight leading-tight">
+              {brief?.headline || attentionCopy(result.risk_level, trust.isSoft)}
+            </p>
+            <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">
+              {brief?.summary || trust.summary}
+            </p>
+            <p className="mt-3 text-sm text-ink">
+              About{' '}
+              <span className="font-semibold tabular-nums">{(point * 100).toFixed(0)}%</span>{' '}
+              chance of {outcome.toLowerCase()}
+              {trust.isSoft ? ' — treat as a guide, not a sure thing.' : '.'}
+            </p>
+            {knownOutcome != null && (
+              <p
+                className={`mt-3 text-sm ${
+                  agreement === 'agrees'
+                    ? 'text-teal'
+                    : agreement === 'conflicts'
+                      ? 'text-coral'
+                      : 'text-[var(--muted)]'
+                }`}
+              >
+                {agreement === 'agrees' &&
+                  `Matches the labeled outcome in your dataset (${knownOutcome ? outcomeYesLabel : outcomeNoLabel}).`}
+                {agreement === 'conflicts' &&
+                  `Dataset label is ${knownOutcome ? outcomeYesLabel : outcomeNoLabel} — dig into why below.`}
+              </p>
+            )}
+          </div>
+          <TrustSpine
+            point={point}
+            lower={lower}
+            upper={upper}
+            level={level}
+            lowConfidence={trust.isSoft}
+            abstentionReason={result.abstention_reason}
+            disagreement={null}
+            domain={[0, 1]}
+            outcomeLabel={title}
+            businessCopy
+            badgeLabel={trust.badge}
+            rangeNote={trust.rangeNote}
+          />
+          {consistency?.plain && (
+            <p className="px-5 pb-5 md:px-6 md:pb-6 text-sm text-[var(--muted)] leading-relaxed border-t border-mist pt-3">
+              {consistency.plain}
             </p>
           )}
         </div>
@@ -666,31 +687,21 @@ export function PredictionPanel({
         <p className="text-sm text-coral">Could not explain this case: {explainError}</p>
       )}
 
-      <details className="border border-mist rounded-control group" open={trust.isSoft || undefined}>
-        <summary className="px-3 py-3 cursor-pointer text-sm list-none hover:bg-mist/20">
-          <span className="font-medium text-ink">How sure should you be?</span>
-          <span className="block text-xs text-[var(--muted)] mt-0.5">{trust.badge}</span>
-        </summary>
-        <div className="px-3 pb-4 space-y-4 border-t border-mist pt-3">
-          <TrustSpine
-            point={point}
-            lower={lower}
-            upper={upper}
-            level={level}
-            lowConfidence={trust.isSoft}
-            abstentionReason={result.abstention_reason}
-            disagreement={null}
-            domain={isReg ? undefined : [0, 1]}
-            outcomeLabel={title}
-            businessCopy
-            badgeLabel={trust.badge}
-            rangeNote={trust.rangeNote}
-          />
-          {consistency?.plain && (
-            <p className="text-sm text-[var(--muted)] leading-relaxed">{consistency.plain}</p>
-          )}
-        </div>
-      </details>
+      {isReg && (
+        <TrustSpine
+          point={point}
+          lower={lower}
+          upper={upper}
+          level={level}
+          lowConfidence={trust.isSoft}
+          abstentionReason={result.abstention_reason}
+          disagreement={null}
+          outcomeLabel={title}
+          businessCopy
+          badgeLabel={trust.badge}
+          rangeNote={trust.rangeNote}
+        />
+      )}
 
       {canLog && (
         <details className="border border-mist rounded-control">

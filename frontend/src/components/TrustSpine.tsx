@@ -95,12 +95,12 @@ export function TrustSpine({
       aria-labelledby={labelId}
       aria-describedby={descId}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
         <div>
           <p className="page-kicker mb-1">
             {businessCopy ? 'How sure we are' : 'Calibrated confidence'}
           </p>
-          <h3 id={labelId} className="font-display text-lg font-semibold text-ink">
+          <h3 id={labelId} className="font-display text-xl md:text-2xl font-semibold text-ink tracking-tight">
             {outcomeLabel
               ? outcomeLabel
               : businessCopy
@@ -119,43 +119,50 @@ export function TrustSpine({
         )}
       </div>
 
-      <div className="relative pt-1 pb-6 select-none">
+      <div className="relative pt-2 pb-6 select-none">
         <div
-          className="relative h-2 rounded-[2px] bg-mist"
+          className="relative h-3 rounded-[2px] bg-mist/80"
           role="img"
           aria-label={`Estimate ${formatVal(point, isProbDomain)}, range ${formatVal(lo, isProbDomain)} to ${formatVal(hi, isProbDomain)}`}
         >
           <div
             className={`absolute top-0 h-full rounded-[2px] origin-left ${
-              lowConfidence ? 'bg-coral/70' : 'bg-teal'
+              lowConfidence ? 'bg-coral/75' : 'bg-teal'
             } ${animate ? 'motion-safe:animate-spine-in' : ''}`}
             style={{
               left: `${left}%`,
               width: `${width}%`,
+              ...(animate ? { animationDelay: '120ms' } : {}),
             }}
           />
           <div
-            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-5 bg-ink rounded-sm z-10"
+            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-6 bg-ink rounded-sm z-10"
             style={{ left: `${tick}%` }}
             aria-hidden="true"
           />
         </div>
 
-        <div className="relative mt-3 h-5 text-xs font-medium tabular-nums text-[var(--muted)]">
+        <div className="relative mt-4 h-5 text-xs font-medium tabular-nums text-[var(--muted)]">
           <span className="absolute left-0">{formatVal(dMin, isProbDomain)}</span>
           <span
-            className="absolute -translate-x-1/2 text-ink font-semibold"
-            style={{ left: `${tick}%` }}
+            className="absolute -translate-x-1/2 text-ink font-display text-sm font-semibold"
+            style={{ left: `${Math.min(92, Math.max(8, tick))}%` }}
           >
             {formatVal(point, isProbDomain)}
           </span>
           <span className="absolute right-0">{formatVal(dMax, isProbDomain)}</span>
         </div>
-        <div className="relative mt-0.5 h-4 text-[11px] tabular-nums text-[var(--muted)]">
-          <span className="absolute -translate-x-1/2" style={{ left: `${left}%` }}>
+        <div className="relative mt-1 h-4 text-[11px] tabular-nums text-[var(--muted)]">
+          <span
+            className="absolute -translate-x-1/2"
+            style={{ left: `${Math.min(90, Math.max(6, left))}%` }}
+          >
             {formatVal(lo, isProbDomain)}
           </span>
-          <span className="absolute -translate-x-1/2" style={{ left: `${right}%` }}>
+          <span
+            className="absolute -translate-x-1/2"
+            style={{ left: `${Math.min(94, Math.max(10, right))}%` }}
+          >
             {formatVal(hi, isProbDomain)}
           </span>
         </div>

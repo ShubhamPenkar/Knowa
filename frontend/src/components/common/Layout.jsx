@@ -96,15 +96,15 @@ function Layout() {
               to={item.path}
               onClick={onNavigate}
               title={item.hint}
-              className={`relative px-3 py-2.5 text-sm font-medium rounded-control transition-colors flex items-center justify-between gap-2 ${
+              className={`relative pl-3.5 pr-3 py-2.5 text-sm rounded-control transition-colors flex items-center justify-between gap-2 ${
                 isActive
-                  ? 'text-ink bg-mist/60'
-                  : 'text-muted hover:text-ink hover:bg-mist/30'
+                  ? 'text-ink font-semibold bg-mist/50'
+                  : 'text-muted font-medium hover:text-ink hover:bg-mist/30'
               }`}
             >
               {isActive && (
                 <span
-                  className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 bg-teal"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-sm bg-teal"
                   aria-hidden="true"
                 />
               )}
@@ -126,10 +126,10 @@ function Layout() {
 
   return (
     <div className="min-h-screen flex bg-paper">
-      <aside className="hidden lg:flex w-[15.5rem] shrink-0 flex-col border-r border-mist bg-paper">
+      <aside className="hidden lg:flex w-[15.5rem] shrink-0 flex-col border-r border-mist bg-paper relative z-10">
         <div className="px-5 pt-7 pb-6">
-          <Link to="/" className="block">
-            <span className="font-display text-[1.65rem] font-semibold tracking-tight leading-none text-ink">
+          <Link to="/" className="block group">
+            <span className="font-display text-[1.65rem] font-semibold tracking-tight leading-none text-ink group-hover:text-teal transition-colors">
               KNOWA
             </span>
             <span className="block mt-2 text-[11px] text-muted tracking-wide truncate max-w-[11rem]">
@@ -155,7 +155,7 @@ function Layout() {
         </div>
       </aside>
 
-      <div className="lg:hidden fixed inset-x-0 top-0 z-40 bg-paper border-b border-mist">
+      <div className="lg:hidden fixed inset-x-0 top-0 z-40 bg-paper/95 backdrop-blur-sm border-b border-mist">
         <div className="flex items-center justify-between px-4 h-14">
           <Link to="/" className="font-display text-lg font-semibold tracking-tight text-ink">
             KNOWA
@@ -189,8 +189,18 @@ function Layout() {
         )}
       </div>
 
-      <main className="flex-1 min-h-screen overflow-auto bg-paper pt-14 lg:pt-0">
-        <Outlet />
+      <main className="relative flex-1 min-h-screen overflow-auto bg-paper pt-14 lg:pt-0">
+        <div
+          className="pointer-events-none absolute inset-0 shell-stage"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.22] stage-grid"
+          aria-hidden="true"
+        />
+        <div className="relative z-[1] min-h-full">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

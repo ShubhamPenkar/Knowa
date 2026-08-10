@@ -44,11 +44,13 @@ export default function OrgHealthStrip({ projectId, variant = 'default' }) {
   }
   if (!health) {
     return (
-      <div className="mb-8 border border-mist px-4 py-4">
+      <div className="org-pulse px-4 py-4" aria-busy="true">
         <div className="skeleton h-3 w-24 mb-3" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-mist">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="skeleton h-14" />
+            <div key={i} className="bg-paper p-3">
+              <div className="skeleton h-14" />
+            </div>
           ))}
         </div>
       </div>
@@ -91,49 +93,34 @@ export default function OrgHealthStrip({ projectId, variant = 'default' }) {
   ].filter((cell) => !(cell.hideOn || []).includes(variant))
 
   return (
-    <section className="mb-8 border border-mist" aria-label="Organization health">
-      <div className="px-4 py-3 border-b border-mist flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-teal font-semibold">Today</p>
-          <p className="text-sm text-ink mt-0.5 max-w-2xl">{health.plain_summary}</p>
+    <section className="org-pulse" aria-label="Organization health">
+      <div className="px-4 py-3.5 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-teal font-semibold">Today</p>
+          <p className="text-sm text-ink mt-1 max-w-2xl leading-relaxed">{health.plain_summary}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {variant !== 'follow-ups' && (
-            <Link to="/follow-ups" className="btn-ghost text-xs py-1.5">
-              Follow-ups
-            </Link>
-          )}
-          <Link
-            to={pid ? `/cases?project=${pid}&filter=dont-act` : '/cases?filter=dont-act'}
-            className="btn-ghost text-xs py-1.5"
-          >
-            Don&apos;t-act queue
+        {variant !== 'follow-ups' && (
+          <Link to="/follow-ups" className="btn-ghost text-xs py-1.5 shrink-0">
+            Follow-ups →
           </Link>
-          <Link to="/monitoring" className="btn-ghost text-xs py-1.5">
-            Monitoring
-          </Link>
-        </div>
+        )}
       </div>
       <div
-        className={`grid grid-cols-2 gap-px bg-mist ${
+        className={`grid grid-cols-2 gap-px bg-mist border-t border-mist ${
           cells.length >= 4 ? 'md:grid-cols-4' : 'md:grid-cols-3'
         }`}
       >
         {cells.map((cell) => (
-          <Link
-            key={cell.label}
-            to={cell.to}
-            className="bg-paper px-4 py-4 hover:bg-mist/30 transition-colors block"
-          >
+          <Link key={cell.label} to={cell.to} className="org-pulse-cell">
             <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
               {cell.label}
             </div>
             <div
-              className={`mt-1 font-display text-2xl font-semibold tabular-nums ${cell.accent}`}
+              className={`mt-1.5 font-display text-[1.65rem] leading-none font-semibold tabular-nums ${cell.accent}`}
             >
               {cell.value}
             </div>
-            <span className="text-xs text-teal mt-1 inline-block">{cell.cta} →</span>
+            <span className="text-xs text-teal mt-2 inline-block">{cell.cta} →</span>
           </Link>
         ))}
       </div>

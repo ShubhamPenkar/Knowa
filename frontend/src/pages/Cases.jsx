@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { PredictionPanel } from '../components/PredictionPanel'
@@ -59,6 +59,7 @@ export default function Cases() {
   const [softScan, setSoftScan] = useState([])
   const [softScanLoading, setSoftScanLoading] = useState(false)
   const [storedSoft, setStoredSoft] = useState([])
+  const predictSeq = useRef(0)
 
   const filterMode = searchParams.get('filter') === 'dont-act' ? 'dont-act' : 'all'
 
@@ -104,6 +105,7 @@ export default function Cases() {
       return
     }
     setLastProjectId(projectId)
+    predictSeq.current += 1
     setSelectedRowIdx(null)
     setPrediction(null)
     setPredictError('')
@@ -187,15 +189,17 @@ export default function Cases() {
     const predictionId = searchParams.get('prediction')
     if (!token || !projectId || !predictionId) return
     let cancelled = false
+    const seq = ++predictSeq.current
     ;(async () => {
       setPredicting(true)
       setPredictError('')
+      setPrediction(null)
       try {
         const res = await fetch(`/api/projects/${projectId}/predictions/${predictionId}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json().catch(() => ({}))
-        if (cancelled) return
+        if (cancelled || seq !== predictSeq.current) return
         if (!res.ok) {
           setPredictError(
             typeof data.detail === 'string' ? data.detail : 'Could not open that case'
@@ -206,9 +210,11 @@ export default function Cases() {
           setKnownOutcome(null)
         }
       } catch (err) {
-        if (!cancelled) setPredictError(err?.message || 'Could not open that case')
+        if (!cancelled && seq === predictSeq.current) {
+          setPredictError(err?.message || 'Could not open that case')
+        }
       }
-      if (!cancelled) setPredicting(false)
+      if (!cancelled && seq === predictSeq.current) setPredicting(false)
     })()
     return () => {
       cancelled = true
@@ -246,6 +252,7 @@ export default function Cases() {
 
   const handlePredictRow = async (row, idx) => {
     if (!project) return
+    const seq = ++predictSeq.current
     setSelectedRowIdx(idx)
     setPredicting(true)
     setPredictError('')
@@ -276,6 +283,7 @@ export default function Cases() {
         }),
       })
       const data = await res.json()
+      if (seq !== predictSeq.current) return
       if (res.ok) {
         setPrediction(data)
         requestAnimationFrame(() => {
@@ -287,9 +295,10 @@ export default function Cases() {
         setPredictError(formatApiError(data.detail) || 'Prediction failed')
       }
     } catch (err) {
+      if (seq !== predictSeq.current) return
       setPredictError('Network error: ' + err.message)
     }
-    setPredicting(false)
+    if (seq === predictSeq.current) setPredicting(false)
   }
 
   const openSoftScanCase = async (item) => {
@@ -300,24 +309,28 @@ export default function Cases() {
   }
 
   const openStoredSoft = async (pred) => {
+    const seq = ++predictSeq.current
     setPredicting(true)
     setPredictError('')
     setSelectedRowIdx(null)
     setKnownOutcome(null)
+    setPrediction(null)
     try {
       const res = await fetch(`/api/projects/${projectId}/predictions/${pred.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json().catch(() => ({}))
+      if (seq !== predictSeq.current) return
       if (!res.ok) {
         setPredictError(typeof data.detail === 'string' ? data.detail : 'Could not open case')
       } else {
         setPrediction(data)
       }
     } catch (err) {
+      if (seq !== predictSeq.current) return
       setPredictError(err?.message || 'Could not open case')
     }
-    setPredicting(false)
+    if (seq === predictSeq.current) setPredicting(false)
   }
 
   if (loading) {
@@ -413,8 +426,15 @@ export default function Cases() {
           </div>
 
           {rowsLoading ? (
-            <div className="flex items-center gap-3 text-sm text-[var(--muted)] py-10">
-              <Spinner className="h-4 w-4" /> Loading cases…
+            <div className="border border-mist px-5 py-10 space-y-4" aria-busy="true">
+              <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
+                <Spinner className="h-4 w-4" /> Loading cases…
+              </div>
+              <div className="space-y-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="skeleton h-10 w-full" />
+                ))}
+              </div>
             </div>
           ) : (
             <section className="grid lg:grid-cols-5 gap-8">
@@ -429,19 +449,19 @@ export default function Cases() {
                     </div>
                   )}
                   {predicting && (
-                    <div className="surface p-6 text-sm text-[var(--muted)] flex items-center gap-3">
+                    <div className="case-brief-stage px-5 py-6 text-sm text-[var(--muted)] flex items-center gap-3">
                       <Spinner className="h-4 w-4" /> Opening brief…
                     </div>
                   )}
                   {!predicting && !prediction && (
-                    <div className="surface p-6">
+                    <div className="case-brief-stage px-5 py-6 md:px-6">
                       <p className="page-kicker">Brief</p>
-                      <h3 className="font-display text-lg font-semibold text-ink mt-1">
+                      <h3 className="font-display text-xl font-semibold text-ink mt-1 tracking-tight">
                         {filterMode === 'dont-act'
                           ? "Pick a Don't-act case"
                           : 'Select someone to begin'}
                       </h3>
-                      <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed">
+                      <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed max-w-sm">
                         {filterMode === 'dont-act'
                           ? "Scores here aren't firm enough for big spends — prefer light check-ins and confirm with what-if first."
                           : `You'll see how likely ${outcomeLabel.toLowerCase()} is, what's driving it, and what to do next.`}
@@ -449,7 +469,14 @@ export default function Cases() {
                     </div>
                   )}
                   {!predicting && prediction && (
-                    <>
+                    <div
+                      key={
+                        prediction.prediction_id ||
+                        prediction.id ||
+                        `row-${selectedRowIdx ?? 'case'}`
+                      }
+                      className="case-open space-y-3"
+                    >
                       {(prediction.low_confidence ||
                         prediction.abstention_reason ||
                         filterMode === 'dont-act') && (
@@ -469,7 +496,7 @@ export default function Cases() {
                         }`}
                         simulateLabel="Explore a what-if"
                       />
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -486,27 +513,47 @@ export default function Cases() {
                       Cases where the score isn&apos;t firm enough to trust for a big spend.
                     </p>
                     {softScanLoading ? (
-                      <div className="flex items-center gap-3 text-sm text-[var(--muted)] py-8">
-                        <Spinner className="h-4 w-4" /> Scanning Don&apos;t-act queue…
+                      <div className="border border-mist px-5 py-8 space-y-3" aria-busy="true">
+                        <div className="flex items-center gap-3 text-sm text-[var(--muted)]">
+                          <Spinner className="h-4 w-4" /> Scanning Don&apos;t-act queue…
+                        </div>
+                        <div className="skeleton h-12 w-full" />
+                        <div className="skeleton h-12 w-full" />
                       </div>
                     ) : softScan.length === 0 && storedSoft.length === 0 ? (
-                      <div className="border border-mist px-5 py-8 text-sm text-[var(--muted)]">
-                        Nothing in Don&apos;t act for this sample. That&apos;s good — or open more
-                        cases so low-trust flags can accumulate.
+                      <div className="empty-state py-10">
+                        <h3 className="font-display text-lg font-semibold text-ink mb-2">
+                          Queue is clear
+                        </h3>
+                        <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
+                          Nothing in Don&apos;t act for this sample. That&apos;s good — or open more
+                          cases so low-trust flags can accumulate.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setFilterMode('all')}
+                          className="btn-secondary text-sm"
+                        >
+                          Browse all sample cases
+                        </button>
                       </div>
                     ) : (
                       <ul className="border border-mist divide-y divide-mist">
-                        {softScan.map((item) => {
+                        {softScan.map((item, i) => {
                           const pct =
                             item.probability != null
                               ? Math.round(Number(item.probability) * 100)
                               : null
                           return (
-                            <li key={`scan-${item.index}`}>
+                            <li
+                              key={`scan-${item.index}`}
+                              className="list-row-in"
+                              style={{ animationDelay: `${60 + i * 45}ms` }}
+                            >
                               <button
                                 type="button"
                                 onClick={() => openSoftScanCase(item)}
-                                className="w-full text-left px-4 py-3 hover:bg-mist/30 transition-colors"
+                                className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
                               >
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="badge bg-coral-soft border border-coral/30 text-ink">
@@ -525,12 +572,16 @@ export default function Cases() {
                             </li>
                           )
                         })}
-                        {storedSoft.slice(0, 12).map((pred) => (
-                          <li key={pred.id}>
+                        {storedSoft.slice(0, 12).map((pred, i) => (
+                          <li
+                            key={pred.id}
+                            className="list-row-in"
+                            style={{ animationDelay: `${60 + (softScan.length + i) * 45}ms` }}
+                          >
                             <button
                               type="button"
                               onClick={() => openStoredSoft(pred)}
-                              className="w-full text-left px-4 py-3 hover:bg-mist/30 transition-colors"
+                              className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
                             >
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="badge bg-coral-soft border border-coral/30 text-ink">
@@ -563,15 +614,20 @@ export default function Cases() {
                       Click a row to open their brief. Save a follow-up when you decide to act.
                     </p>
                     {rows.length === 0 ? (
-                      <div className="border border-mist px-5 py-8 text-sm text-[var(--muted)]">
-                        No sample cases for this project yet. Open{' '}
-                        <Link to={`/projects/${projectId}`} className="text-teal hover:underline">
-                          project settings
-                        </Link>{' '}
-                        and refresh data.
+                      <div className="empty-state py-10">
+                        <h3 className="font-display text-lg font-semibold text-ink mb-2">
+                          No sample cases yet
+                        </h3>
+                        <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
+                          This project doesn&apos;t have sample rows to review. Refresh data from
+                          project settings.
+                        </p>
+                        <Link to={`/projects/${projectId}`} className="btn-primary text-sm">
+                          Open project settings
+                        </Link>
                       </div>
                     ) : (
-                      <div className="surface overflow-x-auto">
+                      <div className="border border-mist overflow-x-auto bg-paper/40">
                         <table className="data-table">
                           <thead>
                             <tr>
@@ -611,9 +667,10 @@ export default function Cases() {
                                   tabIndex={0}
                                   role="button"
                                   aria-pressed={selected}
-                                  className={`cursor-pointer transition-colors hover:bg-mist/40 ${
+                                  className={`cursor-pointer transition-colors list-row-fade hover:bg-mist/40 ${
                                     selected ? 'bg-teal-soft/30 ring-1 ring-inset ring-teal/30' : ''
                                   }`}
+                                  style={{ animationDelay: `${40 + idx * 28}ms` }}
                                 >
                                   <td className="text-[var(--muted)]">{idx + 1}</td>
                                   <td>

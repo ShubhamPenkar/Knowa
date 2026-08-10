@@ -3184,6 +3184,7 @@ class ProjectService:
             "problem_type": project.problem_type,
             "target": outcome_label,
             "features": prediction.features or {},
+            "low_confidence": bool(prediction.low_confidence),
             "explanations": {
                 "drivers": annotated_drivers,
                 "shap": {"top_features": annotated_drivers},
