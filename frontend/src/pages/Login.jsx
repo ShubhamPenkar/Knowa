@@ -16,7 +16,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate('/cases');
+      navigate('/');
     } catch (err) {
       setError(err.message);
     }

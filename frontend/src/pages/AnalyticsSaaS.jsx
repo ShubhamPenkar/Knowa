@@ -46,7 +46,7 @@ function PortfolioStatSkeleton() {
  * Business briefing: org follow-ups first, then project case focus.
  */
 export default function AnalyticsSaaS() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [predictions, setPredictions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,19 +57,28 @@ export default function AnalyticsSaaS() {
   const [portfolioError, setPortfolioError] = useState('');
   const [sweeping, setSweeping] = useState(false);
   const [sweepNote, setSweepNote] = useState('');
+  const [mineOnly, setMineOnly] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (token) {
       fetchProjects();
-      fetchPortfolio();
     }
   }, [token]);
+
+  useEffect(() => {
+    if (token) {
+      fetchPortfolio();
+    }
+  }, [token, mineOnly]);
 
   const fetchPortfolio = async () => {
     setPortfolioLoading(true);
     setPortfolioError('');
     try {
-      const res = await fetch('/api/projects/decisions/portfolio?limit=80', {
+      const q = new URLSearchParams({ limit: '80' });
+      if (mineOnly) q.set('mine', 'true');
+      const res = await fetch(`/api/projects/decisions/portfolio?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -92,6 +101,48 @@ export default function AnalyticsSaaS() {
       setPortfolioError(err?.message || 'Could not load follow-ups');
     }
     setPortfolioLoading(false);
+  };
+
+  const exportDecisions = async (fmt) => {
+    setExporting(true);
+    try {
+      const q = new URLSearchParams({ format: fmt, include_activity: 'true', limit: '500' });
+      if (mineOnly && user?.id) q.set('assignee_user_id', user.id);
+      const res = await fetch(`/api/projects/decisions/export?${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSweepNote(
+          typeof data.detail === 'string' ? data.detail : 'Could not export decisions'
+        );
+        return;
+      }
+      if (fmt === 'csv') {
+        const text = await res.text();
+        const blob = new Blob([text], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'knowa-decisions.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'knowa-decisions.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      setSweepNote(`Exported decisions as ${fmt.toUpperCase()}.`);
+    } catch (err) {
+      setSweepNote(err?.message || 'Could not export decisions');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const runRecheckSweep = async () => {
@@ -275,7 +326,36 @@ export default function AnalyticsSaaS() {
               Across all projects — actions you saved from cases. Check in when they come due.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 shrink-0">
+          <div className="flex flex-wrap gap-2 shrink-0 items-center">
+            {user?.id && (
+              <button
+                type="button"
+                onClick={() => setMineOnly((v) => !v)}
+                className={`text-sm px-3 py-1.5 border rounded-control ${
+                  mineOnly
+                    ? 'border-teal bg-teal-soft/30 text-ink'
+                    : 'border-mist text-[var(--muted)] hover:text-ink'
+                }`}
+              >
+                {mineOnly ? 'All follow-ups' : 'My follow-ups'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => exportDecisions('csv')}
+              disabled={exporting || portfolioLoading}
+              className="btn-ghost text-sm"
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+            <button
+              type="button"
+              onClick={() => exportDecisions('json')}
+              disabled={exporting || portfolioLoading}
+              className="btn-ghost text-sm"
+            >
+              Export JSON
+            </button>
             <button
               type="button"
               onClick={runRecheckSweep}
@@ -372,6 +452,11 @@ export default function AnalyticsSaaS() {
                           {d._bucket}
                         </span>
                         {d.project_name ? ` · ${d.project_name}` : ''}
+                        {d.assignee?.name
+                          ? ` · ${d.assignee.name}`
+                          : d.assignee_user_id
+                            ? ' · Assigned'
+                            : ' · Unassigned'}
                         {d.recheck_at
                           ? ` · check back ${String(d.recheck_at).slice(0, 10)}`
                           : ''}

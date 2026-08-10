@@ -299,6 +299,14 @@ class Decision(Base):
     outcome_notes: Mapped[Optional[str]] = mapped_column(Text)
     autopsy_narrative: Mapped[Optional[str]] = mapped_column(Text)
 
+    # Accountability
+    assignee_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id"), index=True
+    )
+    committed_by_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id"), index=True
+    )
+
     committed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -309,6 +317,32 @@ class Decision(Base):
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="decisions")
     prediction: Mapped[Optional["ProjectPrediction"]] = relationship(back_populates="decisions")
+    activities: Mapped[list["DecisionActivity"]] = relationship(
+        back_populates="decision", cascade="all, delete-orphan"
+    )
+
+
+class DecisionActivity(Base):
+    """Append-only audit trail for a decision (commit, assign, check-in, close)."""
+
+    __tablename__ = "decision_activities"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id"), index=True
+    )
+    decision_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("decisions.id"), index=True
+    )
+    actor_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id"), index=True
+    )
+    # created | assigned | checked_in | closed | rescheduled | note
+    event: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    decision: Mapped["Decision"] = relationship(back_populates="activities")
 
 
 # =============================================================================

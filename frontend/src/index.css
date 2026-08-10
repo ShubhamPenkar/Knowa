@@ -156,4 +156,19 @@
   .skeleton {
     @apply bg-mist/70 rounded-control animate-pulse;
   }
+
+  .home-flow-row {
+    animation: home-flow-in 0.45s ease-out both;
+  }
+}
+
+@keyframes home-flow-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

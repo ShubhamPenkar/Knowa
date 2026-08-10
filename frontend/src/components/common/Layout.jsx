@@ -5,6 +5,12 @@ import { useAuth } from '../../context/AuthContext'
 /** Primary work tabs first; setup (Projects / Data) last. */
 const navItems = [
   {
+    path: '/',
+    match: (p) => p === '/',
+    label: 'Home',
+    hint: "Knowa overview and today's pulse",
+  },
+  {
     path: '/cases',
     match: (p) => p.startsWith('/cases'),
     label: 'Cases',
@@ -76,9 +82,9 @@ function Layout() {
       {navItems.map((item, idx) => {
         const isActive = item.match(location.pathname)
         const showBadge = item.path === '/follow-ups' && dueCount > 0
-        const showDivider = idx === 4
+        const showDivider = idx === 5
         return (
-          <React.Fragment key={item.path}>
+          <React.Fragment key={item.path === '/' ? 'home' : item.path}>
             {showDivider && (
               <div
                 className="my-2 mx-1 border-t border-mist"
@@ -122,7 +128,7 @@ function Layout() {
     <div className="min-h-screen flex bg-paper">
       <aside className="hidden lg:flex w-[15.5rem] shrink-0 flex-col border-r border-mist bg-paper">
         <div className="px-5 pt-7 pb-6">
-          <Link to="/cases" className="block">
+          <Link to="/" className="block">
             <span className="font-display text-[1.65rem] font-semibold tracking-tight leading-none text-ink">
               KNOWA
             </span>
@@ -151,7 +157,7 @@ function Layout() {
 
       <div className="lg:hidden fixed inset-x-0 top-0 z-40 bg-paper border-b border-mist">
         <div className="flex items-center justify-between px-4 h-14">
-          <Link to="/cases" className="font-display text-lg font-semibold tracking-tight text-ink">
+          <Link to="/" className="font-display text-lg font-semibold tracking-tight text-ink">
             KNOWA
           </Link>
           <button

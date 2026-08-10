@@ -9,7 +9,7 @@ from typing import Any, Optional
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 
-from app.db.models import Decision, Project, ProjectPrediction
+from app.db.models import Decision, DecisionActivity, Project, ProjectPrediction, User
 from app.recommendations.action_catalog import get_action
 from app.recommendations.domains import detect_domain
 
@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 
 VALID_STATUSES = {"proposed", "committed", "checking", "closed", "cancelled"}
 VALID_INTERVALS = {30, 60, 90}
+VALID_ACTIVITY_EVENTS = {
+    "created",
+    "assigned",
+    "checked_in",
+    "closed",
+    "rescheduled",
+    "note",
+}
 
 
 def flag_due_rechecks(
@@ -126,6 +134,8 @@ class DecisionService:
         case_snapshot: Optional[dict[str, Any]] = None,
         recheck_interval_days: int = 30,
         status: str = "committed",
+        assignee_user_id: Optional[str] = None,
+        actor_user_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Open a ledger decision from a scored case (and optional prediction row)."""
         project = self._get_project(project_id)
@@ -138,6 +148,11 @@ class DecisionService:
         code = (action_code or "").strip()
         if not code:
             raise ValueError("action_code is required")
+
+        assignee_id = self._validate_org_user(assignee_user_id) if assignee_user_id else None
+        # Default assignee to the person who committed, when signed in
+        if not assignee_id and actor_user_id:
+            assignee_id = self._validate_org_user(actor_user_id)
 
         domain = detect_domain(
             feature_columns=project.feature_columns,
@@ -209,8 +224,32 @@ class DecisionService:
             recheck_interval_days=interval,
             recheck_at=now + timedelta(days=interval),
             committed_at=now,
+            assignee_user_id=assignee_id,
+            committed_by_user_id=actor_user_id,
         )
         self.db.add(decision)
+        self.db.flush()
+
+        self._log_activity(
+            decision,
+            event="created",
+            actor_user_id=actor_user_id,
+            payload={
+                "action_code": code,
+                "action_name": name,
+                "recheck_interval_days": interval,
+                "assignee_user_id": assignee_id,
+            },
+            commit=False,
+        )
+        if assignee_id:
+            self._log_activity(
+                decision,
+                event="assigned",
+                actor_user_id=actor_user_id,
+                payload={"assignee_user_id": assignee_id, "from": None},
+                commit=False,
+            )
 
         # Light A7 bridge: stamp action on prediction if present and empty
         if pred is not None and not pred.action_taken:
@@ -241,7 +280,7 @@ class DecisionService:
             and d.recheck_at <= now
             and d.status in ("committed", "checking")
         ]
-        items = [self._format(d, project) for d in rows]
+        items = [self._format(d, project, include_activity=True) for d in rows]
         plain = (
             f"{len(items)} follow-up(s) on this project"
             + (f"; {len(due)} due for a check-in." if due else ".")
@@ -262,6 +301,7 @@ class DecisionService:
         limit: int = 100,
         closed_days: int = 30,
         due_soon_days: int = 7,
+        assignee_user_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Org-wide follow-up board: overdue / due now / upcoming / recently closed.
@@ -281,6 +321,8 @@ class DecisionService:
         if project_id:
             self._get_project(project_id)
             base = base.filter(Decision.project_id == project_id)
+        if assignee_user_id:
+            base = base.filter(Decision.assignee_user_id == assignee_user_id)
 
         # Null recheck_at first (treat as due), then earliest recheck
         null_first = case((Decision.recheck_at.is_(None), 0), else_=1)
@@ -426,6 +468,7 @@ class DecisionService:
             "plain_summary": plain,
             "due_soon_days": due_soon_days,
             "closed_days": closed_days,
+            "assignee_user_id": assignee_user_id,
         }
 
     @staticmethod
@@ -709,7 +752,281 @@ class DecisionService:
         )
         if not d:
             raise ValueError("Decision not found")
-        return self._format(d, project, include_snapshot=True)
+        return self._format(d, project, include_snapshot=True, include_activity=True)
+
+    def assign(
+        self,
+        project_id: str,
+        decision_id: str,
+        *,
+        assignee_user_id: Optional[str],
+        actor_user_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Set or clear the follow-up assignee (must be an active org member)."""
+        project = self._get_project(project_id)
+        d = (
+            self.db.query(Decision)
+            .filter(
+                Decision.id == decision_id,
+                Decision.project_id == project_id,
+                Decision.organization_id == self.org_id,
+            )
+            .first()
+        )
+        if not d:
+            raise ValueError("Decision not found")
+
+        previous = d.assignee_user_id
+        new_id = None
+        if assignee_user_id:
+            new_id = self._validate_org_user(assignee_user_id)
+        if previous == new_id:
+            return self._format(d, project, include_activity=True)
+
+        d.assignee_user_id = new_id
+        d.updated_at = datetime.utcnow()
+        self._log_activity(
+            d,
+            event="assigned",
+            actor_user_id=actor_user_id,
+            payload={"from": previous, "assignee_user_id": new_id},
+            commit=False,
+        )
+        self.db.commit()
+        self.db.refresh(d)
+        return self._format(d, project, include_activity=True)
+
+    def list_activities(
+        self, project_id: str, decision_id: str, *, limit: int = 50
+    ) -> dict[str, Any]:
+        self._get_project(project_id)
+        d = (
+            self.db.query(Decision)
+            .filter(
+                Decision.id == decision_id,
+                Decision.project_id == project_id,
+                Decision.organization_id == self.org_id,
+            )
+            .first()
+        )
+        if not d:
+            raise ValueError("Decision not found")
+        rows = (
+            self.db.query(DecisionActivity)
+            .filter(DecisionActivity.decision_id == decision_id)
+            .order_by(DecisionActivity.created_at.desc())
+            .limit(min(max(int(limit), 1), 200))
+            .all()
+        )
+        return {
+            "layer": "decision_activity",
+            "decision_id": decision_id,
+            "n": len(rows),
+            "activities": [self._format_activity(a) for a in rows],
+        }
+
+    def export_decisions(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        assignee_user_id: Optional[str] = None,
+        status: Optional[str] = None,
+        include_activity: bool = True,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """Org-scoped audit export of decisions (+ optional activity rows)."""
+        lim = min(max(int(limit), 1), 2000)
+        q = self.db.query(Decision).filter(Decision.organization_id == self.org_id)
+        if project_id:
+            self._get_project(project_id)
+            q = q.filter(Decision.project_id == project_id)
+        if assignee_user_id:
+            q = q.filter(Decision.assignee_user_id == assignee_user_id)
+        if status:
+            q = q.filter(Decision.status == status)
+        rows = q.order_by(Decision.committed_at.desc()).limit(lim).all()
+
+        project_ids = {d.project_id for d in rows}
+        projects = {}
+        if project_ids:
+            projects = {
+                p.id: p
+                for p in self.db.query(Project)
+                .filter(
+                    Project.organization_id == self.org_id,
+                    Project.id.in_(list(project_ids)),
+                )
+                .all()
+            }
+
+        activities_by_decision: dict[str, list[dict[str, Any]]] = {}
+        if include_activity and rows:
+            acts = (
+                self.db.query(DecisionActivity)
+                .filter(
+                    DecisionActivity.organization_id == self.org_id,
+                    DecisionActivity.decision_id.in_([d.id for d in rows]),
+                )
+                .order_by(DecisionActivity.created_at.asc())
+                .all()
+            )
+            for a in acts:
+                activities_by_decision.setdefault(a.decision_id, []).append(
+                    self._format_activity(a)
+                )
+
+        items = []
+        for d in rows:
+            project = projects.get(d.project_id)
+            if not project:
+                continue
+            item = self._format(d, project)
+            if include_activity:
+                item["activities"] = activities_by_decision.get(d.id, [])
+            items.append(item)
+
+        return {
+            "layer": "decision_export",
+            "n": len(items),
+            "include_activity": include_activity,
+            "decisions": items,
+            "plain_summary": f"Exported {len(items)} decision(s) for audit.",
+            "exported_at": datetime.utcnow().isoformat(),
+        }
+
+    def export_csv(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        assignee_user_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 500,
+    ) -> str:
+        import csv
+        import io
+
+        payload = self.export_decisions(
+            project_id=project_id,
+            assignee_user_id=assignee_user_id,
+            status=status,
+            include_activity=False,
+            limit=limit,
+        )
+        buf = io.StringIO()
+        writer = csv.DictWriter(
+            buf,
+            fieldnames=[
+                "id",
+                "project_id",
+                "project_name",
+                "entity_id",
+                "action_code",
+                "action_name",
+                "status",
+                "assignee_user_id",
+                "assignee_email",
+                "assignee_name",
+                "committed_by_user_id",
+                "probability_at_commit",
+                "expected_lift",
+                "actual_outcome",
+                "checkin_count",
+                "recheck_at",
+                "committed_at",
+                "closed_at",
+            ],
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for d in payload["decisions"]:
+            assignee = d.get("assignee") or {}
+            writer.writerow(
+                {
+                    "id": d.get("id"),
+                    "project_id": d.get("project_id"),
+                    "project_name": d.get("project_name"),
+                    "entity_id": d.get("entity_id"),
+                    "action_code": d.get("action_code"),
+                    "action_name": d.get("action_name"),
+                    "status": d.get("status"),
+                    "assignee_user_id": assignee.get("id"),
+                    "assignee_email": assignee.get("email"),
+                    "assignee_name": assignee.get("name"),
+                    "committed_by_user_id": d.get("committed_by_user_id"),
+                    "probability_at_commit": d.get("probability_at_commit"),
+                    "expected_lift": d.get("expected_lift"),
+                    "actual_outcome": d.get("actual_outcome"),
+                    "checkin_count": d.get("checkin_count"),
+                    "recheck_at": d.get("recheck_at"),
+                    "committed_at": d.get("committed_at"),
+                    "closed_at": d.get("closed_at"),
+                }
+            )
+        return buf.getvalue()
+
+    def _validate_org_user(self, user_id: str) -> str:
+        uid = (user_id or "").strip()
+        if not uid:
+            raise ValueError("assignee_user_id is required")
+        user = (
+            self.db.query(User)
+            .filter(
+                User.id == uid,
+                User.organization_id == self.org_id,
+                User.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not user:
+            raise ValueError("Assignee must be an active member of this organization")
+        return user.id
+
+    def _user_brief(self, user_id: Optional[str]) -> Optional[dict[str, Any]]:
+        if not user_id:
+            return None
+        user = (
+            self.db.query(User)
+            .filter(User.id == user_id, User.organization_id == self.org_id)
+            .first()
+        )
+        if not user:
+            return {"id": user_id, "name": None, "email": None}
+        return {"id": user.id, "name": user.name, "email": user.email}
+
+    def _log_activity(
+        self,
+        decision: Decision,
+        *,
+        event: str,
+        actor_user_id: Optional[str] = None,
+        payload: Optional[dict[str, Any]] = None,
+        commit: bool = True,
+    ) -> DecisionActivity:
+        if event not in VALID_ACTIVITY_EVENTS:
+            raise ValueError(f"Invalid activity event '{event}'")
+        row = DecisionActivity(
+            organization_id=self.org_id,
+            decision_id=decision.id,
+            actor_user_id=actor_user_id,
+            event=event,
+            payload=payload or {},
+        )
+        self.db.add(row)
+        if commit:
+            self.db.commit()
+            self.db.refresh(row)
+        return row
+
+    def _format_activity(self, a: DecisionActivity) -> dict[str, Any]:
+        actor = self._user_brief(a.actor_user_id)
+        return {
+            "id": a.id,
+            "decision_id": a.decision_id,
+            "event": a.event,
+            "actor": actor,
+            "payload": a.payload or {},
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
 
     def check_in(
         self,
@@ -721,6 +1038,7 @@ class DecisionService:
         close: bool = False,
         schedule_next: bool = True,
         recheck_interval_days: Optional[int] = None,
+        actor_user_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Record a 30/60/90 check-in; optionally close or schedule next."""
         project = self._get_project(project_id)
@@ -752,10 +1070,12 @@ class DecisionService:
                 d.outcome_notes += "\n---\n"
             d.outcome_notes += f"[{now.isoformat()}Z] {notes.strip()}"
 
+        event = "checked_in"
         if close:
             d.status = "closed"
             d.closed_at = now
             d.recheck_at = None
+            event = "closed"
         elif schedule_next:
             if recheck_interval_days is not None:
                 interval = int(recheck_interval_days)
@@ -764,16 +1084,32 @@ class DecisionService:
                 d.recheck_interval_days = interval
             d.status = "committed"
             d.recheck_at = now + timedelta(days=int(d.recheck_interval_days or 30))
+            event = "rescheduled"
         else:
             # Keep open without bumping the next recheck date
             d.status = "committed"
 
         d.autopsy_narrative = self._build_autopsy(d, project)
         d.updated_at = now
+
+        self._log_activity(
+            d,
+            event=event,
+            actor_user_id=actor_user_id,
+            payload={
+                "actual_outcome": d.actual_outcome,
+                "notes": (notes or "").strip() or None,
+                "close": bool(close),
+                "recheck_at": d.recheck_at.isoformat() if d.recheck_at else None,
+                "recheck_interval_days": d.recheck_interval_days,
+            },
+            commit=False,
+        )
+
         self.db.commit()
         self.db.refresh(d)
 
-        payload = self._format(d, project, include_snapshot=True)
+        payload = self._format(d, project, include_snapshot=True, include_activity=True)
 
         # Bridge to A7: stamp prediction when we have a known yes/no (don't wipe with unknown)
         feedback_synced: Optional[bool] = None
@@ -904,6 +1240,7 @@ class DecisionService:
         *,
         include_snapshot: bool = False,
         include_project_name: bool = False,
+        include_activity: bool = False,
     ) -> dict[str, Any]:
         now = datetime.utcnow()
         due = bool(
@@ -911,6 +1248,7 @@ class DecisionService:
             and d.recheck_at <= now
             and d.status in ("committed", "checking")
         )
+        assignee = self._user_brief(getattr(d, "assignee_user_id", None))
         payload = {
             "id": d.id,
             "project_id": d.project_id,
@@ -934,6 +1272,9 @@ class DecisionService:
             "actual_outcome": d.actual_outcome,
             "outcome_notes": d.outcome_notes,
             "autopsy_narrative": d.autopsy_narrative,
+            "assignee_user_id": getattr(d, "assignee_user_id", None),
+            "assignee": assignee,
+            "committed_by_user_id": getattr(d, "committed_by_user_id", None),
             "committed_at": d.committed_at.isoformat() if d.committed_at else None,
             "closed_at": d.closed_at.isoformat() if d.closed_at else None,
             "layer": "B3_decision_ledger",
@@ -942,6 +1283,15 @@ class DecisionService:
         }
         if include_snapshot:
             payload["case_snapshot"] = d.case_snapshot
+        if include_activity:
+            acts = (
+                self.db.query(DecisionActivity)
+                .filter(DecisionActivity.decision_id == d.id)
+                .order_by(DecisionActivity.created_at.desc())
+                .limit(8)
+                .all()
+            )
+            payload["activities"] = [self._format_activity(a) for a in acts]
         if not include_project_name and not include_snapshot:
             # Keep project_name always — useful for deep links; cheap field
             pass

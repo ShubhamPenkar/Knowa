@@ -13,6 +13,7 @@ import WhatIf from './pages/WhatIf'
 import WhatIfEntry from './pages/WhatIfEntry'
 import Cases from './pages/Cases'
 import Monitoring from './pages/Monitoring'
+import Home from './pages/Home'
 
 function ExplainabilityRedirect() {
   const { projectId } = useParams()
@@ -45,7 +46,7 @@ function ProtectedRoute({ children }) {
 function PublicRoute({ children }) {
   const { token, loading } = useAuth()
   if (loading) return <Loader />
-  if (token) return <Navigate to="/cases" replace />
+  if (token) return <Navigate to="/" replace />
   return children
 }
 
@@ -55,7 +56,7 @@ function AppRoutes() {
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Navigate to="/cases" replace />} />
+        <Route index element={<Home />} />
         <Route path="cases" element={<Cases />} />
         <Route path="follow-ups" element={<AnalyticsSaaS />} />
         <Route path="analytics" element={<Navigate to="/follow-ups" replace />} />

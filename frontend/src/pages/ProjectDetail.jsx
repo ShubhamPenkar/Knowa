@@ -37,6 +37,8 @@ export default function ProjectDetail() {
   const [checkInError, setCheckInError] = useState('');
   const [lastAutopsy, setLastAutopsy] = useState(null);
   const [showAllDecisions, setShowAllDecisions] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [assignSavingId, setAssignSavingId] = useState(null);
   const deepLinkRef = useRef({ decision: null, prediction: null });
   const fromFollowUps =
     searchParams.get('from') === 'follow-ups' || searchParams.get('from') === 'priorities';
@@ -49,6 +51,26 @@ export default function ProjectDetail() {
     setSelectedRowIdx(null);
     if (token && id) fetchProject();
   }, [id, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    ;(async () => {
+      try {
+        const res = await fetch('/api/auth/members', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setMembers(data.members || []);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (project?.status === 'trained' || project?.status === 'ready') {
@@ -244,6 +266,33 @@ export default function ProjectDetail() {
     if (checkInSaving) return;
     setCheckInTarget(null);
     setCheckInError('');
+  };
+
+  const assignDecision = async (decisionId, assigneeUserId) => {
+    setAssignSavingId(decisionId);
+    try {
+      const res = await fetch(`/api/projects/${id}/decisions/${decisionId}/assign`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          assignee_user_id: assigneeUserId || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await fetchLedger();
+        if (checkInTarget?.id === decisionId) {
+          setCheckInTarget((prev) => (prev ? { ...prev, ...data } : prev));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAssignSavingId(null);
+    }
   };
 
   const submitCheckIn = async () => {
@@ -683,11 +732,44 @@ export default function ProjectDetail() {
                       <div className="font-medium text-ink">{d.action_name}</div>
                       <p className="text-xs text-[var(--muted)] mt-1">
                         {statusLabel}
+                        {d.assignee?.name
+                          ? ` · ${d.assignee.name}`
+                          : ' · Unassigned'}
                         {d.recheck_at ? ` · check back ${String(d.recheck_at).slice(0, 10)}` : ''}
                         {d.due_for_recheck ? ' · due now' : ''}
                         {d.actual_outcome ? ` · outcome: ${d.actual_outcome}` : ''}
                         {d.checkin_count > 0 ? ` · ${d.checkin_count} update(s)` : ''}
                       </p>
+                      {members.length > 0 && d.status !== 'closed' && d.status !== 'cancelled' && (
+                        <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                          <span>Assignee</span>
+                          <select
+                            className="input text-xs py-1 max-w-[14rem]"
+                            value={d.assignee_user_id || ''}
+                            disabled={assignSavingId === d.id}
+                            onChange={(e) => assignDecision(d.id, e.target.value || null)}
+                          >
+                            <option value="">Unassigned</option>
+                            {members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                                {user?.id === m.id ? ' (you)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {Array.isArray(d.activities) && d.activities.length > 0 && (
+                        <p className="text-[11px] text-[var(--muted)] mt-2">
+                          Last: {d.activities[0].event.replace(/_/g, ' ')}
+                          {d.activities[0].actor?.name
+                            ? ` by ${d.activities[0].actor.name}`
+                            : ''}
+                          {d.activities[0].created_at
+                            ? ` · ${String(d.activities[0].created_at).slice(0, 10)}`
+                            : ''}
+                        </p>
+                      )}
                       {d.autopsy_narrative && (
                         <p className="text-xs text-[var(--muted)] mt-2 max-w-2xl leading-relaxed">
                           {d.autopsy_narrative}

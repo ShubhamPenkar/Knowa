@@ -46,6 +46,7 @@ def _ensure_sqlite_columns():
     from sqlalchemy import text
 
     with engine.begin() as conn:
+        # project_predictions
         rows = conn.execute(text("PRAGMA table_info(project_predictions)")).fetchall()
         names = {r[1] for r in rows}
         if "low_confidence" not in names:
@@ -54,5 +55,17 @@ def _ensure_sqlite_columns():
                     "ALTER TABLE project_predictions "
                     "ADD COLUMN low_confidence BOOLEAN DEFAULT 0"
                 )
+            )
+
+        # decisions — assignee / committer
+        drows = conn.execute(text("PRAGMA table_info(decisions)")).fetchall()
+        dnames = {r[1] for r in drows}
+        if "assignee_user_id" not in dnames:
+            conn.execute(
+                text("ALTER TABLE decisions ADD COLUMN assignee_user_id VARCHAR(36)")
+            )
+        if "committed_by_user_id" not in dnames:
+            conn.execute(
+                text("ALTER TABLE decisions ADD COLUMN committed_by_user_id VARCHAR(36)")
             )
 

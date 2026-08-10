@@ -57,7 +57,7 @@ export default function Signup() {
     setLoading(true);
     try {
       await signup(formData);
-      navigate('/cases');
+      navigate('/');
     } catch (err) {
       setError(err.message);
     }

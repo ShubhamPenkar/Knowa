@@ -154,6 +154,37 @@ async def get_current_user(auth: AuthContext = Depends(get_auth_context)):
     }
 
 
+@router.get("/members")
+async def list_org_members(
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Active org members for assignee pickers."""
+    from app.db.models import User
+
+    rows = (
+        db.query(User)
+        .filter(
+            User.organization_id == auth.org_id,
+            User.is_active == True,  # noqa: E712
+        )
+        .order_by(User.name.asc())
+        .all()
+    )
+    return {
+        "n": len(rows),
+        "members": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "role": u.role,
+            }
+            for u in rows
+        ],
+    }
+
+
 @router.post("/api-keys", response_model=APIKeyResponse)
 async def create_api_key(
     request: CreateAPIKeyRequest,

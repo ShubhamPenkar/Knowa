@@ -88,6 +88,7 @@ class CreateDecisionRequest(BaseModel):
     case_snapshot: dict | None = None
     recheck_interval_days: int = 30
     status: str = "committed"
+    assignee_user_id: str | None = None
 
 
 class DecisionCheckInRequest(BaseModel):
@@ -96,6 +97,10 @@ class DecisionCheckInRequest(BaseModel):
     close: bool = False
     schedule_next: bool = True
     recheck_interval_days: int | None = None
+
+
+class AssignDecisionRequest(BaseModel):
+    assignee_user_id: str | None = None
 
 
 class SuggestConfigRequest(BaseModel):
@@ -229,6 +234,8 @@ async def decisions_portfolio(
     limit: int = 100,
     closed_days: int = 30,
     due_soon_days: int = 7,
+    assignee_user_id: str | None = None,
+    mine: bool = False,
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
 ):
@@ -236,12 +243,18 @@ async def decisions_portfolio(
     from app.services.decision_service import DecisionService
 
     service = DecisionService(db, auth.org_id)
+    assignee = assignee_user_id
+    if mine:
+        if not auth.user:
+            raise HTTPException(status_code=400, detail="Sign in as a user to filter My follow-ups")
+        assignee = auth.user.id
     try:
         return service.list_portfolio(
             project_id=project_id,
             limit=limit,
             closed_days=closed_days,
             due_soon_days=due_soon_days,
+            assignee_user_id=assignee,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -260,6 +273,50 @@ async def decisions_portfolio_intel(
     service = DecisionService(db, auth.org_id)
     try:
         return service.portfolio_intelligence(project_id=project_id, min_n=min_n)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/decisions/export")
+async def decisions_export(
+    format: str = "json",
+    project_id: str | None = None,
+    assignee_user_id: str | None = None,
+    status: str | None = None,
+    include_activity: bool = True,
+    limit: int = 500,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Audit export of org decisions as JSON or CSV."""
+    from fastapi.responses import PlainTextResponse
+
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    fmt = (format or "json").lower().strip()
+    try:
+        if fmt == "csv":
+            csv_text = service.export_csv(
+                project_id=project_id,
+                assignee_user_id=assignee_user_id,
+                status=status,
+                limit=limit,
+            )
+            return PlainTextResponse(
+                csv_text,
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": 'attachment; filename="knowa-decisions.csv"'
+                },
+            )
+        return service.export_decisions(
+            project_id=project_id,
+            assignee_user_id=assignee_user_id,
+            status=status,
+            include_activity=include_activity,
+            limit=limit,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -622,6 +679,8 @@ async def create_decision(
             case_snapshot=request.case_snapshot,
             recheck_interval_days=request.recheck_interval_days,
             status=request.status,
+            assignee_user_id=request.assignee_user_id,
+            actor_user_id=auth.user.id if auth.user else None,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -683,9 +742,51 @@ async def check_in_decision(
             close=request.close,
             schedule_next=request.schedule_next,
             recheck_interval_days=request.recheck_interval_days,
+            actor_user_id=auth.user.id if auth.user else None,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/{project_id}/decisions/{decision_id}/assign")
+async def assign_decision(
+    project_id: str,
+    decision_id: str,
+    request: AssignDecisionRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Assign (or unassign) a follow-up to an org member."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.assign(
+            project_id,
+            decision_id,
+            assignee_user_id=request.assignee_user_id,
+            actor_user_id=auth.user.id if auth.user else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{project_id}/decisions/{decision_id}/activity")
+async def decision_activity(
+    project_id: str,
+    decision_id: str,
+    limit: int = 50,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Append-only audit trail for one decision."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.list_activities(project_id, decision_id, limit=limit)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/{project_id}/predictions")
