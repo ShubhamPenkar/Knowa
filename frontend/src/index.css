@@ -160,12 +160,43 @@
   .home-flow-row {
     animation: home-flow-in 0.45s ease-out both;
   }
+
+  .auth-grid {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--mist) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--mist) 55%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 75% 70% at 40% 45%, black 20%, transparent 75%);
+  }
+
+  .auth-fade-in {
+    animation: auth-fade-in 0.55s ease-out both;
+  }
+
+  .auth-cta {
+    transition: transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .auth-cta:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
 }
 
 @keyframes home-flow-in {
   from {
     opacity: 0;
     transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes auth-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
   to {
     opacity: 1;

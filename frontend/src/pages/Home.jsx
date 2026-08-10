@@ -57,6 +57,8 @@ export default function Home() {
   const { token, organization, user } = useAuth()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [dueAttention, setDueAttention] = useState(0)
+  const [handoffOpen, setHandoffOpen] = useState(false)
 
   useEffect(() => {
     if (!token) {
@@ -66,12 +68,40 @@ export default function Home() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch('/api/projects', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.ok && !cancelled) {
-          setProjects(await res.json())
+        const [projRes, healthRes] = await Promise.all([
+          fetch('/api/projects', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch('/api/projects/org-health', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ])
+        if (cancelled) return
+        if (projRes.ok) {
+          setProjects(await projRes.json())
         }
+        if (healthRes.ok) {
+          const health = await healthRes.json()
+          const due = Number(health?.counts?.due_attention || 0)
+          setDueAttention(due)
+          let pendingHandoff = false
+          try {
+            pendingHandoff = sessionStorage.getItem('knowa.postLoginHandoff') === '1'
+          } catch {
+            /* ignore */
+          }
+          if (pendingHandoff && due > 0) {
+            // Keep the flag until dismiss so React Strict Mode remounts still see it
+            setHandoffOpen(true)
+          } else if (pendingHandoff && due === 0) {
+            try {
+              sessionStorage.removeItem('knowa.postLoginHandoff')
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        // If org-health fails, leave the handoff flag for a later successful load
       } catch {
         /* ignore */
       } finally {
@@ -97,8 +127,45 @@ export default function Home() {
   const hasReady = readyProjects.length > 0
   const greetingName = user?.name?.split(' ')[0]
 
+  const dismissHandoff = () => {
+    setHandoffOpen(false)
+    try {
+      sessionStorage.removeItem('knowa.postLoginHandoff')
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="page">
+      {handoffOpen && dueAttention > 0 && (
+        <div
+          className="mb-6 border border-coral/35 bg-coral-soft/40 px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 rounded-control"
+          role="status"
+        >
+          <p className="text-sm text-ink">
+            <span className="font-medium tabular-nums">{dueAttention}</span> follow-up
+            {dueAttention === 1 ? '' : 's'} need you — overdue or due now.
+          </p>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Link
+              to="/follow-ups"
+              className="btn-primary text-sm py-1.5"
+              onClick={dismissHandoff}
+            >
+              Open follow-ups
+            </Link>
+            <button
+              type="button"
+              className="btn-ghost text-sm py-1.5"
+              onClick={dismissHandoff}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="relative overflow-hidden border border-mist mb-10">
         <div
           className="pointer-events-none absolute inset-0 opacity-90"
