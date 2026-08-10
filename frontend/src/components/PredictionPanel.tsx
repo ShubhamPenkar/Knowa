@@ -278,6 +278,7 @@ export function PredictionPanel({
   const [decError, setDecError] = useState('');
   const [decSaving, setDecSaving] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
+  const [showRecWhy, setShowRecWhy] = useState<string | number | false>(false);
 
   const formatApiError = (detail: unknown, fallback: string) => {
     if (detail == null) return fallback;
@@ -417,9 +418,11 @@ export function PredictionPanel({
     if (trust.isSoft && impact >= 0.4) {
       punch = 'Worth testing carefully';
     }
+    const why = r.reasoning || r.description;
+    const whyKey = r.action_code || r.action_name || r.name || i;
     return (
       <li
-        key={r.action_code || r.action_name || r.name || i}
+        key={whyKey}
         className={`text-sm border rounded-control px-3 py-3 ${
           opts?.emphasize ? 'border-teal/35 bg-teal-soft/10' : 'border-mist'
         }`}
@@ -433,10 +436,21 @@ export function PredictionPanel({
           {r.implementation_time ? ` · ${r.implementation_time}` : ''}
           {r.learning_applied ? ' · learned from outcomes' : ''}
         </p>
-        {(r.description || r.reasoning) && (
-          <p className="mt-2 text-[var(--muted)] leading-relaxed">
-            {r.reasoning || r.description}
-          </p>
+        {why && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() =>
+                setShowRecWhy((open) => (open === whyKey ? false : whyKey))
+              }
+              className="text-xs font-medium text-teal hover:underline"
+            >
+              {showRecWhy === whyKey ? 'Hide why' : 'Why this action'}
+            </button>
+            {showRecWhy === whyKey && (
+              <p className="mt-1.5 text-[var(--muted)] leading-relaxed">{why}</p>
+            )}
+          </div>
         )}
         {r.learning_note && (
           <p className="mt-2 text-xs text-teal leading-relaxed">{r.learning_note}</p>
@@ -449,34 +463,34 @@ export function PredictionPanel({
     <div className="space-y-5">
       {!isReg && (
         <div className="case-brief-stage">
-          <div className="px-5 pt-5 pb-4 md:px-6 md:pt-6">
-            <p className="page-kicker mb-1">Brief</p>
-            <p className="font-display text-2xl md:text-[1.75rem] font-semibold text-ink tracking-tight leading-tight">
-              {brief?.headline || attentionCopy(result.risk_level, trust.isSoft)}
-            </p>
-            <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">
-              {brief?.summary || trust.summary}
-            </p>
-            <p className="mt-3 text-sm text-ink">
-              About{' '}
-              <span className="font-semibold tabular-nums">{(point * 100).toFixed(0)}%</span>{' '}
-              chance of {outcome.toLowerCase()}
-              {trust.isSoft ? ' — treat as a guide, not a sure thing.' : '.'}
-            </p>
-            {knownOutcome != null && (
-              <p
-                className={`mt-3 text-sm ${
-                  agreement === 'agrees'
-                    ? 'text-teal'
-                    : agreement === 'conflicts'
-                      ? 'text-coral'
-                      : 'text-[var(--muted)]'
-                }`}
-              >
-                {agreement === 'agrees' &&
-                  `Matches the labeled outcome in your dataset (${knownOutcome ? outcomeYesLabel : outcomeNoLabel}).`}
-                {agreement === 'conflicts' &&
-                  `Dataset label is ${knownOutcome ? outcomeYesLabel : outcomeNoLabel} — dig into why below.`}
+          <div className="px-5 pt-5 pb-3 md:px-6 md:pt-6">
+            <p className="page-kicker mb-1">Case</p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="font-display text-4xl md:text-[2.75rem] font-semibold text-ink tracking-tight tabular-nums leading-none">
+                  {(point * 100).toFixed(0)}
+                  <span className="text-2xl md:text-3xl text-[var(--muted)]">%</span>
+                </p>
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  chance of {outcome.toLowerCase()}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5 justify-end">
+                {agreement === 'agrees' && (
+                  <span className="badge bg-teal-soft/60 text-ink border border-teal/20">
+                    Matches label
+                  </span>
+                )}
+                {agreement === 'conflicts' && (
+                  <span className="badge bg-coral-soft text-ink border border-coral/30">
+                    Label differs
+                  </span>
+                )}
+              </div>
+            </div>
+            {(brief?.headline || attentionCopy(result.risk_level, trust.isSoft)) && (
+              <p className="mt-3 font-display text-lg font-semibold text-ink tracking-tight leading-snug">
+                {brief?.headline || attentionCopy(result.risk_level, trust.isSoft)}
               </p>
             )}
           </div>
@@ -491,14 +505,59 @@ export function PredictionPanel({
             domain={[0, 1]}
             outcomeLabel={title}
             businessCopy
+            compact
             badgeLabel={trust.badge}
             rangeNote={trust.rangeNote}
           />
-          {consistency?.plain && (
-            <p className="px-5 pb-5 md:px-6 md:pb-6 text-sm text-[var(--muted)] leading-relaxed border-t border-mist pt-3">
-              {consistency.plain}
-            </p>
-          )}
+          <details className="case-brief-detail border-t border-mist group">
+            <summary className="px-5 py-3 md:px-6 cursor-pointer list-none flex items-center justify-between gap-3 hover:bg-mist/15 transition-colors">
+              <span>
+                <span className="text-sm font-medium text-ink">Full brief</span>
+                <span className="block text-xs text-[var(--muted)] mt-0.5">
+                  Summary, range note, and trust wording
+                </span>
+              </span>
+              <span
+                className="text-[var(--muted)] text-xs shrink-0 group-open:rotate-180 transition-transform"
+                aria-hidden="true"
+              >
+                ▾
+              </span>
+            </summary>
+            <div className="px-5 pb-5 md:px-6 md:pb-6 space-y-3 border-t border-mist pt-3">
+              <p className="text-sm text-[var(--muted)] leading-relaxed">
+                {brief?.summary || trust.summary}
+              </p>
+              {trust.rangeNote && (
+                <p className="text-sm text-[var(--muted)] leading-relaxed">{trust.rangeNote}</p>
+              )}
+              {trust.isSoft && (
+                <p className="text-sm text-ink border-l-2 border-coral pl-3 leading-relaxed">
+                  Treat as a guide, not a sure thing — prefer lighter check-ins first, and confirm
+                  with a what-if before big spends.
+                </p>
+              )}
+              {knownOutcome != null && (
+                <p
+                  className={`text-sm leading-relaxed ${
+                    agreement === 'agrees'
+                      ? 'text-teal'
+                      : agreement === 'conflicts'
+                        ? 'text-coral'
+                        : 'text-[var(--muted)]'
+                  }`}
+                >
+                  {agreement === 'agrees' &&
+                    `Matches the labeled outcome in your dataset (${knownOutcome ? outcomeYesLabel : outcomeNoLabel}).`}
+                  {agreement === 'conflicts' &&
+                    `Dataset label is ${knownOutcome ? outcomeYesLabel : outcomeNoLabel} — dig into why below.`}
+                </p>
+              )}
+              {consistency?.plain && (
+                <p className="text-sm text-[var(--muted)] leading-relaxed">{consistency.plain}</p>
+              )}
+            </div>
+          </details>
         </div>
       )}
 
@@ -508,12 +567,6 @@ export function PredictionPanel({
           <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal">
             What to do next
           </h4>
-          {trust.isSoft && (
-            <p className="text-sm text-[var(--muted)] leading-relaxed">
-              Certainty is soft — prefer lighter check-ins first, and confirm with a what-if before
-              big spends.
-            </p>
-          )}
           <ol className="space-y-3">{renderRecCard(topRec, 0, { emphasize: true })}</ol>
           {extraRecs.length > 0 && (
             <>
@@ -538,9 +591,8 @@ export function PredictionPanel({
         <div className="border border-teal/30 bg-teal-soft/15 px-3 py-4 text-sm space-y-3 rounded-control">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-teal">Save what you&apos;ll do</div>
-            <p className="text-[var(--muted)] leading-relaxed mt-1">
-              Commit a follow-up and a check-back date. Expected lift is a playbook estimate until
-              you confirm with a what-if or a real outcome.
+            <p className="text-[var(--muted)] leading-relaxed mt-1 text-xs">
+              Pick an action and a check-back date. Lift stays an estimate until you confirm.
             </p>
           </div>
           <div>

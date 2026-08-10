@@ -21,6 +21,8 @@ export type TrustSpineProps = {
   className?: string;
   /** Plain language for business users (hides technical meta). */
   businessCopy?: boolean;
+  /** Spine + badge only — parent owns the prose. */
+  compact?: boolean;
   /** Override badge text (trust assessment). */
   badgeLabel?: string | null;
   /** Override footer explanation. */
@@ -54,6 +56,7 @@ export function TrustSpine({
   animate = true,
   className = '',
   businessCopy = false,
+  compact = false,
   badgeLabel = null,
   rangeNote = null,
 }: TrustSpineProps) {
@@ -89,37 +92,48 @@ export function TrustSpine({
     metaParts.push(`disagreement ${disagreement.toFixed(2)}`);
   }
 
+  const badge = lowConfidence ? (
+    <span className="badge bg-coral-soft text-ink border border-coral/30" role="status">
+      {badgeLabel || (businessCopy ? 'Less sure — verify first' : 'Low confidence')}
+    </span>
+  ) : (
+    <span className="badge bg-teal-soft/60 text-ink border border-teal/20">
+      {badgeLabel || (businessCopy ? 'Clear enough to act' : 'Interval ready')}
+    </span>
+  );
+
   return (
     <figure
-      className={`trust-band ${className}`}
+      className={`trust-band ${compact ? 'trust-band-compact' : ''} ${className}`}
       aria-labelledby={labelId}
-      aria-describedby={descId}
+      aria-describedby={compact ? undefined : descId}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
-        <div>
-          <p className="page-kicker mb-1">
-            {businessCopy ? 'How sure we are' : 'Calibrated confidence'}
+      {compact ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <p id={labelId} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            {businessCopy ? 'Likely range' : 'Prediction interval'}
           </p>
-          <h3 id={labelId} className="font-display text-xl md:text-2xl font-semibold text-ink tracking-tight">
-            {outcomeLabel
-              ? outcomeLabel
-              : businessCopy
-                ? 'Likely range'
-                : 'Prediction interval'}
-          </h3>
+          {badge}
         </div>
-        {lowConfidence ? (
-          <span className="badge bg-coral-soft text-ink border border-coral/30" role="status">
-            {badgeLabel || (businessCopy ? 'Less sure — verify first' : 'Low confidence')}
-          </span>
-        ) : (
-          <span className="badge bg-teal-soft/60 text-ink border border-teal/20">
-            {badgeLabel || (businessCopy ? 'Clear enough to act' : 'Interval ready')}
-          </span>
-        )}
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+          <div>
+            <p className="page-kicker mb-1">
+              {businessCopy ? 'How sure we are' : 'Calibrated confidence'}
+            </p>
+            <h3 id={labelId} className="font-display text-xl md:text-2xl font-semibold text-ink tracking-tight">
+              {outcomeLabel
+                ? outcomeLabel
+                : businessCopy
+                  ? 'Likely range'
+                  : 'Prediction interval'}
+            </h3>
+          </div>
+          {badge}
+        </div>
+      )}
 
-      <div className="relative pt-2 pb-6 select-none">
+      <div className={`relative pt-2 select-none ${compact ? 'pb-3' : 'pb-6'}`}>
         <div
           className="relative h-3 rounded-[2px] bg-mist/80"
           role="img"
@@ -168,33 +182,35 @@ export function TrustSpine({
         </div>
       </div>
 
-      <figcaption id={descId} className="text-sm text-[var(--muted)] space-y-1.5">
-        {businessCopy ? (
-          <p>{rangeNote || 'Best estimate (tick) with a realistic range around it.'}</p>
-        ) : (
-          <>
-            <p>
-              Point estimate with a {coverage}% conformal interval
-              {isProbDomain ? ' on probability' : ''}.
-            </p>
-            {metaParts.length > 0 && (
-              <p className="text-xs tracking-wide uppercase text-ink/50 font-medium">
-                {metaParts.join(' · ')}
+      {!compact && (
+        <figcaption id={descId} className="text-sm text-[var(--muted)] space-y-1.5">
+          {businessCopy ? (
+            <p>{rangeNote || 'Best estimate (tick) with a realistic range around it.'}</p>
+          ) : (
+            <>
+              <p>
+                Point estimate with a {coverage}% conformal interval
+                {isProbDomain ? ' on probability' : ''}.
               </p>
-            )}
-          </>
-        )}
-        {lowConfidence && abstentionReason && !businessCopy && (
-          <p className="text-sm text-ink border-l-2 border-coral pl-3 mt-2">
-            {abstentionReason}
-          </p>
-        )}
-        {lowConfidence && businessCopy && (
-          <p className="text-sm text-ink border-l-2 border-coral pl-3 mt-2">
-            Prefer lighter actions first when certainty is soft.
-          </p>
-        )}
-      </figcaption>
+              {metaParts.length > 0 && (
+                <p className="text-xs tracking-wide uppercase text-ink/50 font-medium">
+                  {metaParts.join(' · ')}
+                </p>
+              )}
+            </>
+          )}
+          {lowConfidence && abstentionReason && !businessCopy && (
+            <p className="text-sm text-ink border-l-2 border-coral pl-3 mt-2">
+              {abstentionReason}
+            </p>
+          )}
+          {lowConfidence && businessCopy && (
+            <p className="text-sm text-ink border-l-2 border-coral pl-3 mt-2">
+              Prefer lighter actions first when certainty is soft.
+            </p>
+          )}
+        </figcaption>
+      )}
     </figure>
   );
 }

@@ -186,9 +186,25 @@
     padding: 1rem 1.25rem 1.25rem;
   }
 
+  .case-brief-stage .trust-band-compact {
+    padding-bottom: 0.75rem;
+  }
+
+  .case-brief-detail > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .case-brief-detail > summary {
+    list-style: none;
+  }
+
   @media (min-width: 768px) {
     .case-brief-stage .trust-band {
       padding: 1rem 1.5rem 1.5rem;
+    }
+
+    .case-brief-stage .trust-band-compact {
+      padding-bottom: 1rem;
     }
   }
 
