@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PredictionPanel } from '../components/PredictionPanel';
+import Spinner from '../components/common/Spinner';
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -35,7 +36,10 @@ export default function ProjectDetail() {
   const [checkInSaving, setCheckInSaving] = useState(false);
   const [checkInError, setCheckInError] = useState('');
   const [lastAutopsy, setLastAutopsy] = useState(null);
+  const [showAllDecisions, setShowAllDecisions] = useState(false);
   const deepLinkRef = useRef({ decision: null, prediction: null });
+  const fromFollowUps =
+    searchParams.get('from') === 'follow-ups' || searchParams.get('from') === 'priorities';
 
   useEffect(() => {
     deepLinkRef.current = { decision: null, prediction: null };
@@ -318,17 +322,24 @@ export default function ProjectDetail() {
   const featurePreviewCols = columnSource
     .filter((col) => col !== project?.target_column)
     .slice(0, 5);
+  /** Mobile: keep table scannable — outcome + first signal only. */
+  const mobileFeatureCols = featurePreviewCols.slice(0, 1);
 
-  const visibleDecisions = useMemo(() => {
+  const allDecisions = useMemo(() => {
     const all = [...(ledger?.decisions || [])];
     if (extraDecision && !all.some((d) => d.id === extraDecision.id)) {
       all.unshift(extraDecision);
     }
-    if (!focusDecisionId) return all.slice(0, 8);
-    const focused = all.find((d) => d.id === focusDecisionId);
-    const rest = all.filter((d) => d.id !== focusDecisionId).slice(0, 7);
-    return focused ? [focused, ...rest] : all.slice(0, 8);
-  }, [ledger, extraDecision, focusDecisionId]);
+    return all;
+  }, [ledger, extraDecision]);
+
+  const visibleDecisions = useMemo(() => {
+    const cap = showAllDecisions ? 80 : 12;
+    if (!focusDecisionId) return allDecisions.slice(0, cap);
+    const focused = allDecisions.find((d) => d.id === focusDecisionId);
+    const rest = allDecisions.filter((d) => d.id !== focusDecisionId).slice(0, cap - 1);
+    return focused ? [focused, ...rest] : allDecisions.slice(0, cap);
+  }, [allDecisions, focusDecisionId, showAllDecisions]);
 
   /** Stable customer/row id for feedback join later. */
   const resolveEntityId = (row, idx) => {
@@ -418,6 +429,11 @@ export default function ProjectDetail() {
       const data = await res.json();
       if (res.ok) {
         setPrediction(data);
+        requestAnimationFrame(() => {
+          document
+            .getElementById('case-brief-panel')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
       } else {
         setPredictError(formatApiError(data.detail) || 'Prediction failed');
       }
@@ -452,7 +468,7 @@ export default function ProjectDetail() {
   if (loading) {
     return (
       <div className="page flex justify-center items-center min-h-[40vh]">
-        <div className="h-6 w-6 border-2 border-teal border-t-transparent rounded-full animate-spin" />
+        <Spinner />
       </div>
     );
   }
@@ -495,11 +511,36 @@ export default function ProjectDetail() {
         })()
       : null;
 
+  const checkInDeepLink =
+    Boolean(focusDecisionId) && searchParams.get('checkin') === '1' && !checkInTarget;
+
   return (
     <div className="page">
-      <button type="button" onClick={() => navigate('/projects')} className="btn-ghost -ml-2 mb-4 text-sm">
-        ← Projects
-      </button>
+      {checkInDeepLink && (
+        <div className="sticky top-14 lg:top-0 z-30 -mx-6 md:-mx-8 lg:-mx-10 mb-4 px-6 md:px-8 lg:px-10 py-2.5 border-b border-teal/30 bg-teal-soft/50 backdrop-blur-sm flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-ink">
+            Updating this follow-up — scroll to <span className="font-medium">Your follow-ups</span> or open the case brief.
+          </p>
+          <a href="#follow-ups" className="text-xs font-medium text-teal hover:underline shrink-0">
+            Jump to follow-ups
+          </a>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 mb-4 -ml-2">
+        {fromFollowUps ? (
+          <Link to="/follow-ups" className="btn-ghost text-sm">
+            ← Follow-ups
+          </Link>
+        ) : (
+          <button type="button" onClick={() => navigate('/projects')} className="btn-ghost text-sm">
+            ← Projects
+          </button>
+        )}
+        <Link to={`/cases?project=${id}`} className="btn-ghost text-sm text-[var(--muted)]">
+          Cases
+        </Link>
+      </div>
 
       <div className="page-header">
         <div>
@@ -524,10 +565,15 @@ export default function ProjectDetail() {
           >
             {isReady ? 'Ready to use' : project.status === 'error' ? 'Needs attention' : 'Not prepared yet'}
           </span>
-          {(user?.role === 'owner' || user?.role === 'admin') && (
-            <button type="button" onClick={handleDeleteProject} disabled={deleting} className="btn-danger text-xs py-1.5">
-              {deleting ? 'Deleting…' : 'Delete'}
-            </button>
+          {isReady && (
+            <>
+              <Link to={`/cases?project=${id}`} className="btn-secondary text-sm">
+                Open cases
+              </Link>
+              <Link to={`/whatif/${id}`} className="btn-ghost text-sm">
+                What-if
+              </Link>
+            </>
           )}
         </div>
       </div>
@@ -535,29 +581,6 @@ export default function ProjectDetail() {
       {deleteError && (
         <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">{deleteError}</div>
       )}
-
-      <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 mb-8 text-sm border-y border-mist py-4">
-        <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Watching for</dt>
-          <dd className="font-medium text-ink mt-0.5 capitalize">{outcomeLabel}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Using</dt>
-          <dd className="font-medium text-ink mt-0.5">
-            {project.feature_columns?.length || 0} signals from your data
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Updated</dt>
-          <dd className="font-medium text-ink mt-0.5">
-            {project.active_model?.trained_at
-              ? new Date(project.active_model.trained_at).toLocaleDateString()
-              : isReady
-                ? 'Ready'
-                : '—'}
-          </dd>
-        </div>
-      </dl>
 
       {(project.status === 'created' || project.status === 'draft') && (
         <section className="surface p-6 mb-8">
@@ -589,148 +612,50 @@ export default function ProjectDetail() {
               'Open a person or account to see risk and next steps.'
             )}
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Link to={`/projects/${id}/whatif`} className="btn-secondary text-sm">
-              Try a what-if
-            </Link>
-            <button type="button" onClick={handleTrain} disabled={training} className="btn-ghost text-sm">
-              {training ? 'Updating…' : 'Update with latest data'}
-            </button>
-          </div>
+          <button type="button" onClick={handleTrain} disabled={training} className="btn-ghost text-sm">
+            {training ? 'Updating…' : 'Update with latest data'}
+          </button>
         </div>
       )}
 
-      {isReady && (rows.length > 0 || prediction || predicting || predictError) && (
-        <section id="case-brief" className="grid lg:grid-cols-5 gap-8 mb-10">
-          <div className="lg:col-span-3 min-w-0">
-            <h2 className="font-display text-lg font-semibold text-ink mb-1">Who needs attention?</h2>
-            <p className="text-sm text-[var(--muted)] mb-4">
-              {rows.length > 0
-                ? 'Click a row to open their brief. “In data” is the labeled outcome in your dataset (when available) — not something the model “knew” in advance.'
-                : 'Opened from Priorities — full case brief is on the right.'}
-            </p>
-            {rows.length > 0 ? (
-              <div className="surface overflow-x-auto">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>In data</th>
-                      {featurePreviewCols.map((col) => (
-                        <th key={col} className="truncate max-w-[6rem]">
-                          {String(col).replace(/[_-]+/g, ' ')}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.slice(0, 15).map((row, idx) => {
-                      const actual =
-                        String(row[project.target_column]) === String(project.target_positive_label);
-                      const selected = selectedRowIdx === idx;
-                      return (
-                        <tr
-                          key={idx}
-                          onClick={() => handlePredictRow(row, idx)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              handlePredictRow(row, idx);
-                            }
-                          }}
-                          tabIndex={0}
-                          role="button"
-                          aria-pressed={selected}
-                          aria-label={`Open case ${idx + 1}`}
-                          className={`cursor-pointer transition-colors hover:bg-mist/40 ${
-                            selected ? 'bg-teal-soft/30 ring-1 ring-inset ring-teal/30' : ''
-                          }`}
-                        >
-                          <td className="text-[var(--muted)]">{idx + 1}</td>
-                          <td>
-                            <span
-                              className={`badge ${
-                                actual ? 'bg-coral-soft text-ink' : 'bg-mist text-ink'
-                              }`}
-                            >
-                              {actual ? 'Yes' : 'No'}
-                            </span>
-                          </td>
-                          {featurePreviewCols.map((col) => (
-                            <td key={col} className="truncate max-w-[6rem] text-[var(--muted)]">
-                              {String(row[col] ?? '')}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="border border-mist px-5 py-6 text-sm text-[var(--muted)]">
-                No sample rows loaded here — the stored case brief still opens on the right.
-              </div>
-            )}
-          </div>
-
-          <div className="lg:col-span-2">
-            <div className="lg:sticky lg:top-6 space-y-3">
-              {predictError && (
-                <div className="text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">
-                  {predictError}
-                </div>
-              )}
-              {predicting && (
-                <div className="surface p-6 text-sm text-[var(--muted)]">Opening brief…</div>
-              )}
-              {!predicting && !prediction && (
-                <div className="surface p-6">
-                  <p className="page-kicker">Brief</p>
-                  <h3 className="font-display text-lg font-semibold text-ink mt-1">
-                    Select someone to begin
-                  </h3>
-                  <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed">
-                    You&apos;ll see how likely {outcomeLabel.toLowerCase()} is, what&apos;s driving
-                    it, and what to do next.
-                  </p>
-                </div>
-              )}
-              {!predicting && prediction && (
-                <PredictionPanel
-                  result={prediction}
-                  knownOutcome={knownOutcome}
-                  outcomeYesLabel="Yes"
-                  outcomeNoLabel="No"
-                  projectId={id}
-                  authToken={token}
-                  onFeedbackSaved={() => fetchFeedbackSummary()}
-                  onDecisionCommitted={() => fetchLedger()}
-                  simulateHref={`/projects/${id}/whatif${
-                    selectedRowIdx != null ? `?row=${selectedRowIdx}` : ''
-                  }`}
-                  simulateLabel="Explore a what-if"
-                />
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {isReady && project.problem_type !== 'regression' && visibleDecisions.length > 0 && (
-          <section id="follow-ups" className="mb-8 border border-mist">
-            <div className="px-5 py-4 border-b border-mist">
+      {/* Follow-ups always visible when ready (non-regression) */}
+      {isReady && project.problem_type !== 'regression' && (
+        <section id="follow-ups" className="mb-8 border border-mist">
+          <div className="px-5 py-4 border-b border-mist flex flex-wrap items-start justify-between gap-3">
+            <div>
               <h2 className="font-display text-lg font-semibold text-ink">Your follow-ups</h2>
               <p className="text-sm text-[var(--muted)] mt-1">
-                {ledger?.plain_summary || 'Actions you saved from cases.'}
+                {ledger?.plain_summary ||
+                  'Actions you saved from case briefs — check in when they come due.'}
               </p>
             </div>
-            {lastAutopsy && (
-              <div className="px-5 py-3 border-b border-mist bg-teal-soft/40 text-sm text-ink">
-                <div className="text-[11px] uppercase tracking-wide text-teal mb-1">Latest check-in</div>
-                <p>{lastAutopsy}</p>
-              </div>
+            {allDecisions.length > 12 && (
+              <button
+                type="button"
+                onClick={() => setShowAllDecisions((v) => !v)}
+                className="btn-ghost text-sm shrink-0"
+              >
+                {showAllDecisions ? 'Show fewer' : `Show all (${allDecisions.length})`}
+              </button>
             )}
+          </div>
+          {lastAutopsy && (
+            <div className="px-5 py-3 border-b border-mist bg-teal-soft/40 text-sm text-ink">
+              <div className="text-[11px] uppercase tracking-wide text-teal mb-1">Latest check-in</div>
+              <p>{lastAutopsy}</p>
+            </div>
+          )}
+          {visibleDecisions.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm text-ink font-medium">No follow-ups saved yet</p>
+              <p className="text-sm text-[var(--muted)] mt-2 max-w-md mx-auto">
+                Open a case below, pick an action, and save a follow-up. It will show up here and under Follow-ups.
+              </p>
+              <a href="#case-brief" className="inline-flex mt-4 text-sm font-medium text-teal hover:underline">
+                Open a case and save a follow-up →
+              </a>
+            </div>
+          ) : (
             <ul className="divide-y divide-mist">
               {visibleDecisions.map((d) => {
                 const statusLabel =
@@ -772,7 +697,7 @@ export default function ProjectDetail() {
                     <div className="shrink-0 flex flex-wrap gap-2">
                       {d.prediction_id && (
                         <Link
-                          to={`/projects/${id}?prediction=${d.prediction_id}&decision=${d.id}`}
+                          to={`/cases?project=${id}&prediction=${d.prediction_id}`}
                           className="text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
                         >
                           Open case
@@ -792,8 +717,188 @@ export default function ProjectDetail() {
                 );
               })}
             </ul>
-          </section>
+          )}
+        </section>
+      )}
+
+      {isReady && (rows.length > 0 || prediction || predicting || predictError) && (
+        <section id="case-brief" className="grid lg:grid-cols-5 gap-8 mb-10">
+          {/* On mobile: brief first when a case is open */}
+          <div
+            id="case-brief-panel"
+            className={`lg:col-span-2 ${prediction || predicting ? 'order-1' : 'order-2'} lg:order-2`}
+          >
+            <div className="lg:sticky lg:top-6 space-y-3">
+              {predictError && (
+                <div className="text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">
+                  {predictError}
+                </div>
+              )}
+              {predicting && (
+                <div className="surface p-6 text-sm text-[var(--muted)] flex items-center gap-3">
+                  <Spinner className="h-4 w-4" /> Opening brief…
+                </div>
+              )}
+              {!predicting && !prediction && (
+                <div className="surface p-6">
+                  <p className="page-kicker">Brief</p>
+                  <h3 className="font-display text-lg font-semibold text-ink mt-1">
+                    Select someone to begin
+                  </h3>
+                  <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed">
+                    You&apos;ll see how likely {outcomeLabel.toLowerCase()} is, what&apos;s driving
+                    it, and what to do next.
+                  </p>
+                </div>
+              )}
+              {!predicting && prediction && (
+                <PredictionPanel
+                  result={prediction}
+                  knownOutcome={knownOutcome}
+                  outcomeYesLabel="Yes"
+                  outcomeNoLabel="No"
+                  projectId={id}
+                  authToken={token}
+                  onFeedbackSaved={() => fetchFeedbackSummary()}
+                  onDecisionCommitted={() => fetchLedger()}
+                  simulateHref={`/whatif/${id}${
+                    selectedRowIdx != null ? `?row=${selectedRowIdx}` : ''
+                  }`}
+                  simulateLabel="Explore a what-if"
+                />
+              )}
+            </div>
+          </div>
+
+          <div className={`lg:col-span-3 min-w-0 ${prediction || predicting ? 'order-2' : 'order-1'} lg:order-1`}>
+            <h2 className="font-display text-lg font-semibold text-ink mb-1">Who needs attention?</h2>
+            <p className="text-sm text-[var(--muted)] mb-4">
+              {rows.length > 0
+                ? 'Click a row to open their brief. “In data” is the labeled outcome in your dataset (when available).'
+                : 'Opened from Priorities — full case brief is beside this list on larger screens.'}
+            </p>
+            {rows.length > 0 ? (
+              <div className="surface overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>In data</th>
+                      {mobileFeatureCols.map((col) => (
+                        <th key={col} className="truncate max-w-[7rem] md:hidden">
+                          {String(col).replace(/[_-]+/g, ' ')}
+                        </th>
+                      ))}
+                      {featurePreviewCols.map((col) => (
+                        <th key={`d-${col}`} className="truncate max-w-[6rem] hidden md:table-cell">
+                          {String(col).replace(/[_-]+/g, ' ')}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0, 15).map((row, idx) => {
+                      const actual =
+                        String(row[project.target_column]) === String(project.target_positive_label);
+                      const selected = selectedRowIdx === idx;
+                      return (
+                        <tr
+                          key={idx}
+                          onClick={() => handlePredictRow(row, idx)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handlePredictRow(row, idx);
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-pressed={selected}
+                          aria-label={`Open case ${idx + 1}`}
+                          className={`cursor-pointer transition-colors hover:bg-mist/40 ${
+                            selected ? 'bg-teal-soft/30 ring-1 ring-inset ring-teal/30' : ''
+                          }`}
+                        >
+                          <td className="text-[var(--muted)]">{idx + 1}</td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                actual ? 'bg-coral-soft text-ink' : 'bg-mist text-ink'
+                              }`}
+                            >
+                              {actual ? 'Yes' : 'No'}
+                            </span>
+                          </td>
+                          {mobileFeatureCols.map((col) => (
+                            <td key={col} className="truncate max-w-[7rem] text-[var(--muted)] md:hidden">
+                              {String(row[col] ?? '')}
+                            </td>
+                          ))}
+                          {featurePreviewCols.map((col) => (
+                            <td
+                              key={`d-${col}`}
+                              className="truncate max-w-[6rem] text-[var(--muted)] hidden md:table-cell"
+                            >
+                              {String(row[col] ?? '')}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="border border-mist px-5 py-6 text-sm text-[var(--muted)]">
+                No sample rows loaded here — the stored case brief still opens beside this list.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      <details className="mb-8 border border-mist group">
+        <summary className="px-5 py-4 cursor-pointer list-none hover:bg-mist/20">
+          <span className="font-display text-base font-semibold text-ink">Project details</span>
+          <span className="block text-sm text-[var(--muted)] mt-1">
+            Watching for {outcomeLabel.toLowerCase()} · {project.feature_columns?.length || 0} signals
+          </span>
+        </summary>
+        <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 px-5 py-4 text-sm border-t border-mist">
+          <div>
+            <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Watching for</dt>
+            <dd className="font-medium text-ink mt-0.5 capitalize">{outcomeLabel}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Using</dt>
+            <dd className="font-medium text-ink mt-0.5">
+              {project.feature_columns?.length || 0} signals from your data
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Updated</dt>
+            <dd className="font-medium text-ink mt-0.5">
+              {project.active_model?.trained_at
+                ? new Date(project.active_model.trained_at).toLocaleDateString()
+                : isReady
+                  ? 'Ready'
+                  : '—'}
+            </dd>
+          </div>
+        </dl>
+        {(user?.role === 'owner' || user?.role === 'admin') && (
+          <div className="px-5 py-4 border-t border-mist">
+            <button
+              type="button"
+              onClick={handleDeleteProject}
+              disabled={deleting}
+              className="btn-ghost text-xs text-coral hover:text-coral"
+            >
+              {deleting ? 'Deleting…' : 'Delete this project'}
+            </button>
+          </div>
         )}
+      </details>
 
       {checkInTarget && (
         <div

@@ -152,4 +152,8 @@
   .trust-band {
     @apply surface p-5 md:p-6;
   }
+
+  .skeleton {
+    @apply bg-mist/70 rounded-control animate-pulse;
+  }
 }

@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Spinner from '../components/common/Spinner';
 
 export default function Projects() {
   const { token, user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [datasets, setDatasets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all'); // all | ready | needs_setup
   const [showCreate, setShowCreate] = useState(false);
   const [newProject, setNewProject] = useState({
     name: '',
@@ -74,6 +77,8 @@ export default function Projects() {
       if (res.ok) setProjects(await res.json());
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -321,6 +326,27 @@ export default function Projects() {
     }
   };
 
+  const filteredProjects = useMemo(() => {
+    return projects.filter((project) => {
+      const ready = project.status === 'ready' || project.status === 'trained';
+      const needsSetup =
+        project.status === 'created' ||
+        project.status === 'draft' ||
+        project.status === 'error';
+      if (statusFilter === 'ready') return ready;
+      if (statusFilter === 'needs_setup') return needsSetup || !ready;
+      return true;
+    });
+  }, [projects, statusFilter]);
+
+  if (loading) {
+    return (
+      <div className="page flex justify-center items-center min-h-[40vh]">
+        <Spinner />
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -328,19 +354,27 @@ export default function Projects() {
           <p className="page-kicker">Workspace</p>
           <h1 className="page-title">Projects</h1>
           <p className="page-sub">
-            Connect a dataset, prepare guidance, then review cases and choose next steps.
+            Create and prepare projects here. Day-to-day review lives under Cases, Follow-ups, and What-if.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            resetCreateForm();
-            setShowCreate(true);
-          }}
-          className="btn-primary"
-        >
-          New project
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/follow-ups" className="btn-secondary">
+            Follow-ups
+          </Link>
+          <Link to="/cases" className="btn-ghost">
+            Cases
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              resetCreateForm();
+              setShowCreate(true);
+            }}
+            className="btn-primary"
+          >
+            New project
+          </button>
+        </div>
       </div>
 
       {deleteError && (
@@ -362,15 +396,6 @@ export default function Projects() {
               </div>
             )}
             <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Project name</label>
-                <input
-                  className="input"
-                  value={newProject.name}
-                  onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="Optional — we can suggest one"
-                />
-              </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Dataset</label>
                 {datasets.length === 0 ? (
@@ -407,6 +432,7 @@ export default function Projects() {
                   onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
                   placeholder="e.g. Spot telecom customers likely to churn so we can retain them"
                   required
+                  autoFocus
                 />
                 <p className="text-xs text-[var(--muted)] mt-1">
                   Plain language is enough — churn, attrition, conversion, spend, etc.
@@ -427,8 +453,23 @@ export default function Projects() {
                     className="btn-ghost text-sm"
                     onClick={() => setShowManualSetup((v) => !v)}
                   >
-                    {showManualSetup ? 'Hide manual setup' : 'Set up manually'}
+                    {showManualSetup || intentDraft
+                      ? showManualSetup
+                        ? 'Hide manual fields'
+                        : 'Edit setup fields'
+                      : 'Set up manually'}
                   </button>
+                </div>
+              )}
+              {(intentDraft || showManualSetup) && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Project name</label>
+                  <input
+                    className="input"
+                    value={newProject.name}
+                    onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
+                    placeholder={intentDraft?.suggested_name || 'Optional — we can suggest one'}
+                  />
                 </div>
               )}
               {intentDraft && (
@@ -475,7 +516,7 @@ export default function Projects() {
                       placeholder="e.g. churn, attrition"
                     />
                     <p className="text-xs text-[var(--muted)] mt-1">
-                      Used in Priorities, insights, and follow-up language.
+                      Used in Cases, insights, and follow-up language.
                     </p>
                   </div>
                   <div>
@@ -658,7 +699,7 @@ export default function Projects() {
               }}
               className="btn-primary"
             >
-              Create your first project
+              Describe a decision
             </button>
           ) : (
             <Link to="/datasets" className="btn-primary">
@@ -667,67 +708,99 @@ export default function Projects() {
           )}
         </div>
       ) : (
-        <ul className="divide-y divide-mist border-y border-mist">
-          {projects.map((project) => {
-            const ready = project.status === 'ready' || project.status === 'trained';
-            const statusLabel = ready
-              ? 'Ready'
-              : project.status === 'error'
-                ? 'Needs attention'
-                : project.status === 'created' || project.status === 'draft'
-                  ? 'Needs setup'
-                  : String(project.status || '').replace(/_/g, ' ');
-            return (
-            <li key={project.id}>
-              <div
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 cursor-pointer group"
-                onClick={() => navigate(`/projects/${project.id}`)}
-                onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${project.id}`)}
-                role="link"
-                tabIndex={0}
+        <>
+          <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="Filter projects">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'ready', label: 'Ready' },
+              { id: 'needs_setup', label: 'Needs setup' },
+            ].map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === chip.id}
+                onClick={() => setStatusFilter(chip.id)}
+                className={`px-3 py-1.5 text-xs border rounded-control ${
+                  statusFilter === chip.id
+                    ? 'border-teal bg-teal-soft/30 text-ink'
+                    : 'border-mist text-[var(--muted)] hover:text-ink'
+                }`}
               >
-                <div className="min-w-0">
-                  <h3 className="font-display text-lg font-semibold text-ink group-hover:text-teal transition-colors">
-                    {project.name}
-                  </h3>
-                  <p className="text-sm text-[var(--muted)] mt-0.5">
-                    Watching{' '}
-                    {(project.target_description || project.target_column || 'outcome')
-                      .replace(/[_-]+/g, ' ')}
-                    {project.feature_count != null ? ` · ${project.feature_count} factors` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={`badge ${
-                      ready
-                        ? 'bg-teal-soft/50 text-ink border border-teal/20'
-                        : project.status === 'error'
-                          ? 'bg-coral-soft text-ink'
-                          : 'bg-mist text-ink'
-                    }`}
-                  >
-                    {statusLabel}
-                  </span>
-                  {(user?.role === 'owner' || user?.role === 'admin') && (
-                    <button
-                      type="button"
-                      className="btn-danger text-xs py-1"
-                      disabled={deletingProjectId === project.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProject(project.id, project.name);
-                      }}
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          {filteredProjects.length === 0 ? (
+            <div className="border border-mist px-5 py-8 text-sm text-[var(--muted)]">
+              No projects match this filter.
+            </div>
+          ) : (
+            <ul className="divide-y divide-mist border-y border-mist">
+              {filteredProjects.map((project) => {
+                const ready = project.status === 'ready' || project.status === 'trained';
+                const statusLabel = ready
+                  ? 'Ready'
+                  : project.status === 'error'
+                    ? 'Needs attention'
+                    : project.status === 'created' || project.status === 'draft'
+                      ? 'Needs setup'
+                      : String(project.status || '').replace(/_/g, ' ');
+                return (
+                  <li key={project.id}>
+                    <div
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 cursor-pointer group"
+                      onClick={() => navigate(`/projects/${project.id}`)}
+                      onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${project.id}`)}
+                      role="link"
+                      tabIndex={0}
                     >
-                      {deletingProjectId === project.id ? '…' : 'Delete'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </li>
-            );
-          })}
-        </ul>
+                      <div className="min-w-0">
+                        <h3 className="font-display text-lg font-semibold text-ink group-hover:text-teal transition-colors">
+                          {project.name}
+                        </h3>
+                        <p className="text-sm text-[var(--muted)] mt-0.5">
+                          Watching{' '}
+                          {(project.target_description || project.target_column || 'outcome').replace(
+                            /[_-]+/g,
+                            ' '
+                          )}
+                          {project.feature_count != null ? ` · ${project.feature_count} factors` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span
+                          className={`badge ${
+                            ready
+                              ? 'bg-teal-soft/50 text-ink border border-teal/20'
+                              : project.status === 'error'
+                                ? 'bg-coral-soft text-ink'
+                                : 'bg-mist text-ink'
+                          }`}
+                        >
+                          {statusLabel}
+                        </span>
+                        {(user?.role === 'owner' || user?.role === 'admin') && (
+                          <button
+                            type="button"
+                            className="text-xs text-[var(--muted)] hover:text-coral transition-colors"
+                            disabled={deletingProjectId === project.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteProject(project.id, project.name);
+                            }}
+                          >
+                            {deletingProjectId === project.id ? '…' : 'Remove'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );

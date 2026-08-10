@@ -10,10 +10,18 @@ import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import AnalyticsSaaS from './pages/AnalyticsSaaS'
 import WhatIf from './pages/WhatIf'
+import WhatIfEntry from './pages/WhatIfEntry'
+import Cases from './pages/Cases'
+import Monitoring from './pages/Monitoring'
 
 function ExplainabilityRedirect() {
   const { projectId } = useParams()
-  return <Navigate to={`/projects/${projectId}`} replace />
+  return <Navigate to={`/cases?project=${projectId}`} replace />
+}
+
+function LegacyProjectWhatIfRedirect() {
+  const { projectId } = useParams()
+  return <Navigate to={`/whatif/${projectId}`} replace />
 }
 
 function Loader() {
@@ -37,7 +45,7 @@ function ProtectedRoute({ children }) {
 function PublicRoute({ children }) {
   const { token, loading } = useAuth()
   if (loading) return <Loader />
-  if (token) return <Navigate to="/" replace />
+  if (token) return <Navigate to="/cases" replace />
   return children
 }
 
@@ -47,13 +55,18 @@ function AppRoutes() {
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Projects />} />
+        <Route index element={<Navigate to="/cases" replace />} />
+        <Route path="cases" element={<Cases />} />
+        <Route path="follow-ups" element={<AnalyticsSaaS />} />
+        <Route path="analytics" element={<Navigate to="/follow-ups" replace />} />
+        <Route path="whatif" element={<WhatIfEntry />} />
+        <Route path="whatif/:projectId" element={<WhatIf />} />
+        <Route path="monitoring" element={<Monitoring />} />
         <Route path="datasets" element={<Datasets />} />
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="projects/:projectId/explainability" element={<ExplainabilityRedirect />} />
-        <Route path="projects/:projectId/whatif" element={<WhatIf />} />
-        <Route path="analytics" element={<AnalyticsSaaS />} />
+        <Route path="projects/:projectId/whatif" element={<LegacyProjectWhatIfRedirect />} />
       </Route>
     </Routes>
   )

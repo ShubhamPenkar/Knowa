@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Spinner from '../components/common/Spinner';
 
 function humanize(name) {
   return String(name || '')
@@ -298,15 +299,16 @@ export default function WhatIf() {
 
   if (loading) {
     return (
-      <div className="min-h-[40vh] flex items-center justify-center text-[var(--muted)] text-sm">
-        Loading scenario tools…
+      <div className="page flex flex-col items-center justify-center min-h-[40vh] gap-3">
+        <Spinner />
+        <p className="text-sm text-[var(--muted)]">Loading scenario tools…</p>
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className="p-6">
+      <div className="page">
         <p className="text-[var(--muted)]">Project not found</p>
       </div>
     );
@@ -314,29 +316,39 @@ export default function WhatIf() {
 
   if (project.status !== 'trained' && project.status !== 'ready') {
     return (
-      <div className="p-6 max-w-xl">
-        <Link to={`/projects/${projectId}`} className="text-sm text-teal hover:underline">
-          ← Back to project
+      <div className="page max-w-xl">
+        <Link to="/whatif" className="btn-ghost -ml-2 text-sm">
+          ← What-if
         </Link>
-        <h1 className="font-display text-2xl font-semibold text-ink mt-4">What-if analysis</h1>
-        <p className="mt-2 text-sm text-[var(--muted)]">
+        <p className="page-kicker mt-4">What-if</p>
+        <h1 className="page-title text-2xl">What-if analysis</h1>
+        <p className="page-sub">
           Prepare the project first so we can score before/after scenarios.
         </p>
+        <Link to="/projects" className="inline-flex mt-4 text-sm text-teal hover:underline">
+          Go to projects →
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-8">
+    <div className="page space-y-8">
       <header className="border-b border-mist pb-6">
-        <Link to={`/projects/${projectId}`} className="text-sm text-teal hover:underline">
-          ← Back to project
-        </Link>
+        <div className="flex flex-wrap items-center gap-2 -ml-2">
+          <Link to="/whatif" className="btn-ghost text-sm">
+            ← Switch project
+          </Link>
+          <Link to={`/cases?project=${projectId}`} className="btn-ghost text-sm text-[var(--muted)]">
+            Cases
+          </Link>
+          <Link to={`/projects/${projectId}`} className="btn-ghost text-sm text-[var(--muted)]">
+            Project
+          </Link>
+        </div>
         <p className="page-kicker mt-4 mb-1">What-if</p>
-        <h1 className="font-display text-3xl font-semibold text-ink tracking-tight">
-          What if we changed something?
-        </h1>
-        <p className="mt-2 text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
+        <h1 className="page-title">What if we changed something?</h1>
+        <p className="page-sub max-w-2xl">
           Pick a person, change dials that actually move their estimate, and compare before vs after.
         </p>
       </header>
@@ -349,42 +361,58 @@ export default function WhatIf() {
               Click a row to load the starting point, then adjust the dials.
             </p>
           </div>
-          <div className="overflow-x-auto max-h-[28rem]">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Dataset label</th>
-                  {(project.feature_columns || []).slice(0, 5).map((col) => (
-                    <th key={col}>{humanize(col)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(testData || []).map((row, idx) => (
-                  <tr
-                    key={idx}
-                    className="cursor-pointer hover:bg-paper/80"
-                    onClick={() => selectBaseRow(row)}
-                  >
-                    <td className="text-[var(--muted)]">{idx + 1}</td>
-                    <td>
-                      {isReg
-                        ? Number(row[project.target_column]).toFixed(2)
-                        : String(row[project.target_column]) === project.target_positive_label
-                          ? 'Yes'
-                          : 'No'}
-                    </td>
+          {(testData || []).length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm text-ink font-medium">No sample cases available</p>
+              <p className="text-sm text-[var(--muted)] mt-2 max-w-md mx-auto">
+                Refresh the project data or open a case from the project page, then try what-if from
+                that brief.
+              </p>
+              <Link
+                to={`/cases?project=${projectId}`}
+                className="inline-flex mt-4 text-sm font-medium text-teal hover:underline"
+              >
+                Open Cases →
+              </Link>
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[28rem]">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Dataset label</th>
                     {(project.feature_columns || []).slice(0, 5).map((col) => (
-                      <td key={col} className="max-w-[8rem] truncate">
-                        {String(row[col] ?? '')}
-                      </td>
+                      <th key={col}>{humanize(col)}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {(testData || []).map((row, idx) => (
+                    <tr
+                      key={idx}
+                      className="cursor-pointer hover:bg-paper/80"
+                      onClick={() => selectBaseRow(row)}
+                    >
+                      <td className="text-[var(--muted)]">{idx + 1}</td>
+                      <td>
+                        {isReg
+                          ? Number(row[project.target_column]).toFixed(2)
+                          : String(row[project.target_column]) === project.target_positive_label
+                            ? 'Yes'
+                            : 'No'}
+                      </td>
+                      {(project.feature_columns || []).slice(0, 5).map((col) => (
+                        <td key={col} className="max-w-[8rem] truncate">
+                          {String(row[col] ?? '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 

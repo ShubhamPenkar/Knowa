@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrustSpine } from './TrustSpine';
+import { HalftoneGlow } from './HalftoneGlow';
 import { assessTrust, matchLabel } from '../lib/trustAssessment';
 
 export type ExplanationDriver = {
@@ -264,6 +265,7 @@ export function PredictionPanel({
   const [decStatus, setDecStatus] = useState<string | null>(null);
   const [decError, setDecError] = useState('');
   const [decSaving, setDecSaving] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
 
   const formatApiError = (detail: unknown, fallback: string) => {
     if (detail == null) return fallback;
@@ -385,8 +387,54 @@ export function PredictionPanel({
     setFbSaving(false);
   };
 
+  const recs = result.recommendations || [];
+  const topRec = recs[0];
+  const extraRecs = recs.slice(1, 3);
+
+  const renderRecCard = (
+    r: (typeof recs)[number],
+    i: number,
+    opts?: { emphasize?: boolean }
+  ) => {
+    const impact = Number(r.impact_score ?? 0);
+    const cost = Number(r.cost_score ?? 0);
+    const effort =
+      cost <= 0.35 ? 'Low effort' : cost <= 0.65 ? 'Medium effort' : 'Higher effort';
+    let punch =
+      impact >= 0.65 ? 'High potential' : impact >= 0.4 ? 'Solid potential' : 'Light touch';
+    if (trust.isSoft && impact >= 0.4) {
+      punch = 'Worth testing carefully';
+    }
+    return (
+      <li
+        key={r.action_code || r.action_name || r.name || i}
+        className={`text-sm border rounded-control px-3 py-3 ${
+          opts?.emphasize ? 'border-teal/35 bg-teal-soft/10' : 'border-mist'
+        }`}
+      >
+        <div className="font-medium text-ink">
+          {opts?.emphasize ? 'Top action: ' : `${i + 1}. `}
+          {r.action_name || r.name}
+        </div>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          {punch} · {effort}
+          {r.implementation_time ? ` · ${r.implementation_time}` : ''}
+          {r.learning_applied ? ' · learned from outcomes' : ''}
+        </p>
+        {(r.description || r.reasoning) && (
+          <p className="mt-2 text-[var(--muted)] leading-relaxed">
+            {r.reasoning || r.description}
+          </p>
+        )}
+        {r.learning_note && (
+          <p className="mt-2 text-xs text-teal leading-relaxed">{r.learning_note}</p>
+        )}
+      </li>
+    );
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {!isReg && (
         <div>
           <p className="page-kicker mb-1">Brief</p>
@@ -421,78 +469,47 @@ export function PredictionPanel({
         </div>
       )}
 
-      {result.recommendations && result.recommendations.length > 0 && (
-        <div>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal mb-3">
-            Suggested next step
+      {/* Act first: top recommendation + save follow-up */}
+      {topRec && (
+        <div className="space-y-3">
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal">
+            What to do next
           </h4>
           {trust.isSoft && (
-            <p className="text-sm text-[var(--muted)] mb-3 leading-relaxed">
-              Certainty is soft on this case — prefer lighter check-ins first, and confirm with a
-              what-if before big spends.
+            <p className="text-sm text-[var(--muted)] leading-relaxed">
+              Certainty is soft — prefer lighter check-ins first, and confirm with a what-if before
+              big spends.
             </p>
           )}
-          {result.decision_summary?.strategy && (
-            <p className="text-sm text-ink mb-3 leading-relaxed">
-              {result.decision_summary.strategy}
-              {result.decision_summary.description
-                ? ` — ${result.decision_summary.description}`
-                : ''}
-            </p>
+          <ol className="space-y-3">{renderRecCard(topRec, 0, { emphasize: true })}</ol>
+          {extraRecs.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowMoreActions((v) => !v)}
+                className="text-xs font-medium text-teal hover:underline"
+              >
+                {showMoreActions ? 'Hide other actions' : `More actions (${extraRecs.length})`}
+              </button>
+              {showMoreActions && (
+                <ol className="space-y-3">
+                  {extraRecs.map((r, i) => renderRecCard(r, i + 1))}
+                </ol>
+              )}
+            </>
           )}
-          <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
-            Playbook suggestions ranked for this case
-            {result.recommendation_scoring?.uses_feedback_effectiveness
-              ? ' — adjusted with logged outcomes where we have enough history'
-              : ''}
-            . Impact labels are guides — run a what-if to see a real before/after for this person.
-          </p>
-          <ol className="space-y-4">
-            {result.recommendations.slice(0, 3).map((r, i) => {
-              const impact = Number(r.impact_score ?? 0);
-              const cost = Number(r.cost_score ?? 0);
-              const effort =
-                cost <= 0.35 ? 'Low effort' : cost <= 0.65 ? 'Medium effort' : 'Higher effort';
-              let punch =
-                impact >= 0.65 ? 'High potential' : impact >= 0.4 ? 'Solid potential' : 'Light touch';
-              if (trust.isSoft && impact >= 0.4) {
-                punch = 'Worth testing carefully';
-              }
-              return (
-                <li
-                  key={r.action_code || r.action_name || r.name || i}
-                  className="text-sm border border-mist rounded-control px-3 py-3"
-                >
-                  <div className="font-medium text-ink">
-                    {i + 1}. {r.action_name || r.name}
-                  </div>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    {punch} · {effort}
-                    {r.implementation_time ? ` · ${r.implementation_time}` : ''}
-                    {r.learning_applied ? ' · learned from outcomes' : ''}
-                  </p>
-                  {(r.description || r.reasoning) && (
-                    <p className="mt-2 text-[var(--muted)] leading-relaxed">
-                      {r.reasoning || r.description}
-                    </p>
-                  )}
-                  {r.learning_note && (
-                    <p className="mt-2 text-xs text-teal leading-relaxed">{r.learning_note}</p>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
         </div>
       )}
 
       {canCommit && (
-        <div className="border border-teal/25 bg-teal-soft/10 px-3 py-4 text-sm space-y-3 rounded-control">
-          <div className="text-[11px] uppercase tracking-wide text-teal">Save a follow-up</div>
-          <p className="text-[var(--muted)] leading-relaxed">
-            Lock in what you&apos;ll do and when you&apos;ll check back. Any expected lift stored
-            here is a playbook estimate until you confirm with a what-if or a real outcome.
-          </p>
+        <div className="border border-teal/30 bg-teal-soft/15 px-3 py-4 text-sm space-y-3 rounded-control">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-teal">Save what you&apos;ll do</div>
+            <p className="text-[var(--muted)] leading-relaxed mt-1">
+              Commit a follow-up and a check-back date. Expected lift is a playbook estimate until
+              you confirm with a what-if or a real outcome.
+            </p>
+          </div>
           <div>
             <label className="block text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">
               Action
@@ -502,7 +519,7 @@ export function PredictionPanel({
               onChange={(e) => setDecAction(e.target.value)}
               className="w-full bg-paper border border-mist px-2 py-2 text-ink text-sm rounded-control"
             >
-              {(result.recommendations || []).map((r, i) => {
+              {recs.map((r, i) => {
                 const code = r.action_code || r.action_name || r.name || `action_${i}`;
                 return (
                   <option key={code} value={code}>
@@ -528,14 +545,26 @@ export function PredictionPanel({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={submitDecision}
-            disabled={decSaving || !decAction}
-            className="btn-primary text-sm"
+          <HalftoneGlow
+            className="min-h-[2.75rem] rounded-control overflow-hidden"
+            background="transparent"
+            focalPoints={[
+              { x: 0.35, y: 0.5, color: '#00C8B4' },
+              { x: 0.7, y: 0.5, color: '#FF5A1F' },
+            ]}
+            dotSpacing={14}
+            maxDotRadius={3}
+            glowRadius={140}
           >
-            {decSaving ? 'Saving…' : 'Save follow-up'}
-          </button>
+            <button
+              type="button"
+              onClick={submitDecision}
+              disabled={decSaving || !decAction}
+              className="btn-primary text-sm w-full relative z-10"
+            >
+              {decSaving ? 'Saving…' : 'Save follow-up'}
+            </button>
+          </HalftoneGlow>
           {decError && <p className="text-coral text-xs">{decError}</p>}
           {decStatus && <p className="text-teal text-xs leading-relaxed">{decStatus}</p>}
         </div>
@@ -552,97 +581,92 @@ export function PredictionPanel({
         (result.insights && result.insights.length > 0) ||
         drivers.length > 0 ||
         blindspotWarnings.length > 0) && (
-        <div className="space-y-4 border-t border-mist pt-5">
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-            Why it looks this way
-          </h4>
-          {blindspotWarnings.length > 0 && (
-            <div className="border border-mist px-3 py-3 space-y-2 bg-mist/20">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">
-                Treat as context, not a dial
+        <details className="border border-mist rounded-control">
+          <summary className="px-3 py-3 cursor-pointer text-sm list-none hover:bg-mist/20">
+            <span className="font-medium text-ink">Why it looks this way</span>
+            <span className="block text-xs text-[var(--muted)] mt-0.5">
+              Drivers, context flags, and suggestions
+            </span>
+          </summary>
+          <div className="px-3 pb-4 space-y-4 border-t border-mist pt-3">
+            {blindspotWarnings.length > 0 && (
+              <div className="border border-mist px-3 py-3 space-y-2 bg-mist/20">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">
+                  Treat as context, not a dial
+                </div>
+                <ul className="space-y-2">
+                  {blindspotWarnings.slice(0, 3).map((w, i) => (
+                    <li
+                      key={`${w.code || 'bs'}-${w.feature || i}`}
+                      className={`text-sm leading-relaxed border-l-2 pl-3 ${
+                        w.severity === 'critical'
+                          ? 'border-coral text-ink'
+                          : 'border-mist text-[var(--muted)]'
+                      }`}
+                    >
+                      {w.plain}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="space-y-2">
-                {blindspotWarnings.slice(0, 3).map((w, i) => (
-                  <li
-                    key={`${w.code || 'bs'}-${w.feature || i}`}
-                    className={`text-sm leading-relaxed border-l-2 pl-3 ${
-                      w.severity === 'critical'
-                        ? 'border-coral text-ink'
-                        : 'border-mist text-[var(--muted)]'
-                    }`}
+            )}
+            {brief?.theme_rollup && brief.theme_rollup.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {brief.theme_rollup.map((t) => (
+                  <span
+                    key={t.category}
+                    className="text-xs border border-mist px-2.5 py-1 text-ink rounded-control"
                   >
-                    {w.plain}
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            )}
+            {primaryLever?.suggestion && (
+              <p className="text-sm text-ink leading-relaxed">
+                <span className="font-medium">
+                  {primaryLever.display_name || humanize(String(primaryLever.feature || 'Driver'))}
+                </span>
+                <span className="text-[var(--muted)]"> — {primaryLever.suggestion}</span>
+              </p>
+            )}
+            {result.insights && result.insights.length > 0 && (
+              <ul className="space-y-2.5">
+                {result.insights.slice(0, 4).map((ins, i) => (
+                  <li key={i} className="text-sm text-ink leading-relaxed border-l-2 border-mist pl-3">
+                    {ins.text || ins.message || ins.reason}
+                    {ins.suggestion && (
+                      <span className="block mt-1 text-[var(--muted)]">{ins.suggestion}</span>
+                    )}
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-          {brief?.theme_rollup && brief.theme_rollup.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {brief.theme_rollup.map((t) => (
-                <span
-                  key={t.category}
-                  className="text-xs border border-mist px-2.5 py-1 text-ink rounded-control"
-                >
-                  {t.label}
-                </span>
-              ))}
-            </div>
-          )}
-          {primaryLever?.suggestion && (
-            <p className="text-sm text-ink leading-relaxed">
-              <span className="font-medium">
-                {primaryLever.display_name || humanize(String(primaryLever.feature || 'Driver'))}
-              </span>
-              <span className="text-[var(--muted)]"> — {primaryLever.suggestion}</span>
-              {brief?.action_context?.blindspot_reranked && (
-                  <span className="block mt-1 text-xs text-[var(--muted)]">
-                    Preferred over a top driver that isn’t a short-term lever.
-                  </span>
-                )}
-            </p>
-          )}
-          {result.insights && result.insights.length > 0 && (
-            <ul className="space-y-2.5">
-              {result.insights.slice(0, 4).map((ins, i) => (
-                <li key={i} className="text-sm text-ink leading-relaxed border-l-2 border-mist pl-3">
-                  {ins.text || ins.message || ins.reason}
-                  {ins.suggestion && (
-                    <span className="block mt-1 text-[var(--muted)]">{ins.suggestion}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {drivers.length > 0 && !(result.insights && result.insights.length > 0) && (
-            <ul className="space-y-2">
-              {drivers.slice(0, 4).map((f) => {
-                const impact = Number(f.impact ?? 0);
-                const up = f.direction === 'increases' || impact > 0;
-                return (
-                  <li key={f.feature} className="text-sm flex justify-between gap-3">
-                    <span className="text-ink">
-                      {f.label || humanize(f.feature)}
-                      {f.blindspot || f.intervenability === 'low' ? (
-                        <span className="ml-2 text-[11px] text-[var(--muted)]">context</span>
-                      ) : null}
-                    </span>
-                    <span className={`shrink-0 ${up ? 'text-coral' : 'text-teal'}`}>
-                      {up ? 'raises risk' : 'lowers risk'}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+            )}
+            {drivers.length > 0 && !(result.insights && result.insights.length > 0) && (
+              <ul className="space-y-2">
+                {drivers.slice(0, 4).map((f) => {
+                  const impact = Number(f.impact ?? 0);
+                  const up = f.direction === 'increases' || impact > 0;
+                  return (
+                    <li key={f.feature} className="text-sm flex justify-between gap-3">
+                      <span className="text-ink">{f.label || humanize(f.feature)}</span>
+                      <span className={`shrink-0 ${up ? 'text-coral' : 'text-teal'}`}>
+                        {up ? 'raises risk' : 'lowers risk'}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </details>
       )}
 
       {explainError && (
         <p className="text-sm text-coral">Could not explain this case: {explainError}</p>
       )}
 
-      <details className="border border-mist rounded-control group">
+      <details className="border border-mist rounded-control group" open={trust.isSoft || undefined}>
         <summary className="px-3 py-3 cursor-pointer text-sm list-none hover:bg-mist/20">
           <span className="font-medium text-ink">How sure should you be?</span>
           <span className="block text-xs text-[var(--muted)] mt-0.5">{trust.badge}</span>
@@ -671,9 +695,9 @@ export function PredictionPanel({
       {canLog && (
         <details className="border border-mist rounded-control">
           <summary className="px-3 py-3 cursor-pointer text-sm list-none hover:bg-mist/20">
-            <span className="font-medium text-ink">Record what happened</span>
+            <span className="font-medium text-ink">Log what already happened</span>
             <span className="block text-xs text-[var(--muted)] mt-0.5">
-              After you know the real result
+              Different from saving a follow-up — use this after you know the real result
             </span>
           </summary>
           <div className="px-3 pb-4 space-y-3 border-t border-mist pt-3 text-sm">
@@ -699,14 +723,14 @@ export function PredictionPanel({
                 </button>
               ))}
             </div>
-            {result.recommendations && result.recommendations.length > 0 && (
+            {recs.length > 0 && (
               <select
                 value={fbAction}
                 onChange={(e) => setFbAction(e.target.value)}
                 className="w-full bg-paper border border-mist px-2 py-2 text-ink text-sm rounded-control"
               >
                 <option value="">Action taken (optional)</option>
-                {result.recommendations.map((r, i) => {
+                {recs.map((r, i) => {
                   const code = r.action_code || r.action_name || r.name || `action_${i}`;
                   return (
                     <option key={code} value={code}>
@@ -722,7 +746,7 @@ export function PredictionPanel({
               disabled={fbSaving || !fbOutcome}
               className="btn-secondary text-sm"
             >
-              {fbSaving ? 'Saving…' : 'Save what happened'}
+              {fbSaving ? 'Saving…' : 'Save outcome log'}
             </button>
             {fbError && <p className="text-coral text-xs">{fbError}</p>}
             {fbStatus && (
