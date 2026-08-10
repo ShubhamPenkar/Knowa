@@ -428,6 +428,263 @@ class DecisionService:
             "closed_days": closed_days,
         }
 
+    @staticmethod
+    def _default_open_capacity(base_cost: float) -> int:
+        """Concurrent open-follow-up budget by catalog cost (org defaults)."""
+        c = float(base_cost or 0.25)
+        if c >= 0.45:
+            return 5
+        if c >= 0.2:
+            return 10
+        return 20
+
+    def portfolio_intelligence(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        min_n: int = 3,
+    ) -> dict[str, Any]:
+        """
+        ROI-by-action + capacity view over the decision ledger.
+
+        Favorable = bad event avoided (negative binary outcome), same as A5 learning.
+        Capacity = default concurrent open budget by action cost; warn when over.
+        """
+        min_n = max(1, int(min_n))
+        now = datetime.utcnow()
+        week_ago = now - timedelta(days=7)
+
+        base = self.db.query(Decision).filter(Decision.organization_id == self.org_id)
+        if project_id:
+            self._get_project(project_id)
+            base = base.filter(Decision.project_id == project_id)
+
+        rows = (
+            base.filter(Decision.status.in_(["committed", "checking", "closed"]))
+            .order_by(Decision.committed_at.desc())
+            .limit(2000)
+            .all()
+        )
+        if not rows:
+            return {
+                "layer": "portfolio_intelligence",
+                "actions": [],
+                "capacity_alerts": [],
+                "counts": {
+                    "actions": 0,
+                    "open": 0,
+                    "with_outcomes": 0,
+                    "over_capacity": 0,
+                    "reliable_actions": 0,
+                },
+                "plain_summary": (
+                    "No committed actions yet — save a follow-up from a case to start "
+                    "tracking ROI and capacity."
+                ),
+                "min_n": min_n,
+            }
+
+        project_ids = {d.project_id for d in rows}
+        projects = {
+            p.id: p
+            for p in self.db.query(Project)
+            .filter(
+                Project.organization_id == self.org_id,
+                Project.id.in_(list(project_ids)),
+            )
+            .all()
+        }
+
+        # action_code -> aggregates
+        buckets: dict[str, dict[str, Any]] = {}
+        for d in rows:
+            project = projects.get(d.project_id)
+            if not project:
+                continue
+            code = (d.action_code or "").strip()
+            if not code:
+                continue
+            b = buckets.setdefault(
+                code,
+                {
+                    "action_code": code,
+                    "action_name": d.action_name or code,
+                    "open_n": 0,
+                    "committed_this_week": 0,
+                    "outcome_n": 0,
+                    "favorable_n": 0,
+                    "unknown_n": 0,
+                    "lift_sum": 0.0,
+                    "lift_n": 0,
+                },
+            )
+            # Prefer latest non-empty name
+            if d.action_name:
+                b["action_name"] = d.action_name
+
+            open_status = d.status in ("committed", "checking")
+            if open_status:
+                b["open_n"] += 1
+            if d.committed_at and d.committed_at >= week_ago:
+                b["committed_this_week"] += 1
+
+            if d.expected_lift is not None:
+                try:
+                    b["lift_sum"] += float(d.expected_lift)
+                    b["lift_n"] += 1
+                except (TypeError, ValueError):
+                    pass
+
+            if not d.actual_outcome:
+                continue
+            kind = self._normalize_binary_outcome(d.actual_outcome, project)
+            if kind == "unknown":
+                b["unknown_n"] += 1
+                continue
+            if kind not in ("positive", "negative"):
+                continue
+            b["outcome_n"] += 1
+            # Favorable = event avoided
+            if kind == "negative":
+                b["favorable_n"] += 1
+
+        actions_out: list[dict[str, Any]] = []
+        capacity_alerts: list[dict[str, Any]] = []
+
+        for code, b in buckets.items():
+            # Domain from any project using this action (first match)
+            domain = None
+            for d in rows:
+                if d.action_code == code and d.project_id in projects:
+                    p = projects[d.project_id]
+                    domain = detect_domain(
+                        feature_columns=p.feature_columns,
+                        project_name=p.name,
+                        target_column=p.target_column,
+                        target_description=p.target_description,
+                    )
+                    break
+            catalog = get_action(code, domain=domain)
+            base_cost = float(catalog.base_cost) if catalog else 0.25
+            capacity = self._default_open_capacity(base_cost)
+            open_n = int(b["open_n"])
+            over = open_n > capacity
+            outcome_n = int(b["outcome_n"])
+            favorable_n = int(b["favorable_n"])
+            fav_rate = round(favorable_n / outcome_n, 4) if outcome_n else None
+            avg_lift = (
+                round(b["lift_sum"] / b["lift_n"], 4) if b["lift_n"] else None
+            )
+            avg_lift_pp = round(avg_lift * 100, 1) if avg_lift is not None else None
+            reliable = outcome_n >= min_n
+            evidence = "reliable" if reliable else ("thin" if outcome_n > 0 else "none")
+
+            if avg_lift_pp is not None and abs(avg_lift_pp) >= 0.5:
+                expected_bit = (
+                    f"hoped ~{abs(avg_lift_pp):.0f}pp lower chance"
+                    if avg_lift_pp < 0
+                    else f"hoped ~{avg_lift_pp:.0f}pp higher chance"
+                )
+            else:
+                expected_bit = "small expected move"
+
+            if outcome_n == 0:
+                autopsy = (
+                    f"{b['action_name']}: {open_n} open, no logged outcomes yet — "
+                    f"{expected_bit} at commit."
+                )
+            elif not reliable:
+                autopsy = (
+                    f"{b['action_name']}: n={outcome_n}, favorable "
+                    f"{favorable_n}/{outcome_n} ({fav_rate:.0%}) — thin evidence; "
+                    f"{expected_bit}."
+                )
+            else:
+                autopsy = (
+                    f"{b['action_name']}: n={outcome_n}, favorable "
+                    f"{fav_rate:.0%}, {expected_bit}."
+                )
+
+            cost_label = (
+                "high" if base_cost >= 0.45 else "medium" if base_cost >= 0.2 else "low"
+            )
+            item = {
+                "action_code": code,
+                "action_name": b["action_name"],
+                "open_n": open_n,
+                "committed_this_week": int(b["committed_this_week"]),
+                "outcome_n": outcome_n,
+                "favorable_n": favorable_n,
+                "favorable_rate": fav_rate,
+                "unknown_n": int(b["unknown_n"]),
+                "avg_expected_lift": avg_lift,
+                "avg_expected_lift_pp": avg_lift_pp,
+                "capacity_open": capacity,
+                "over_capacity": over,
+                "capacity_headroom": max(0, capacity - open_n),
+                "cost_label": cost_label,
+                "evidence": evidence,
+                "reliable": reliable,
+                "autopsy_strip": autopsy,
+            }
+            actions_out.append(item)
+            if over:
+                capacity_alerts.append(
+                    {
+                        "action_code": code,
+                        "action_name": b["action_name"],
+                        "open_n": open_n,
+                        "capacity_open": capacity,
+                        "plain": (
+                            f"You can't afford {open_n} open \"{b['action_name']}\" "
+                            f"follow-ups at once (budget {capacity} for {cost_label}-cost actions)."
+                        ),
+                    }
+                )
+
+        # Rank: over-capacity first, then reliable outcomes, then open volume
+        actions_out.sort(
+            key=lambda x: (
+                0 if x["over_capacity"] else 1,
+                0 if x["reliable"] else 1,
+                -x["outcome_n"],
+                -x["open_n"],
+            )
+        )
+
+        n_open = sum(a["open_n"] for a in actions_out)
+        n_outcomes = sum(a["outcome_n"] for a in actions_out)
+        n_reliable = sum(1 for a in actions_out if a["reliable"])
+        n_over = len(capacity_alerts)
+
+        bits: list[str] = []
+        if n_over:
+            bits.append(f"{n_over} action(s) over capacity")
+        if n_reliable:
+            bits.append(f"{n_reliable} action(s) with enough outcomes to read ROI")
+        elif n_outcomes:
+            bits.append(
+                f"{n_outcomes} outcome(s) logged — need {min_n}+ per action for firm ROI"
+            )
+        else:
+            bits.append("check in on follow-ups to unlock ROI by action")
+        plain = "Portfolio: " + "; ".join(bits) + "."
+
+        return {
+            "layer": "portfolio_intelligence",
+            "actions": actions_out,
+            "capacity_alerts": capacity_alerts,
+            "counts": {
+                "actions": len(actions_out),
+                "open": n_open,
+                "with_outcomes": n_outcomes,
+                "over_capacity": n_over,
+                "reliable_actions": n_reliable,
+            },
+            "plain_summary": plain,
+            "min_n": min_n,
+        }
+
     def flag_due_rechecks(self, *, limit: int = 200) -> dict[str, Any]:
         """Mark due committed follow-ups as checking (scheduled recheck sweep).
 

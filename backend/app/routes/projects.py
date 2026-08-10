@@ -196,6 +196,16 @@ async def list_projects(
     ]
 
 
+@router.get("/org-health")
+async def org_health(
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Org pulse: follow-ups due, soft cases, ready-project guidance quality."""
+    service = ProjectService(db, auth.org_id)
+    return service.org_health()
+
+
 @router.post("/decisions/recheck-sweep")
 async def decisions_recheck_sweep(
     limit: int = 200,
@@ -233,6 +243,23 @@ async def decisions_portfolio(
             closed_days=closed_days,
             due_soon_days=due_soon_days,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/decisions/portfolio-intel")
+async def decisions_portfolio_intel(
+    project_id: str | None = None,
+    min_n: int = 3,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """ROI by action + capacity warnings over the decision ledger."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.portfolio_intelligence(project_id=project_id, min_n=min_n)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -689,8 +716,10 @@ async def list_predictions(
             "id": p.id,
             "entity_id": p.entity_id,
             "probability": p.probability,
+            "predicted_value": p.predicted_value,
             "risk_level": p.risk_level,
             "confidence": p.confidence,
+            "low_confidence": bool(getattr(p, "low_confidence", False)),
             "actual_outcome": p.actual_outcome,
             "action_taken": p.action_taken,
             "feedback_date": p.feedback_date.isoformat() if p.feedback_date else None,

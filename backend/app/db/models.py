@@ -241,6 +241,9 @@ class ProjectPrediction(Base):
     actual_outcome: Mapped[Optional[str]] = mapped_column(String(50))
     action_taken: Mapped[Optional[str]] = mapped_column(String(100))
     feedback_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    # Trust / abstention (A2) — persisted for Don't-act queues
+    low_confidence: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     

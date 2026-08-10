@@ -183,6 +183,98 @@ class ProjectService:
             Project.organization_id == self.org_id,
             Project.is_active == True
         ).order_by(Project.created_at.desc()).all()
+
+    def org_health(self) -> dict[str, Any]:
+        """
+        Lightweight org pulse for the homepage strip:
+        follow-ups due, soft/low-trust cases, ready-project guidance quality.
+        """
+        from app.services.decision_service import DecisionService
+
+        portfolio = DecisionService(self.db, self.org_id).list_portfolio(limit=1)
+        counts = portfolio.get("counts") or {}
+        overdue = int(counts.get("overdue") or 0)
+        due_now = int(counts.get("due_now") or 0)
+
+        ready = (
+            self.db.query(Project)
+            .filter(
+                Project.organization_id == self.org_id,
+                Project.is_active == True,
+                Project.status.in_(["ready", "trained"]),
+            )
+            .all()
+        )
+        ready_ids = [p.id for p in ready]
+
+        soft_cases = 0
+        if ready_ids:
+            soft_cases = (
+                self.db.query(ProjectPrediction)
+                .filter(
+                    ProjectPrediction.project_id.in_(ready_ids),
+                    ProjectPrediction.low_confidence.is_(True),
+                )
+                .count()
+            )
+
+        # Rough model health from latest trained models
+        rough = 0
+        solid = 0
+        for p in ready:
+            tm = (
+                self.db.query(TrainedModel)
+                .filter(
+                    TrainedModel.project_id == p.id,
+                    TrainedModel.is_active == True,
+                )
+                .order_by(TrainedModel.trained_at.desc())
+                .first()
+            )
+            if not tm:
+                continue
+            if p.problem_type == "regression":
+                r2 = tm.r2_score
+                if r2 is not None and float(r2) < 0.2:
+                    rough += 1
+                elif r2 is not None and float(r2) >= 0.5:
+                    solid += 1
+            else:
+                score = tm.auc_roc if tm.auc_roc is not None else tm.accuracy
+                if score is not None and float(score) < 0.6:
+                    rough += 1
+                elif score is not None and float(score) >= 0.7:
+                    solid += 1
+
+        due_attention = overdue + due_now
+        bits = []
+        if due_attention:
+            bits.append(f"{due_attention} follow-up(s) need check-in")
+        if soft_cases:
+            bits.append(f"{soft_cases} don't-act case(s) — review before big spends")
+        if rough:
+            bits.append(f"{rough} project(s) look like a rough guide")
+        if not bits:
+            bits.append(
+                f"{len(ready)} ready project(s)"
+                + (f", {solid} solid+" if solid else "")
+                + ". Stack looks calm."
+            )
+
+        return {
+            "layer": "org_health",
+            "counts": {
+                "overdue": overdue,
+                "due_now": due_now,
+                "due_attention": due_attention,
+                "soft_cases": soft_cases,
+                "ready_projects": len(ready),
+                "rough_models": rough,
+                "solid_models": solid,
+            },
+            "plain_summary": " · ".join(bits),
+            "primary_project_id": ready_ids[0] if ready_ids else None,
+        }
     
     def get_project(self, project_id: str) -> Optional[Project]:
         """Get project by ID."""
@@ -944,6 +1036,7 @@ class ProjectService:
                     confidence=float(confidence) if confidence is not None else None,
                     shap_values=safe_shap,
                     top_factors=safe_top,
+                    low_confidence=bool(low_confidence),
                 )
             else:
                 prediction = ProjectPrediction(
@@ -957,6 +1050,7 @@ class ProjectService:
                     shap_values=safe_shap,
                     top_factors=safe_top,
                     recommendations=safe_recs,
+                    low_confidence=bool(low_confidence),
                 )
             self.db.add(prediction)
             self.db.commit()

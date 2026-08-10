@@ -34,5 +34,25 @@ def get_db():
 
 
 def init_db():
-    """Initialize database tables."""
+    """Initialize database tables and apply lightweight SQLite column patches."""
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_columns()
+
+
+def _ensure_sqlite_columns():
+    """Add columns introduced after first create_all (SQLite has no Alembic here)."""
+    if "sqlite" not in settings.database_url:
+        return
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("PRAGMA table_info(project_predictions)")).fetchall()
+        names = {r[1] for r in rows}
+        if "low_confidence" not in names:
+            conn.execute(
+                text(
+                    "ALTER TABLE project_predictions "
+                    "ADD COLUMN low_confidence BOOLEAN DEFAULT 0"
+                )
+            )
+

@@ -103,6 +103,7 @@ class PortfolioFixture:
         expected_lift: Optional[float] = None,
         action_code: str = "engagement_campaign",
         committed_at: Optional[datetime] = None,
+        actual_outcome: Optional[str] = None,
     ) -> Decision:
         d = Decision(
             organization_id=project.organization_id,
@@ -116,6 +117,7 @@ class PortfolioFixture:
             recheck_at=recheck_at,
             closed_at=closed_at,
             committed_at=committed_at or _now(),
+            actual_outcome=actual_outcome,
             decision_summary=f"Test {action_name}",
             case_snapshot={},
         )
@@ -651,6 +653,186 @@ class TestHttpPortfolioRoute(unittest.TestCase):
         # Keep db override so we don't need real DB for auth failure path
         res = self.client.get("/api/projects/decisions/portfolio")
         self.assertIn(res.status_code, (401, 403))
+
+
+class TestPortfolioIntelligence(unittest.TestCase):
+    def setUp(self):
+        self.fx = PortfolioFixture()
+
+    def tearDown(self):
+        self.fx.close()
+
+    def test_empty_intel(self):
+        intel = self.fx.svc_a.portfolio_intelligence()
+        self.assertEqual(intel["layer"], "portfolio_intelligence")
+        self.assertEqual(intel["counts"]["actions"], 0)
+        self.assertEqual(intel["actions"], [])
+        self.assertIn("No committed actions", intel["plain_summary"])
+
+    def test_roi_thin_then_reliable(self):
+        # 2 favorable outcomes → thin; add a 3rd → reliable
+        for i in range(2):
+            self.fx.add_decision(
+                self.fx.proj_a1,
+                action_name="Engagement",
+                action_code="engagement_campaign",
+                status="closed",
+                closed_at=_now(),
+                recheck_at=None,
+                expected_lift=-0.08,
+                actual_outcome="retained",
+            )
+        intel = self.fx.svc_a.portfolio_intelligence()
+        self.assertEqual(intel["counts"]["actions"], 1)
+        row = intel["actions"][0]
+        self.assertEqual(row["outcome_n"], 2)
+        self.assertEqual(row["favorable_n"], 2)
+        self.assertEqual(row["evidence"], "thin")
+        self.assertFalse(row["reliable"])
+        self.assertAlmostEqual(row["avg_expected_lift_pp"], -8.0, places=1)
+
+        self.fx.add_decision(
+            self.fx.proj_a1,
+            action_name="Engagement",
+            action_code="engagement_campaign",
+            status="closed",
+            closed_at=_now(),
+            recheck_at=None,
+            expected_lift=-0.08,
+            actual_outcome="churned",
+        )
+        intel2 = self.fx.svc_a.portfolio_intelligence()
+        row2 = intel2["actions"][0]
+        self.assertEqual(row2["outcome_n"], 3)
+        self.assertEqual(row2["favorable_n"], 2)
+        self.assertEqual(row2["evidence"], "reliable")
+        self.assertTrue(row2["reliable"])
+        self.assertAlmostEqual(row2["favorable_rate"], 2 / 3, places=3)
+
+    def test_capacity_alert_high_cost_action(self):
+        # discount_20 → high cost → capacity 5
+        for i in range(6):
+            self.fx.add_decision(
+                self.fx.proj_a1,
+                action_name="20% discount",
+                action_code="discount_20",
+                recheck_at=_now() + timedelta(days=10),
+                expected_lift=-0.12,
+            )
+        intel = self.fx.svc_a.portfolio_intelligence()
+        row = next(a for a in intel["actions"] if a["action_code"] == "discount_20")
+        self.assertEqual(row["open_n"], 6)
+        self.assertEqual(row["capacity_open"], 5)
+        self.assertTrue(row["over_capacity"])
+        self.assertEqual(intel["counts"]["over_capacity"], 1)
+        self.assertEqual(len(intel["capacity_alerts"]), 1)
+        self.assertIn("can't afford", intel["capacity_alerts"][0]["plain"].lower())
+
+    def test_org_isolation(self):
+        self.fx.add_decision(
+            self.fx.proj_b1,
+            action_name="Other Org",
+            action_code="discount_20",
+            recheck_at=_now() + timedelta(days=5),
+        )
+        intel = self.fx.svc_a.portfolio_intelligence()
+        self.assertEqual(intel["counts"]["actions"], 0)
+
+    def test_http_portfolio_intel_not_shadowed(self):
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+        from app.database import get_db
+        from app.services.auth_service import AuthContext, get_auth_context
+
+        self.fx.add_decision(
+            self.fx.proj_a1,
+            action_name="HTTP Intel",
+            action_code="engagement_campaign",
+            recheck_at=_now() + timedelta(days=5),
+            expected_lift=-0.05,
+        )
+
+        def _db():
+            try:
+                yield self.fx.db
+            finally:
+                pass
+
+        async def _auth():
+            return AuthContext(organization=self.fx.org_a, scopes=["admin"])
+
+        app.dependency_overrides[get_db] = _db
+        app.dependency_overrides[get_auth_context] = _auth
+        try:
+            client = TestClient(app)
+            res = client.get("/api/projects/decisions/portfolio-intel")
+            self.assertEqual(res.status_code, 200)
+            body = res.json()
+            self.assertEqual(body["layer"], "portfolio_intelligence")
+            self.assertGreaterEqual(body["counts"]["actions"], 1)
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_http_org_health_not_shadowed(self):
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+        from app.database import get_db
+        from app.services.auth_service import AuthContext, get_auth_context
+
+        def _db():
+            try:
+                yield self.fx.db
+            finally:
+                pass
+
+        async def _auth():
+            return AuthContext(organization=self.fx.org_a, scopes=["admin"])
+
+        app.dependency_overrides[get_db] = _db
+        app.dependency_overrides[get_auth_context] = _auth
+        try:
+            client = TestClient(app)
+            res = client.get("/api/projects/org-health")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["layer"], "org_health")
+        finally:
+            app.dependency_overrides.clear()
+
+
+class TestOrgHealth(unittest.TestCase):
+    def setUp(self):
+        self.fx = PortfolioFixture()
+
+    def tearDown(self):
+        self.fx.close()
+
+    def test_org_health_due_and_dont_act_counts(self):
+        from app.db.models import ProjectPrediction
+        from app.services.project_service import ProjectService
+
+        self.fx.add_decision(
+            self.fx.proj_a1,
+            action_name="Due",
+            recheck_at=_now() - timedelta(days=3),
+        )
+        pred = ProjectPrediction(
+            project_id=self.fx.proj_a1.id,
+            model_version="test-v1",
+            features={"tenure": 1},
+            probability=0.5,
+            low_confidence=True,
+        )
+        self.fx.db.add(pred)
+        self.fx.db.commit()
+
+        health = ProjectService(self.fx.db, self.fx.org_a.id).org_health()
+        self.assertEqual(health["layer"], "org_health")
+        self.assertEqual(health["counts"]["due_attention"], 1)
+        self.assertEqual(health["counts"]["soft_cases"], 1)
+        self.assertEqual(health["counts"]["ready_projects"], 2)
+        self.assertIn("don't-act", health["plain_summary"].lower())
 
 
 if __name__ == "__main__":

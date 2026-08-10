@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Spinner from '../components/common/Spinner';
+import OrgHealthStrip from '../components/common/OrgHealthStrip';
+import PortfolioIntel from '../components/common/PortfolioIntel';
 
 /** Business labels — never show ML jargon to decision users. */
 function humanizeLabel(name) {
@@ -259,6 +261,10 @@ export default function AnalyticsSaaS() {
           </div>
         )}
       </div>
+
+      <OrgHealthStrip projectId={selectedProject} variant="follow-ups" />
+
+      <PortfolioIntel />
 
       {/* Org follow-up board — always first */}
       <section className="mb-10 border border-mist">
