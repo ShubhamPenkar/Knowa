@@ -6,13 +6,19 @@ from typing import Any, Optional
 
 from app.recommendations.action_catalog import Action, _norm
 
+# Only reshape catalog impact once we have a small sample of real outcomes
+MIN_N_FOR_LEARNING = 3
+# Cap how far history can pull catalog impact (0 = ignore history, 1 = history only)
+MAX_HISTORY_BLEND = 0.4
+
 
 class ImpactCalculator:
     """
     Expected impact of an action on positive-outcome probability.
 
     Uses base impact potential × driver relevance × risk band.
-    Optional historical effectiveness (Phase 6 feedback) can blend in.
+    Optional historical effectiveness (A7/B3 outcome log) blends in when
+    enough cases are logged for that action.
     """
 
     def __init__(self, effectiveness_data: Optional[dict[str, dict]] = None):
@@ -27,13 +33,19 @@ class ImpactCalculator:
         *,
         soft_case: bool = False,
     ) -> dict[str, Any]:
-        base_impact = float(action.impact_potential)
+        catalog_impact = float(action.impact_potential)
+        base_impact = catalog_impact
         p = float(probability)
 
-        if action.code in self.effectiveness_data:
-            hist = self.effectiveness_data[action.code]
-            historical_factor = float(hist.get("success_rate", 0.5)) * 1.15
-            base_impact = (base_impact + historical_factor) / 2
+        learning_meta = self._learning_meta(action.code)
+        if learning_meta.get("applied"):
+            rate = float(learning_meta["effectiveness_rate"])
+            n = int(learning_meta["n_outcomes"])
+            # More evidence → slightly stronger pull, capped
+            lam = min(MAX_HISTORY_BLEND, 0.12 * n)
+            # Map success rate into an impact-like score (avoided bad event)
+            historical_impact = max(0.05, min(0.95, rate))
+            base_impact = (1.0 - lam) * catalog_impact + lam * historical_impact
 
         relevance_multiplier = self._relevance_multiplier(
             action, feature_importance or {}
@@ -65,12 +77,66 @@ class ImpactCalculator:
             )
             if p > 1e-6
             else 0.0,
+            "learning": learning_meta,
             "components": {
                 "base_impact": round(base_impact, 4),
+                "catalog_impact": round(catalog_impact, 4),
                 "relevance_multiplier": round(relevance_multiplier, 4),
                 "risk_multiplier": round(risk_multiplier, 4),
                 "uncertainty_factor": uncertainty_factor,
+                "learning_applied": bool(learning_meta.get("applied")),
             },
+        }
+
+    def _learning_meta(self, action_code: str) -> dict[str, Any]:
+        hist = self.effectiveness_data.get(action_code) or {}
+        n = int(hist.get("n") or hist.get("n_outcomes") or 0)
+        rate = hist.get("effectiveness_rate", hist.get("success_rate"))
+        # Derive rate from counts when only success_n/n are present
+        if rate is None and n > 0 and hist.get("success_n") is not None:
+            rate = float(hist["success_n"]) / float(n)
+        if rate is None:
+            return {
+                "applied": False,
+                "n_outcomes": n,
+                "effectiveness_rate": None,
+                "learning_note": "No logged outcomes for this action yet.",
+            }
+        rate_f = float(rate)
+        if hist.get("success_n") is not None:
+            success_n = int(hist["success_n"])
+        else:
+            success_n = int(round(rate_f * n))
+        reliable = bool(hist.get("reliable", n >= MIN_N_FOR_LEARNING))
+        if n < MIN_N_FOR_LEARNING or not reliable:
+            return {
+                "applied": False,
+                "n_outcomes": n,
+                "effectiveness_rate": round(rate_f, 4),
+                "success_n": success_n,
+                "learning_note": (
+                    f"Logged {success_n}/{n} favorable so far — need {MIN_N_FOR_LEARNING}+ "
+                    "before rankings shift."
+                ),
+            }
+        if rate_f >= 0.65:
+            note = (
+                f"Favorable in {success_n}/{n} logged cases — ranking slightly boosted."
+            )
+        elif rate_f <= 0.35:
+            note = (
+                f"Only {success_n}/{n} logged cases went well — ranking tempered."
+            )
+        else:
+            note = (
+                f"Mixed results ({success_n}/{n} favorable) — mild ranking adjustment."
+            )
+        return {
+            "applied": True,
+            "n_outcomes": n,
+            "effectiveness_rate": round(rate_f, 4),
+            "success_n": success_n,
+            "learning_note": note,
         }
 
     def _relevance_multiplier(

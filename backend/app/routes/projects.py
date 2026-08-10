@@ -48,6 +48,10 @@ class PredictRequest(BaseModel):
 class SimulateRequest(BaseModel):
     base_features: dict
     modified_features: dict
+    # Monte Carlo: 0 = point estimate only; typical UI sends 200
+    n_draws: int = 200
+    noise_scale: float = 0.05
+    seed: int | None = None
 
 
 class ScenarioLeversRequest(BaseModel):
@@ -94,9 +98,36 @@ class DecisionCheckInRequest(BaseModel):
     recheck_interval_days: int | None = None
 
 
+class SuggestConfigRequest(BaseModel):
+    """B1: plain-language problem → draft project config (does not create)."""
+    dataset_id: str
+    problem_description: str
+    project_name: str | None = None
+
+
 # =============================================================================
 # Routes
 # =============================================================================
+
+@router.post("/suggest-config")
+async def suggest_project_config(
+    request: SuggestConfigRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """B1 Intent onboarding: suggest problem type, target, features, business label."""
+    from app.services.intent_service import IntentService
+
+    service = IntentService(db, auth.org_id)
+    try:
+        return service.suggest_config(
+            dataset_id=request.dataset_id,
+            problem_description=request.problem_description,
+            project_name=request.project_name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("")
 async def create_project(
@@ -163,6 +194,47 @@ async def list_projects(
         }
         for p in projects
     ]
+
+
+@router.post("/decisions/recheck-sweep")
+async def decisions_recheck_sweep(
+    limit: int = 200,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """
+    Manually run the B3 due-recheck sweep for this org (no Celery required).
+
+    Celery Beat calls the same logic globally; use this for demos / ops.
+    """
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    return service.flag_due_rechecks(limit=limit)
+
+
+@router.get("/decisions/portfolio")
+async def decisions_portfolio(
+    project_id: str | None = None,
+    limit: int = 100,
+    closed_days: int = 30,
+    due_soon_days: int = 7,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Org-wide follow-up board: overdue / due now / upcoming / recently closed."""
+    from app.services.decision_service import DecisionService
+
+    service = DecisionService(db, auth.org_id)
+    try:
+        return service.list_portfolio(
+            project_id=project_id,
+            limit=limit,
+            closed_days=closed_days,
+            due_soon_days=due_soon_days,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{project_id}")
@@ -411,6 +483,9 @@ async def simulate(
             project_id=project_id,
             base_features=request.base_features,
             modified_features=request.modified_features,
+            n_draws=request.n_draws,
+            noise_scale=request.noise_scale,
+            seed=request.seed,
         )
         return result
     except FeatureValidationError as e:
@@ -623,3 +698,19 @@ async def list_predictions(
         }
         for p in predictions
     ]
+
+
+@router.get("/{project_id}/predictions/{prediction_id}")
+async def get_prediction_case(
+    project_id: str,
+    prediction_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Hydrate a stored case for deep-links from Priorities → project brief."""
+    service = ProjectService(db, auth.org_id)
+    try:
+        result = service.get_prediction_case(project_id, prediction_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result

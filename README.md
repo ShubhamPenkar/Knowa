@@ -21,18 +21,26 @@ A closed-loop decision intelligence system that predicts business outcomes, expl
 
 ### 4. Decision Recommendation
 - Hybrid scoring system (Impact × Cost × Relevance)
-- 15+ pre-configured business actions
-- Ranked recommendations with reasoning
+- Domain-aware action catalog with ranked recommendations
+- Action-effectiveness learning from check-in outcomes (gated blend)
 
 ### 5. What-If Simulation
 - Modify feature values interactively
-- See before/after prediction comparison
-- Get actionable recommendations based on changes
+- Before/after prediction comparison + Monte Carlo uncertainty
+- Scenario levers grounded in intervenable features
 
-### 6. Feedback Learning Loop
-- Track action outcomes
-- Update model performance metrics
-- Automatic retraining triggers
+### 6. Decision Ledger & Follow-ups (Stack B)
+- Commit recommended actions as durable decisions with recheck schedules
+- Org portfolio board: overdue / due now / upcoming / closed recent
+- Case deep-links from Priorities → project case + check-in
+- Causal blindspots (context-not-dial, proxy, missingness, segment traps)
+- Intent onboarding: describe the problem → suggested project setup
+- Scheduled rechecks via Celery Beat (or manual Sync due / API sweep)
+
+### 7. Feedback Learning Loop
+- Track action outcomes via decision check-in
+- Update recommendation effectiveness and model feedback metrics
+- Retraining triggers when enough labeled outcomes accumulate
 
 ## 🚀 Quick Start
 
@@ -88,6 +96,30 @@ Frontend runs at: http://localhost:3000
 docker-compose up --build
 ```
 
+### Scheduled follow-up rechecks (Celery)
+
+Due decision follow-ups flip from `committed` → `checking` on a schedule. Humans still log outcomes via check-in; the worker does not invent results.
+
+**Without Redis** (demos / local API):
+
+```bash
+# Priorities → Follow-ups due → "Sync due", or:
+curl -X POST http://localhost:8000/api/projects/decisions/recheck-sweep \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**With Redis + Beat** (full stack):
+
+```bash
+docker compose up -d redis worker beat
+# or locally after `docker compose up -d redis`:
+cd backend
+.venv311/bin/celery -A app.celery_app.celery worker -l info
+.venv311/bin/celery -A app.celery_app.celery beat -l info
+```
+
+Env: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CELERY_RECHECK_INTERVAL_MINUTES` (default 60).
+
 ## 📁 Project Structure
 
 ```
@@ -102,12 +134,16 @@ Knowa/
 │   │   ├── ml/
 │   │   │   ├── models/          # ML model implementations
 │   │   │   ├── explainers/      # SHAP, LIME, consistency
-│   │   │   └── pipelines/       # Training & prediction
+│   │   │   ├── pipelines/       # Training & prediction
+│   │   │   └── blindspot.py     # Causal / intervenability flags
 │   │   ├── insights/            # Insight generation
 │   │   ├── recommendations/     # Action scoring
+│   │   ├── tasks/               # Celery tasks (recheck sweep)
+│   │   ├── celery_app.py        # Celery + Beat schedule
 │   │   ├── schemas/             # Pydantic models
 │   │   └── db/                  # SQLAlchemy models
 │   ├── scripts/                 # CLI scripts
+│   ├── tests/                   # Unit + API tests
 │   └── data/                    # Data & models
 │
 ├── frontend/
@@ -117,7 +153,7 @@ Knowa/
 │   │   └── services/            # API client
 │   └── package.json
 │
-└── docker-compose.yml
+└── docker-compose.yml           # api + frontend + redis + worker + beat
 ```
 
 ## 📊 API Endpoints
@@ -131,9 +167,15 @@ All routes are under `/api` (not `/api/v1`).
 | `/api/auth/signup` | POST | Create org + owner |
 | `/api/auth/login` | POST | JWT login |
 | `/api/datasets` | POST | Upload CSV |
+| `/api/projects/suggest-config` | POST | Intent → suggested target/features |
 | `/api/projects` | POST | Create project |
 | `/api/projects/{id}/train` | POST | Train model |
-| `/api/projects/{id}/predict` | POST | Predict (incl. CI / low_confidence) |
+| `/api/projects/{id}/predict` | POST | Predict (incl. CI / low_confidence / blindspots) |
+| `/api/projects/{id}/predictions/{prediction_id}` | GET | Hydrate a saved case |
+| `/api/projects/{id}/decisions` | GET/POST | List / commit decisions |
+| `/api/projects/{id}/decisions/{id}/check-in` | POST | Log outcome / reschedule |
+| `/api/projects/decisions/portfolio` | GET | Org follow-up due board |
+| `/api/projects/decisions/recheck-sweep` | POST | Flag due follow-ups (`checking`) |
 
 ### Demo (fixed churn schema)
 
@@ -190,6 +232,11 @@ relevance_weight = 0.2
 # Feedback settings
 feedback_window_days = 90
 retrain_threshold_samples = 100
+
+# Celery / scheduled B3 rechecks
+celery_broker_url = "redis://localhost:6379/0"
+celery_result_backend = "redis://localhost:6379/1"
+celery_recheck_interval_minutes = 60
 ```
 
 ## 📈 Evaluation Metrics
@@ -215,7 +262,8 @@ Action Taken → Feedback → Model Improvement
 ### Running Tests
 ```bash
 cd backend
-pytest tests/
+PYTHONPATH=. python -m unittest discover -s tests -v
+# or: pytest tests/
 ```
 
 ### Training Models

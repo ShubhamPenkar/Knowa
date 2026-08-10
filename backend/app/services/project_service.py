@@ -10,7 +10,19 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import Project, Dataset, TrainedModel, CustomAction, ProjectPrediction
+from app.db.models import (
+    Project,
+    Dataset,
+    TrainedModel,
+    CustomAction,
+    ProjectPrediction,
+    Decision,
+)
+
+# Short-lived cache for action-effectiveness blends on the predict hot path.
+# Keyed by org:project; invalidated on feedback writes or when outcome count changes.
+_EFFECTIVENESS_CACHE: dict[str, tuple[float, int, dict]] = {}
+_EFFECTIVENESS_TTL_SEC = 60.0
 from app.services.dataset_service import DatasetService
 from app.ml.dataset_profiler import (
     ProfilingError,
@@ -136,6 +148,17 @@ class ProjectService:
         )
         report.raise_if_blocking()
 
+        feature_config = None
+        if description:
+            # Light B1 breadcrumb (preserved across train when feature_config is rebuilt)
+            feature_config = {
+                "intent": {
+                    "source": "onboarding",
+                    "target_description": target_description,
+                    "problem_statement": str(description)[:500],
+                }
+            }
+
         project = Project(
             organization_id=self.org_id,
             dataset_id=dataset_id,
@@ -146,6 +169,7 @@ class ProjectService:
             target_description=target_description,
             problem_type=problem_type,
             feature_columns=feature_columns,
+            feature_config=feature_config,
             status="draft",
         )
         self.db.add(project)
@@ -382,7 +406,14 @@ class ProjectService:
             )
             X_calib = transformer.transform(X_calib_raw)
             X_test = transformer.transform(X_test_raw)
-            project.feature_config = transformer.to_feature_config()
+            # Preserve B1 intent breadcrumb when replacing config after fit
+            prior_intent = None
+            if isinstance(project.feature_config, dict):
+                prior_intent = project.feature_config.get("intent")
+            new_cfg = transformer.to_feature_config() or {}
+            if prior_intent and isinstance(new_cfg, dict):
+                new_cfg = {**new_cfg, "intent": prior_intent}
+            project.feature_config = new_cfg
             if transformer.dropped_columns:
                 print(f"Dropped feature columns: {transformer.dropped_reasons}")
                 # Keep project.feature_columns aligned with what scoring requires —
@@ -751,6 +782,30 @@ class ProjectService:
                     "errors": case.get("errors"),
                 }
                 result["explanation_consistency"] = case.get("consistency")
+
+                # B4: flag confounded / non-intervenable drivers (scrutiny, not causal fact)
+                try:
+                    from app.ml.blindspot import annotate_drivers, detect_blindspots
+
+                    blindspots = detect_blindspots(
+                        top_factors=top_factors,
+                        features=features,
+                        feature_config=project.feature_config,
+                        consistency=case.get("consistency"),
+                        training_data=training_data,
+                        target_column=project.target_column,
+                        target_positive_label=project.target_positive_label,
+                        outcome_label=str(outcome),
+                    )
+                    result["blindspots"] = blindspots
+                    result["blindspot_warnings"] = blindspots.get("warnings") or []
+                    if result["explanations"].get("drivers"):
+                        result["explanations"]["drivers"] = annotate_drivers(
+                            result["explanations"]["drivers"], blindspots
+                        )
+                    top_factors = annotate_drivers(top_factors, blindspots)
+                except Exception:
+                    result["blindspot_warnings"] = []
             except Exception as e:
                 result["explanations"] = {"error": str(e), "degraded": True}
         
@@ -785,6 +840,30 @@ class ProjectService:
             insight_brief = brief
             insights = brief.get("insights") or []
             result["insights"] = insights
+            action_context = brief.get("action_context") or {}
+            # Soft-rerank primary lever away from blindspot-flagged drivers
+            preferred = (result.get("blindspots") or {}).get("preferred_primary_feature")
+            if preferred and action_context.get("primary_lever"):
+                cur = (action_context.get("primary_lever") or {}).get("feature")
+                if cur and cur != preferred:
+                    alt = next(
+                        (d for d in top_factors if d.get("feature") == preferred),
+                        None,
+                    )
+                    if alt:
+                        from app.insights.feature_mapping import get_action_hint, get_feature_info
+
+                        info = get_feature_info(preferred)
+                        action_context = {
+                            **action_context,
+                            "primary_lever": {
+                                "feature": preferred,
+                                "display_name": info.get("display_name") or preferred,
+                                "suggestion": get_action_hint(preferred, True),
+                            },
+                            "blindspot_reranked": True,
+                            "previous_primary_feature": cur,
+                        }
             result["insight_brief"] = {
                 "headline": brief.get("headline"),
                 "summary": brief.get("summary"),
@@ -793,7 +872,7 @@ class ProjectService:
                 "protective_factors": brief.get("protective_factors"),
                 "overall_severity": brief.get("overall_severity"),
                 "trust_note": brief.get("trust_note"),
-                "action_context": brief.get("action_context"),
+                "action_context": action_context,
             }
         
         # Get recommendations (only for classification)
@@ -1277,8 +1356,10 @@ class ProjectService:
                 code=a.code,
                 name=a.name,
                 description=a.description or "",
-                estimated_cost=float(a.estimated_cost or 0),
-                estimated_impact=float(a.estimated_impact or 0.5),
+                estimated_cost=float(a.estimated_cost if a.estimated_cost is not None else 0),
+                estimated_impact=float(
+                    a.estimated_impact if a.estimated_impact is not None else 0.5
+                ),
                 applicable_when=a.applicable_when,
             )
             for a in custom_rows
@@ -1660,7 +1741,8 @@ class ProjectService:
         # Prefer levers that actually move the needle (risk down first)
         ranked.sort(key=lambda r: (abs(float(r.get("expected_delta") or 0)),), reverse=True)
         meaningful = [r for r in ranked if abs(float(r.get("expected_delta") or 0)) >= 0.005]
-        return _json_safe(meaningful or ranked[:2])
+        # Do not invent "suggestions" that leave the score unchanged
+        return _json_safe(meaningful)
 
     def _probe_fallback_levers(
         self,
@@ -1719,6 +1801,32 @@ class ProjectService:
                     candidates.append((mi, round(cur * 0.9, 2), "Contrast: ~10% pay cut"))
                 except (TypeError, ValueError):
                     pass
+
+            # Career / mobility signals — often move low-risk cases when satisfaction dials don't
+            for col_name, lo_alt, hi_hint, lo_hint in (
+                ("NumCompaniesWorked", 0, "More prior employers", "Fewer prior employers"),
+                ("YearsSinceLastPromotion", 0, None, "Simulate a recent promotion"),
+                ("YearsAtCompany", None, "Longer tenure", "Shorter tenure"),
+                ("YearsInCurrentRole", 0, None, "Reset years in role"),
+            ):
+                real = has(col_name)
+                if not real:
+                    continue
+                try:
+                    cur = float(base_features.get(real))
+                except (TypeError, ValueError):
+                    continue
+                if col_name == "NumCompaniesWorked":
+                    if cur >= 1:
+                        candidates.append((real, 0, lo_hint))
+                    candidates.append((real, max(cur + 2, 4), hi_hint))
+                elif col_name == "YearsSinceLastPromotion" and cur >= 2:
+                    candidates.append((real, 0, lo_hint))
+                elif col_name == "YearsAtCompany":
+                    candidates.append((real, max(0, cur - 3), lo_hint or "Shorter tenure"))
+                    candidates.append((real, cur + 3, hi_hint or "Longer tenure"))
+                elif col_name == "YearsInCurrentRole" and cur >= 2:
+                    candidates.append((real, 0, lo_hint))
 
             dist = has("DistanceFromHome")
             if dist:
@@ -1917,6 +2025,7 @@ class ProjectService:
         prob_change: float,
         outcome_label: str,
         domain: str,
+        moving_levers: Optional[list[dict[str, Any]]] = None,
     ) -> list[str]:
         """Plain bullets describing what the dials mean for this domain."""
         from app.recommendations.domains import DOMAIN_HR_ATTRITION
@@ -1926,13 +2035,23 @@ class ProjectService:
         moved = abs(prob_change) >= 0.005
 
         if change_log and not moved:
-            labels = ", ".join(
-                str(c.get("label") or c.get("feature")) for c in change_log[:3]
-            )
-            insights.append(
-                f"Changing {labels} did not move this person's estimate — "
-                f"other signals are driving the score. Try a stronger lever below."
-            )
+            # Keep this short — plain_summary already states the no-move result
+            movers = [
+                r for r in (moving_levers or [])
+                if abs(float(r.get("expected_delta") or 0)) >= 0.005
+            ]
+            if movers:
+                bits = []
+                for r in movers[:2]:
+                    label = r.get("label") or r.get("feature")
+                    delta = float(r.get("expected_delta") or 0)
+                    bits.append(f"{label} → {r.get('suggested_value')} ({delta * 100:+.0f} pts)")
+                insights.append("What does move this case: " + "; ".join(bits) + ".")
+            else:
+                insights.append(
+                    "Explanation drivers (like satisfaction) are not always dials that change "
+                    "the score — try Show all fields or a higher-risk case."
+                )
             return insights
 
         for c in change_log[:5]:
@@ -2036,8 +2155,8 @@ class ProjectService:
         if abs(pp) < 0.5:
             return (
                 f"With {n} change(s) ({change_bits or 'no real diffs'}), chance of "
-                f"{label} stays about {before:.0%} — this lever does not move the estimate "
-                f"for this person. Use “Dials that move this case” or show all fields."
+                f"{label} stays about {before:.0%} — these dials do not move this person's "
+                f"estimate (common on already-low-risk cases)."
             )
         if pp < 0:
             move = f"drops about {abs(pp):.0f} percentage points"
@@ -2051,15 +2170,277 @@ class ProjectService:
             f"{label} {move} — from {before:.0%} to {after:.0%}.{risk_note}"
         )
 
+    def _is_numeric_feature(self, project: Project, feature: str, value: Any) -> bool:
+        """True when a column can take continuous noise for Monte Carlo."""
+        cfg = (project.feature_config or {}).get(feature)
+        if isinstance(cfg, dict):
+            ftype = str(cfg.get("type") or "").lower()
+            if ftype in ("categorical", "boolean", "bool", "category"):
+                return False
+            if ftype in ("numeric", "number", "float", "int", "integer"):
+                return True
+        if isinstance(value, bool) or value in (True, False):
+            return False
+        if isinstance(value, str):
+            low = value.strip().lower()
+            if low in ("true", "false", "yes", "no", "y", "n"):
+                return False
+        try:
+            float(value)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    def _score_feature_dicts(
+        self,
+        project: Project,
+        trained_model,
+        model,
+        feature_dicts: list[dict[str, Any]],
+        *,
+        is_regression: bool,
+    ) -> np.ndarray:
+        """Batch-score raw feature dicts → probabilities or regression values."""
+        from app.ml.pipelines.feature_pipeline import FeatureTransformer
+
+        cols = list(project.feature_columns or [])
+        raw_df = pd.DataFrame([{c: row.get(c) for c in cols} for row in feature_dicts])
+        ft_path = os.path.join(trained_model.model_path, "feature_transformer.joblib")
+        if os.path.exists(ft_path):
+            transformer = FeatureTransformer()
+            transformer.load(trained_model.model_path)
+            feature_df = transformer.transform(raw_df)
+        else:
+            feature_df = raw_df.copy()
+            if project.feature_config:
+                for col, config in project.feature_config.items():
+                    if col.startswith("_") or not isinstance(config, dict):
+                        continue
+                    if col in feature_df.columns and config.get("type") == "categorical":
+                        categories = config.get("categories", [])
+                        code_map = config.get("code_map")
+
+                        def _encode(value):
+                            if code_map and str(value) in code_map:
+                                return code_map[str(value)]
+                            if value in categories:
+                                return categories.index(value)
+                            return -1
+
+                        feature_df[col] = feature_df[col].map(_encode)
+            for col in cols:
+                if col not in feature_df.columns:
+                    feature_df[col] = 0
+            if getattr(model, "feature_names", None):
+                for col in model.feature_names:
+                    if col not in feature_df.columns:
+                        feature_df[col] = 0
+                feature_df = feature_df[model.feature_names]
+            else:
+                feature_df = feature_df[[c for c in cols if c in feature_df.columns]]
+
+        if is_regression:
+            if hasattr(model, "predict"):
+                preds = np.asarray(model.predict(feature_df), dtype=float).reshape(-1)
+            else:
+                preds = np.asarray(
+                    [u.prediction for u in model.predict_with_uncertainty(feature_df)],
+                    dtype=float,
+                )
+            return preds
+
+        if hasattr(model, "predict_proba"):
+            proba = model.predict_proba(feature_df)
+            arr = np.asarray(proba, dtype=float)
+            if arr.ndim == 2 and arr.shape[1] >= 2:
+                return arr[:, 1]
+            return arr.reshape(-1)
+        return np.asarray(
+            [u.prediction for u in model.predict_with_uncertainty(feature_df)],
+            dtype=float,
+        )
+
+    def _monte_carlo_scenario(
+        self,
+        project: Project,
+        *,
+        base_features: dict[str, Any],
+        after_features: dict[str, Any],
+        locked_features: set[str],
+        domain: str,
+        n_draws: int,
+        noise_scale: float,
+        seed: Optional[int],
+        is_regression: bool,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Sample feature noise around the case and re-score before/after many times.
+
+        Locked features (user dials) stay fixed so the intervention is held constant.
+        Returns percentiles of before/after/delta and P(improve).
+        """
+        n_draws = int(n_draws) if n_draws is not None else 0
+        if n_draws <= 0:
+            return None
+        n_draws = max(20, min(n_draws, 500))
+        # Important: 0.0 is a valid scale (deterministic draws) — do not use `or`
+        scale = 0.05 if noise_scale is None else float(noise_scale)
+        noise_scale = float(max(0.0, min(scale, 0.25)))
+
+        trained_model = self.get_active_model(project.id)
+        if not trained_model:
+            return None
+
+        from app.ml.model_loader import load_routed_model
+
+        model = load_routed_model(
+            trained_model.model_path,
+            problem_type=project.problem_type,
+        )
+
+        cols = list(project.feature_columns or [])
+        base = {c: (base_features or {}).get(c) for c in cols}
+        after = {c: (after_features or {}).get(c) for c in cols}
+
+        numeric_cols: list[str] = []
+        for c in cols:
+            if c in locked_features:
+                continue
+            cl = str(c).lower()
+            # Skip identifiers — noise on IDs is meaningless and distorts draws
+            if cl.endswith("id") or cl.endswith("_id") or cl in {
+                "employeenumber",
+                "employee_number",
+                "customerid",
+                "customer_id",
+                "rownumber",
+                "index",
+            }:
+                continue
+            if self._is_numeric_feature(project, c, base.get(c)):
+                numeric_cols.append(c)
+
+        rng = np.random.default_rng(seed if seed is not None else None)
+        before_rows: list[dict[str, Any]] = []
+        after_rows: list[dict[str, Any]] = []
+
+        for _ in range(n_draws):
+            b = dict(base)
+            a = dict(after)
+            for c in numeric_cols:
+                try:
+                    x = float(b.get(c))
+                except (TypeError, ValueError):
+                    continue
+                bounds = self._feature_value_bounds(c, domain)
+                if bounds is not None:
+                    lo, hi = bounds
+                    span = max(hi - lo, 1.0)
+                    sigma = noise_scale * span
+                else:
+                    sigma = noise_scale * max(abs(x), 1.0)
+                noise = float(rng.normal(0.0, sigma))
+                bx = x + noise
+                # Mirror the same noise onto the after row so delta isolates the dials
+                try:
+                    ax = float(a.get(c)) + noise
+                except (TypeError, ValueError):
+                    ax = bx
+                if bounds is not None:
+                    lo, hi = bounds
+                    bx = min(hi, max(lo, bx))
+                    ax = min(hi, max(lo, ax))
+                    # keep Likert-ish ints looking like ints
+                    if float(lo).is_integer() and float(hi).is_integer() and span <= 10:
+                        bx = int(round(bx))
+                        ax = int(round(ax))
+                b[c] = bx
+                a[c] = ax
+            before_rows.append(b)
+            after_rows.append(a)
+
+        try:
+            before_scores = self._score_feature_dicts(
+                project, trained_model, model, before_rows, is_regression=is_regression
+            )
+            after_scores = self._score_feature_dicts(
+                project, trained_model, model, after_rows, is_regression=is_regression
+            )
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Monte Carlo scoring failed for project %s: %s", project.id, exc
+            )
+            return None
+
+        before_scores = np.asarray(before_scores, dtype=float).reshape(-1)
+        after_scores = np.asarray(after_scores, dtype=float).reshape(-1)
+        n = int(min(len(before_scores), len(after_scores)))
+        if n < 10:
+            return None
+        before_scores = before_scores[:n]
+        after_scores = after_scores[:n]
+        deltas = after_scores - before_scores
+
+        def _pcts(arr: np.ndarray) -> dict[str, float]:
+            return {
+                "p10": round(float(np.percentile(arr, 10)), 4),
+                "p50": round(float(np.percentile(arr, 50)), 4),
+                "p90": round(float(np.percentile(arr, 90)), 4),
+                "mean": round(float(np.mean(arr)), 4),
+            }
+
+        # Align with UI "no change" band (±0.5 pp for classification)
+        improve_thresh = -0.005 if not is_regression else -1e-9
+        worsen_thresh = 0.005 if not is_regression else 1e-9
+        p_improve = float(np.mean(deltas < improve_thresh))
+        p_worsen = float(np.mean(deltas > worsen_thresh))
+        p_flat = float(np.mean((deltas >= improve_thresh) & (deltas <= worsen_thresh)))
+
+        # Histogram on delta (pp for classification display on FE)
+        hist_vals = deltas * 100.0 if not is_regression else deltas
+        bins = 11
+        counts, edges = np.histogram(hist_vals, bins=bins)
+        return {
+            "n_draws": n,
+            "method": "feature_noise",
+            "noise_scale": noise_scale,
+            "locked_features": sorted(locked_features),
+            "noisy_features": numeric_cols[:40],
+            "before": _pcts(before_scores),
+            "after": _pcts(after_scores),
+            "delta": _pcts(deltas),
+            "p_improve": round(p_improve, 3),
+            "p_worsen": round(p_worsen, 3),
+            "p_unchanged": round(p_flat, 3),
+            "histogram": {
+                "bin_edges": [round(float(e), 3) for e in edges.tolist()],
+                "counts": [int(c) for c in counts.tolist()],
+                "unit": "pp" if not is_regression else "value",
+            },
+            "plain_summary": (
+                f"Across {n} noisy draws, chance this change helps is "
+                f"{p_improve:.0%} "
+                f"(median impact {(float(np.percentile(deltas, 50)) * (100 if not is_regression else 1)):+.1f}"
+                f"{' pp' if not is_regression else ''})."
+            ),
+        }
+
     def simulate(
         self,
         project_id: str,
         base_features: dict[str, Any],
         modified_features: dict[str, Any],
+        *,
+        n_draws: int = 200,
+        noise_scale: float = 0.05,
+        seed: Optional[int] = None,
     ) -> dict[str, Any]:
         """
         Phase 5 what-if: before/after prediction, real feature diffs,
         driver shift, re-ranked recs, and plain-language impact.
+        Optional Monte Carlo (n_draws>0) adds outcome distribution under feature noise.
         """
         project = self.get_project(project_id)
         if not project:
@@ -2127,6 +2508,18 @@ class ProjectService:
         # User requested a change that clamped to a no-op — still explain honestly
         noop_request = bool(clamp_notes) and not change_log
 
+        mc = self._monte_carlo_scenario(
+            project,
+            base_features=base_features or {},
+            after_features=combined,
+            locked_features=set(real_mods.keys()),
+            domain=domain,
+            n_draws=n_draws,
+            noise_scale=noise_scale,
+            seed=seed,
+            is_regression=is_regression,
+        )
+
         if is_regression:
             original_val = float(original.get("predicted_value") or 0)
             modified_val = float(modified.get("predicted_value") or 0)
@@ -2136,7 +2529,7 @@ class ProjectService:
                 else "worsened" if change > 1e-9
                 else "unchanged"
             )
-            return {
+            out = {
                 "original": {
                     "predicted_value": original_val,
                     "confidence": original.get("confidence", 0),
@@ -2152,7 +2545,7 @@ class ProjectService:
                 "impact": change,
                 "impact_percent": round(
                     change * 100 / max(abs(original_val), 0.01), 1
-                ) if original_val else 0,
+                ) if original_val is not None else 0,
                 "direction": direction,
                 "modified_features": real_mods,
                 "change_log": change_log,
@@ -2179,6 +2572,9 @@ class ProjectService:
                 "original_explanations": original.get("explanations"),
                 "modified_explanations": modified.get("explanations"),
             }
+            if mc:
+                out["monte_carlo"] = mc
+            return out
 
         original_prob = float(original.get("probability") or 0)
         modified_prob = float(modified.get("probability") or 0)
@@ -2214,6 +2610,11 @@ class ProjectService:
                 suggested,
                 key=lambda r: float(r.get("expected_delta") or 0),
             )
+        # Never surface 0-delta "suggestions" as actionable levers
+        suggested = [
+            s for s in (suggested or [])
+            if abs(float(s.get("expected_delta") or 0)) >= 0.005
+        ]
 
         from app.ml.soft_range import interval_is_soft
 
@@ -2235,6 +2636,7 @@ class ProjectService:
             prob_change=prob_change,
             outcome_label=outcome_label,
             domain=domain,
+            moving_levers=suggested,
         )
         if noop_request and not key_insights:
             key_insights = [
@@ -2257,7 +2659,7 @@ class ProjectService:
             domain=domain,
         )
 
-        return {
+        out = {
             "original": {
                 "probability": original_prob,
                 "confidence": original.get("confidence", 0),
@@ -2276,8 +2678,8 @@ class ProjectService:
             },
             "impact": prob_change,
             "impact_percent": round(
-                prob_change * 100 / max(original_prob, 0.01), 1
-            ) if original_prob else 0,
+                prob_change * 100 / max(abs(float(original_prob)), 0.01), 1
+            ) if original_prob is not None else 0,
             "risk_level_change": risk_change,
             "direction": risk_change,
             "modified_features": real_mods,
@@ -2299,6 +2701,9 @@ class ProjectService:
             "modified_explanations": modified.get("explanations"),
             "insight_brief_after": modified.get("insight_brief"),
         }
+        if mc:
+            out["monte_carlo"] = mc
+        return out
 
     def scenario_levers(
         self,
@@ -2384,7 +2789,7 @@ class ProjectService:
         moving = [
             r for r in all_rows if abs(float(r.get("expected_delta") or 0)) >= 0.005
         ]
-        # Focus list: all movers, then fill up to 6 editable dials so UI isn't a single box
+        # Focus list: movers first, then related explanation fields for editing
         focus_rows: list[dict[str, Any]] = list(moving)
         for r in all_rows:
             if len(focus_rows) >= 6:
@@ -2393,16 +2798,8 @@ class ProjectService:
                 continue
             focus_rows.append(r)
 
-        # Sidebar “dials that move” prefers true movers; still show fill-ins if few
-        display_levers = moving[:8] if moving else focus_rows[:6]
-        if len(display_levers) < 3:
-            for r in focus_rows:
-                if r.get("feature") in {x.get("feature") for x in display_levers}:
-                    continue
-                display_levers.append(r)
-                if len(display_levers) >= 5:
-                    break
-
+        # Sidebar “dials that move” — only real movers (never pad with 0-delta dials)
+        display_levers = moving[:8]
         names = [r.get("feature") for r in focus_rows if r.get("feature")]
         n_move = len(moving)
         if n_move >= 2:
@@ -2411,14 +2808,15 @@ class ProjectService:
                 f"Focus shows {len(names)} related fields to edit."
             )
         elif n_move == 1:
+            only = display_levers[0].get("label") or display_levers[0].get("feature")
             plain = (
-                "Only one dial strongly moves this estimate; focus also includes nearby "
-                "fields from the explanation so you can compare."
+                f"Only “{only}” strongly moves this estimate among the dials we probed. "
+                f"Satisfaction / overtime may not shift a calm case like this."
             )
         else:
             plain = (
-                "Few dials move this estimate much. Focus still shows related fields — "
-                "or use Show all fields."
+                "None of the usual dials move this estimate much — the score is already flat "
+                "for this person. Try Show all fields, or pick a higher-risk case."
             )
 
         return {
@@ -2484,6 +2882,7 @@ class ProjectService:
         prediction.feedback_date = datetime.utcnow()
         self.db.commit()
         self.db.refresh(prediction)
+        self._invalidate_effectiveness_cache(prediction.project_id)
 
         return self._format_feedback_record(prediction, project, outcome_norm)
 
@@ -2525,6 +2924,7 @@ class ProjectService:
             "yes",
             "true",
             "1",
+            "y",
             "churned",
             "attrited",
             "attrition",
@@ -2539,6 +2939,7 @@ class ProjectService:
             "no",
             "false",
             "0",
+            "n",
             "retained",
             "not_churned",
             "stayed",
@@ -2623,6 +3024,88 @@ class ProjectService:
             "notes_stored": False,
         }
 
+    def get_prediction_case(self, project_id: str, prediction_id: str) -> dict[str, Any]:
+        """Return a stored prediction shaped for the case brief / deep-links."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        prediction = (
+            self.db.query(ProjectPrediction)
+            .filter(
+                ProjectPrediction.id == prediction_id,
+                ProjectPrediction.project_id == project_id,
+            )
+            .first()
+        )
+        if not prediction:
+            raise ValueError("Prediction not found")
+
+        is_regression = project.problem_type == "regression"
+        outcome_label = project.target_description or project.target_column or "outcome"
+        drivers = list(prediction.top_factors or [])
+        feedback = None
+        if prediction.actual_outcome:
+            feedback = self._format_feedback_record(prediction, project)
+
+        if is_regression and prediction.predicted_value is not None:
+            plain = (
+                f"Stored case: predicted {outcome_label} ≈ "
+                f"{float(prediction.predicted_value):.4g}."
+            )
+        elif prediction.probability is not None:
+            plain = (
+                f"Stored case: about {float(prediction.probability):.0%} chance of "
+                f"{outcome_label}."
+            )
+        else:
+            plain = "Stored case opened from Priorities."
+
+        blindspots = None
+        blindspot_warnings = []
+        annotated_drivers = drivers
+        if drivers and not is_regression:
+            from app.ml.blindspot import annotate_drivers, detect_blindspots
+
+            # Deep-link hydrate: heuristics only (no parquet reload — keep Priorities snappy)
+            blindspots = detect_blindspots(
+                top_factors=drivers,
+                features=prediction.features or {},
+                feature_config=project.feature_config,
+                consistency=None,
+                training_data=None,
+                target_column=project.target_column,
+                target_positive_label=project.target_positive_label,
+                outcome_label=str(outcome_label),
+            )
+            annotated_drivers = annotate_drivers(drivers, blindspots)
+            blindspot_warnings = blindspots.get("warnings") or []
+
+        return {
+            "prediction_id": prediction.id,
+            "entity_id": prediction.entity_id,
+            "probability": prediction.probability,
+            "predicted_value": prediction.predicted_value,
+            "confidence": prediction.confidence,
+            "risk_level": prediction.risk_level,
+            "problem_type": project.problem_type,
+            "target": outcome_label,
+            "features": prediction.features or {},
+            "explanations": {
+                "drivers": annotated_drivers,
+                "shap": {"top_features": annotated_drivers},
+            },
+            "recommendations": prediction.recommendations or [],
+            "feedback": feedback,
+            "blindspots": blindspots,
+            "blindspot_warnings": blindspot_warnings,
+            "plain_summary": plain,
+            "source": "history",
+            "persisted": True,
+            "created_at": (
+                prediction.created_at.isoformat() if prediction.created_at else None
+            ),
+        }
+
     def get_feedback(
         self, project_id: str, prediction_id: str
     ) -> Optional[dict[str, Any]]:
@@ -2637,12 +3120,41 @@ class ProjectService:
             return None
         return self._format_feedback_record(prediction, project)
 
+    def _invalidate_effectiveness_cache(self, project_id: str) -> None:
+        _EFFECTIVENESS_CACHE.pop(f"{self.org_id}:{project_id}", None)
+
+    def _effectiveness_fingerprint(self, project_id: str) -> int:
+        """Cheap version stamp so cache refreshes when outcomes change."""
+        n_pred = (
+            self.db.query(ProjectPrediction)
+            .filter(
+                ProjectPrediction.project_id == project_id,
+                ProjectPrediction.action_taken.isnot(None),
+                ProjectPrediction.actual_outcome.isnot(None),
+            )
+            .count()
+        )
+        n_dec = (
+            self.db.query(Decision)
+            .filter(
+                Decision.project_id == project_id,
+                Decision.organization_id == self.org_id,
+                Decision.actual_outcome.isnot(None),
+                Decision.action_code.isnot(None),
+            )
+            .count()
+        )
+        return int(n_pred) * 1_000_003 + int(n_dec)
+
     def get_action_effectiveness(self, project_id: str) -> dict[str, dict]:
         """
         Map action_code -> {n, success_rate, success_n, action_name} for A5 blend.
 
         For churn/attrition-style positives: success = outcome negative (avoided
         the bad event) — retained customer / employee stayed.
+
+        Sources: ProjectPrediction feedback + Decision ledger outcomes (deduped).
+        Cached briefly on the predict hot path.
         """
         from app.recommendations.action_catalog import get_action
         from app.recommendations.domains import detect_domain
@@ -2650,14 +3162,30 @@ class ProjectService:
         project = self.get_project(project_id)
         if not project:
             return {}
+
+        cache_key = f"{self.org_id}:{project_id}"
+        fingerprint = self._effectiveness_fingerprint(project_id)
+        cached = _EFFECTIVENESS_CACHE.get(cache_key)
+        if (
+            cached
+            and cached[1] == fingerprint
+            and (time.time() - cached[0]) < _EFFECTIVENESS_TTL_SEC
+        ):
+            return cached[2]
+
         domain = detect_domain(
             feature_columns=project.feature_columns,
             project_name=project.name,
             target_column=project.target_column,
             target_description=project.target_description,
         )
+        is_regression = project.problem_type == "regression"
         rows = (
-            self.db.query(ProjectPrediction)
+            self.db.query(
+                ProjectPrediction.id,
+                ProjectPrediction.action_taken,
+                ProjectPrediction.actual_outcome,
+            )
             .filter(
                 ProjectPrediction.project_id == project_id,
                 ProjectPrediction.action_taken.isnot(None),
@@ -2666,12 +3194,14 @@ class ProjectService:
             .all()
         )
         stats: dict[str, dict[str, float]] = {}
+        seen_pred_ids: set[str] = set()
         for p in rows:
             code = (p.action_taken or "").strip()
             if not code:
                 continue
+            seen_pred_ids.add(p.id)
             norm = self._normalize_outcome(
-                p.actual_outcome, project, is_regression=project.problem_type == "regression"
+                p.actual_outcome, project, is_regression=is_regression
             )
             if not norm or norm.get("binary") is None:
                 continue
@@ -2680,20 +3210,71 @@ class ProjectService:
             # Success = avoided positive outcome (retained / stayed)
             if int(norm["binary"]) == 0:
                 bucket["success_n"] += 1
+
+        # Include ledger outcomes that never made it onto a prediction row
+        dec_rows = (
+            self.db.query(
+                Decision.id,
+                Decision.prediction_id,
+                Decision.action_code,
+                Decision.actual_outcome,
+            )
+            .filter(
+                Decision.project_id == project_id,
+                Decision.organization_id == self.org_id,
+                Decision.action_code.isnot(None),
+                Decision.actual_outcome.isnot(None),
+                Decision.status.in_(["committed", "checking", "closed"]),
+            )
+            .all()
+        )
+        for d in dec_rows:
+            if d.prediction_id and d.prediction_id in seen_pred_ids:
+                continue
+            code = (d.action_code or "").strip()
+            if not code:
+                continue
+            norm = self._normalize_outcome(
+                d.actual_outcome, project, is_regression=is_regression
+            )
+            if not norm or norm.get("binary") is None:
+                continue
+            bucket = stats.setdefault(code, {"n": 0, "success_n": 0})
+            bucket["n"] += 1
+            if int(norm["binary"]) == 0:
+                bucket["success_n"] += 1
+
         out = {}
         for code, b in stats.items():
             n = int(b["n"])
             if n < 1:
                 continue
             action = get_action(code, domain=domain)
+            success_n = int(b["success_n"])
+            rate = round(success_n / n, 4)
+            reliable = n >= 3
+            if not reliable:
+                note = (
+                    f"Logged {success_n}/{n} favorable — need 3+ before rankings shift."
+                )
+            elif rate >= 0.65:
+                note = f"Favorable in {success_n}/{n} cases — ranking slightly boosted."
+            elif rate <= 0.35:
+                note = f"Only {success_n}/{n} went well — ranking tempered."
+            else:
+                note = f"Mixed ({success_n}/{n} favorable) — mild ranking adjustment."
             out[code] = {
                 "n": n,
-                "success_n": int(b["success_n"]),
-                "success_rate": round(b["success_n"] / n, 4),
+                "n_outcomes": n,
+                "success_n": success_n,
+                "success_rate": rate,
+                "effectiveness_rate": rate,
                 "action_name": action.name if action else code,
                 "domain": domain,
-                "reliable": n >= 3,
+                "reliable": reliable,
+                "learning_note": note,
             }
+        _EFFECTIVENESS_CACHE[cache_key] = (time.time(), fingerprint, out)
         return out
 
     def get_feedback_summary(
@@ -2722,6 +3303,15 @@ class ProjectService:
             .filter(ProjectPrediction.project_id == project_id)
             .count()
         )
+        n_fb = (
+            self.db.query(ProjectPrediction)
+            .filter(
+                ProjectPrediction.project_id == project_id,
+                ProjectPrediction.actual_outcome.isnot(None),
+            )
+            .count()
+        )
+        # Match / recent sample over a bounded window; coverage uses full COUNT above
         with_fb = (
             self.db.query(ProjectPrediction)
             .filter(
@@ -2732,7 +3322,6 @@ class ProjectService:
             .limit(limit)
             .all()
         )
-        n_fb = len(with_fb)
         outcomes: dict[str, int] = {}
         agree = 0
         known = 0
@@ -2793,11 +3382,14 @@ class ProjectService:
                     f"Strongest logged action so far: {name} "
                     f"({best['success_n']}/{best['n']} {good_event} — avoided {bad_event})"
                 )
-                if not best.get("reliable"):
-                    plain += " — still a small sample (<3)."
+                if best.get("reliable"):
+                    plain += " — enough sample to gently reshape recommendation rankings."
+                else:
+                    plain += " — still a small sample (<3); rankings stay on the catalog."
                 plain += ". "
-            plain += "This is a basic outcome log — not a full follow-up autopsy."
+            plain += "Outcomes feed A7 learning; follow-up autopsy lives on the decision ledger."
 
+        reliable_n = sum(1 for a in ranked_actions if a.get("reliable"))
         return {
             "project_id": project_id,
             "problem_type": project.problem_type,
@@ -2812,12 +3404,23 @@ class ProjectService:
             "model_match_rate": round(acc, 4) if acc is not None else None,
             "action_effectiveness": action_eff,
             "action_effectiveness_ranked": ranked_actions,
+            "learning": {
+                "min_n": 3,
+                "actions_with_outcomes": len(ranked_actions),
+                "actions_reshaping_rankings": reliable_n,
+                "plain": (
+                    f"{reliable_n} action(s) have enough outcomes to reshape rankings."
+                    if reliable_n
+                    else "No action yet has 3+ outcomes — recommendations still use the catalog."
+                ),
+            },
             "recent": recent[:20],
             "plain_summary": plain,
-            "layer": "A7_basic_feedback_log",
-            "not_included": [
-                "scheduled_30_60_90_autopsy",
-                "narrative_decision_ledger",
-                "causal_blindspots",
+            "layer": "A7_outcome_learning",
+            "not_included": [],
+            "included_layers": [
+                "A7_outcome_learning",
+                "B3_scheduled_rechecks",
+                "B4_causal_blindspots",
             ],
         }

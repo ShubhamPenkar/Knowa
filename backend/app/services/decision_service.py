@@ -2,18 +2,93 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.db.models import Decision, Project, ProjectPrediction
 from app.recommendations.action_catalog import get_action
 from app.recommendations.domains import detect_domain
 
+logger = logging.getLogger(__name__)
+
 
 VALID_STATUSES = {"proposed", "committed", "checking", "closed", "cancelled"}
 VALID_INTERVALS = {30, 60, 90}
+
+
+def flag_due_rechecks(
+    db: Session,
+    *,
+    org_id: Optional[str] = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """
+    System/org sweep: flip due committed decisions to checking.
+
+    Used by Celery Beat and the manual recheck-sweep API. Does not invent
+    outcomes or move recheck_at — portfolio/UI surfaces the follow-up.
+    """
+    now = datetime.utcnow()
+    lim = min(max(int(limit), 1), 1000)
+
+    due_filter = (Decision.recheck_at.is_(None)) | (Decision.recheck_at <= now)
+
+    already_q = db.query(Decision).filter(
+        Decision.status == "checking",
+        due_filter,
+    )
+    if org_id:
+        already_q = already_q.filter(Decision.organization_id == org_id)
+    already_checking = int(already_q.count())
+
+    null_first = case((Decision.recheck_at.is_(None), 0), else_=1)
+    q = (
+        db.query(Decision)
+        .filter(
+            Decision.status == "committed",
+            due_filter,
+        )
+        .order_by(null_first, Decision.recheck_at.asc(), Decision.committed_at.asc())
+    )
+    if org_id:
+        q = q.filter(Decision.organization_id == org_id)
+
+    rows = q.limit(lim).all()
+    flagged_ids: list[str] = []
+    stamp = (
+        f"[{now.isoformat()}Z] Scheduled recheck due — open this follow-up "
+        f"and log what happened."
+    )
+    for d in rows:
+        d.status = "checking"
+        d.updated_at = now
+        notes = (d.outcome_notes or "").strip()
+        # Avoid duplicate scheduled stamps on rare race retries
+        if stamp not in notes:
+            d.outcome_notes = f"{notes}\n---\n{stamp}" if notes else stamp
+        flagged_ids.append(d.id)
+
+    if flagged_ids:
+        db.commit()
+
+    plain = (
+        f"Flagged {len(flagged_ids)} follow-up(s) for check-in"
+        + (f"; {already_checking} already in review." if already_checking else ".")
+    )
+    return {
+        "layer": "B3_scheduled_rechecks",
+        "flagged": len(flagged_ids),
+        "already_checking": already_checking,
+        "decision_ids": flagged_ids,
+        "limit": lim,
+        "org_id": org_id,
+        "plain_summary": plain,
+        "ran_at": now.isoformat(),
+    }
 
 
 class DecisionService:
@@ -168,8 +243,8 @@ class DecisionService:
         ]
         items = [self._format(d, project) for d in rows]
         plain = (
-            f"{len(items)} decision(s) on the ledger"
-            + (f"; {len(due)} due for recheck." if due else ".")
+            f"{len(items)} follow-up(s) on this project"
+            + (f"; {len(due)} due for a check-in." if due else ".")
         )
         return {
             "project_id": project_id,
@@ -179,6 +254,191 @@ class DecisionService:
             "decisions": items,
             "plain_summary": plain,
         }
+
+    def list_portfolio(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        limit: int = 100,
+        closed_days: int = 30,
+        due_soon_days: int = 7,
+    ) -> dict[str, Any]:
+        """
+        Org-wide follow-up board: overdue / due now / upcoming / recently closed.
+
+        Counts are true totals; list payloads are capped for the UI.
+        Open rows are fetched by recheck urgency (not commit recency) so old
+        overdue items are never starved by newer commits.
+        """
+        now = datetime.utcnow()
+        closed_after = now - timedelta(days=max(1, int(closed_days)))
+        soon_horizon = now + timedelta(days=max(0, int(due_soon_days)))
+        overdue_cutoff = now - timedelta(days=1)
+        list_cap = min(max(int(limit), 10), 50)
+        open_fetch_cap = 500
+
+        base = self.db.query(Decision).filter(Decision.organization_id == self.org_id)
+        if project_id:
+            self._get_project(project_id)
+            base = base.filter(Decision.project_id == project_id)
+
+        # Null recheck_at first (treat as due), then earliest recheck
+        null_first = case((Decision.recheck_at.is_(None), 0), else_=1)
+        open_rows = (
+            base.filter(Decision.status.in_(["committed", "checking"]))
+            .order_by(null_first, Decision.recheck_at.asc(), Decision.committed_at.desc())
+            .limit(open_fetch_cap)
+            .all()
+        )
+        closed_rows = (
+            base.filter(
+                Decision.status == "closed",
+                Decision.closed_at.isnot(None),
+                Decision.closed_at >= closed_after,
+            )
+            .order_by(Decision.closed_at.desc())
+            .limit(max(list_cap, 20))
+            .all()
+        )
+
+        needed_ids = {d.project_id for d in open_rows} | {d.project_id for d in closed_rows}
+        projects = {}
+        if needed_ids:
+            projects = {
+                p.id: p
+                for p in self.db.query(Project)
+                .filter(
+                    Project.organization_id == self.org_id,
+                    Project.id.in_(list(needed_ids)),
+                )
+                .all()
+            }
+
+        overdue: list[dict[str, Any]] = []
+        due_now: list[dict[str, Any]] = []
+        upcoming: list[dict[str, Any]] = []
+        closed_recent: list[dict[str, Any]] = []
+
+        def _impact_key(item: dict[str, Any]) -> float:
+            lift = item.get("expected_lift")
+            try:
+                return abs(float(lift)) if lift is not None else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _enrich(d: Decision) -> Optional[dict[str, Any]]:
+            project = projects.get(d.project_id)
+            if not project:
+                return None
+            item = self._format(d, project, include_project_name=True)
+            lift = d.expected_lift
+            if lift is not None:
+                pp = float(lift) * 100
+                if abs(pp) >= 0.5:
+                    item["impact_hint"] = (
+                        f"Hoped to lower chance by ~{abs(pp):.0f} pp"
+                        if pp < 0
+                        else f"Expected chance up ~{pp:.0f} pp"
+                    )
+                else:
+                    item["impact_hint"] = "Small expected change"
+            else:
+                item["impact_hint"] = None
+            return item
+
+        n_due_soon = 0
+        for d in open_rows:
+            item = _enrich(d)
+            if not item:
+                continue
+            if d.recheck_at is None:
+                due_now.append(item)
+            elif d.recheck_at <= overdue_cutoff:
+                overdue.append(item)
+            elif d.recheck_at <= now:
+                due_now.append(item)
+            else:
+                upcoming.append(item)
+                if d.recheck_at <= soon_horizon:
+                    n_due_soon += 1
+
+        for d in closed_rows:
+            item = _enrich(d)
+            if item:
+                closed_recent.append(item)
+
+        def _sort_open(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return sorted(
+                items,
+                key=lambda x: (
+                    x.get("recheck_at") or "",
+                    -_impact_key(x),
+                ),
+            )
+
+        overdue = _sort_open(overdue)
+        due_now = _sort_open(due_now)
+        upcoming = _sort_open(upcoming)
+        # closed_rows already newest-first
+
+        n_overdue, n_due, n_up = len(overdue), len(due_now), len(upcoming)
+        n_closed = len(closed_recent)
+
+        overdue_out = overdue[:list_cap]
+        due_now_out = due_now[:list_cap]
+        upcoming_out = upcoming[:list_cap]
+        closed_out = closed_recent[: min(20, list_cap)]
+
+        bits = []
+        if n_overdue:
+            bits.append(f"{n_overdue} overdue")
+        if n_due:
+            bits.append(f"{n_due} due now")
+        if n_up:
+            if n_due_soon and n_due_soon < n_up:
+                bits.append(f"{n_up} upcoming ({n_due_soon} in {due_soon_days}d)")
+            else:
+                bits.append(f"{n_up} upcoming")
+        if not bits:
+            plain = "No open follow-ups — save one from a case when you commit to an action."
+        else:
+            plain = "Follow-ups across your projects: " + "; ".join(bits) + "."
+
+        return {
+            "layer": "B3_followup_portfolio",
+            "counts": {
+                "overdue": n_overdue,
+                "due_now": n_due,
+                "upcoming": n_up,
+                "due_soon": n_due_soon,
+                "closed_recent": n_closed,
+            },
+            "truncated": {
+                "overdue": n_overdue > len(overdue_out),
+                "due_now": n_due > len(due_now_out),
+                "upcoming": n_up > len(upcoming_out),
+                "closed_recent": n_closed > len(closed_out),
+            },
+            "overdue": overdue_out,
+            "due_now": due_now_out,
+            "upcoming": upcoming_out,
+            "closed_recent": closed_out,
+            "plain_summary": plain,
+            "due_soon_days": due_soon_days,
+            "closed_days": closed_days,
+        }
+
+    def flag_due_rechecks(self, *, limit: int = 200) -> dict[str, Any]:
+        """Mark due committed follow-ups as checking (scheduled recheck sweep).
+
+        Does not invent outcomes or change recheck_at — humans still check in.
+        Idempotent: already-checking rows are counted but not re-noted.
+        """
+        return flag_due_rechecks(
+            self.db,
+            org_id=self.org_id,
+            limit=limit,
+        )
 
     def get_decision(self, project_id: str, decision_id: str) -> dict[str, Any]:
         project = self._get_project(project_id)
@@ -256,42 +516,61 @@ class DecisionService:
         self.db.commit()
         self.db.refresh(d)
 
-        # Bridge to A7: stamp prediction when we have a known yes/no (don't wipe with unknown)
-        if d.prediction_id and d.actual_outcome:
-            kind = self._normalize_binary_outcome(d.actual_outcome, project)
-            if kind in ("positive", "negative"):
-                try:
-                    from app.services.project_service import ProjectService
+        payload = self._format(d, project, include_snapshot=True)
 
-                    ProjectService(self.db, self.org_id).record_feedback(
+        # Bridge to A7: stamp prediction when we have a known yes/no (don't wipe with unknown)
+        feedback_synced: Optional[bool] = None
+        feedback_sync_error: Optional[str] = None
+        if d.actual_outcome:
+            from app.services.project_service import ProjectService
+
+            ps = ProjectService(self.db, self.org_id)
+            kind = self._normalize_binary_outcome(d.actual_outcome, project)
+            if d.prediction_id and kind in ("positive", "negative"):
+                try:
+                    ps.record_feedback(
                         d.prediction_id,
-                        d.actual_outcome,
+                        kind,
                         action_taken=d.action_code,
                         project_id=project_id,
                     )
-                except Exception:
-                    # Check-in already saved; A7 sync is best-effort
-                    pass
+                    feedback_synced = True
+                except Exception as exc:
+                    # Check-in already saved; surface sync failure for the client
+                    feedback_synced = False
+                    feedback_sync_error = str(exc)[:240]
+                    logger.warning(
+                        "A7 feedback sync failed for decision %s: %s",
+                        d.id,
+                        feedback_sync_error,
+                    )
+            else:
+                # Decision-only outcomes still affect effectiveness blends
+                ps._invalidate_effectiveness_cache(project_id)
 
-        return self._format(d, project, include_snapshot=True)
+        if feedback_synced is not None:
+            payload["feedback_synced"] = feedback_synced
+        if feedback_sync_error:
+            payload["feedback_sync_error"] = feedback_sync_error
+        return payload
 
     def _normalize_binary_outcome(self, raw: Optional[str], project: Project) -> Optional[str]:
-        """Map free-text outcome to positive / negative / unknown (classification)."""
+        """Map free-text outcome via the shared A7 normalizer (positive/negative/unknown)."""
         if not raw:
             return None
-        low = str(raw).strip().lower()
-        if not low:
-            return None
-        pos = str(project.target_positive_label or "1").strip().lower()
-        if low in ("unknown", "unk", "n/a", "na", "pending"):
+        from app.services.project_service import ProjectService
+
+        is_regression = project.problem_type == "regression"
+        norm = ProjectService(self.db, self.org_id)._normalize_outcome(
+            str(raw), project, is_regression=is_regression
+        )
+        if not norm:
             return "unknown"
-        if low in ("positive", "yes", "1", "true", "y") or low == pos:
-            return "positive"
-        if low in ("negative", "no", "0", "false", "n"):
-            return "negative"
-        # Non-positive label text often means the event did not happen
-        if pos and low != pos:
-            return "negative"
+        if norm.get("kind") == "unknown":
+            return "unknown"
+        stored = norm.get("stored")
+        if stored in ("positive", "negative"):
+            return stored
         return "unknown"
 
     def _outcome_label(self, project: Project) -> str:
@@ -367,6 +646,7 @@ class DecisionService:
         project: Project,
         *,
         include_snapshot: bool = False,
+        include_project_name: bool = False,
     ) -> dict[str, Any]:
         now = datetime.utcnow()
         due = bool(
@@ -377,6 +657,7 @@ class DecisionService:
         payload = {
             "id": d.id,
             "project_id": d.project_id,
+            "project_name": project.name,
             "prediction_id": d.prediction_id,
             "entity_id": d.entity_id,
             "status": d.status,
@@ -400,9 +681,11 @@ class DecisionService:
             "closed_at": d.closed_at.isoformat() if d.closed_at else None,
             "layer": "B3_decision_ledger",
             "plain_summary": d.decision_summary
-            or f"Decision “{d.action_name}” ({d.status}).",
+            or f"Follow-up “{d.action_name}” ({d.status}).",
         }
         if include_snapshot:
             payload["case_snapshot"] = d.case_snapshot
-            payload["project_name"] = project.name
+        if not include_project_name and not include_snapshot:
+            # Keep project_name always — useful for deep links; cheap field
+            pass
         return payload

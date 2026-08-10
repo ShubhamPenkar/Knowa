@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PredictionPanel } from '../components/PredictionPanel';
 
 export default function ProjectDetail() {
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const [project, setProject] = useState(null);
@@ -24,6 +25,8 @@ export default function ProjectDetail() {
   const [spotLoading, setSpotLoading] = useState(false);
   const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [ledger, setLedger] = useState(null);
+  const [extraDecision, setExtraDecision] = useState(null);
+  const [focusDecisionId, setFocusDecisionId] = useState(null);
   const [checkInTarget, setCheckInTarget] = useState(null);
   const [checkInOutcome, setCheckInOutcome] = useState('');
   const [checkInNotes, setCheckInNotes] = useState('');
@@ -32,8 +35,14 @@ export default function ProjectDetail() {
   const [checkInSaving, setCheckInSaving] = useState(false);
   const [checkInError, setCheckInError] = useState('');
   const [lastAutopsy, setLastAutopsy] = useState(null);
+  const deepLinkRef = useRef({ decision: null, prediction: null });
 
   useEffect(() => {
+    deepLinkRef.current = { decision: null, prediction: null };
+    setExtraDecision(null);
+    setFocusDecisionId(null);
+    setPrediction(null);
+    setSelectedRowIdx(null);
     if (token && id) fetchProject();
   }, [id, token]);
 
@@ -112,7 +121,7 @@ export default function ProjectDetail() {
 
   const fetchLedger = async () => {
     try {
-      const res = await fetch(`/api/projects/${id}/decisions?limit=30`, {
+      const res = await fetch(`/api/projects/${id}/decisions?limit=80`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) setLedger(await res.json());
@@ -131,6 +140,101 @@ export default function ProjectDetail() {
     setCheckInError('');
     setLastAutopsy(null);
   };
+
+  // Priorities → case deep-link (?prediction=)
+  useEffect(() => {
+    const predictionId = searchParams.get('prediction');
+    if (!token || !id || !predictionId) return;
+    if (deepLinkRef.current.prediction === predictionId) return;
+    if (!(project?.status === 'trained' || project?.status === 'ready')) return;
+
+    deepLinkRef.current.prediction = predictionId;
+    let cancelled = false;
+    (async () => {
+      setPredicting(true);
+      setPredictError('');
+      try {
+        const res = await fetch(`/api/projects/${id}/predictions/${predictionId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setPredictError(
+            typeof data.detail === 'string' ? data.detail : 'Could not open that case'
+          );
+          setPredicting(false);
+          return;
+        }
+        setPrediction(data);
+        setSelectedRowIdx(null);
+        setKnownOutcome(null);
+        requestAnimationFrame(() => {
+          document
+            .getElementById('case-brief')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      } catch (err) {
+        if (!cancelled) setPredictError(err?.message || 'Could not open that case');
+      }
+      if (!cancelled) setPredicting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, id, token, project?.status]);
+
+  // Priorities → follow-up deep-link (?decision=&checkin=1)
+  useEffect(() => {
+    const decisionId = searchParams.get('decision');
+    if (!token || !id || !decisionId || !ledger) return;
+    if (deepLinkRef.current.decision === decisionId) return;
+
+    deepLinkRef.current.decision = decisionId;
+    setFocusDecisionId(decisionId);
+    const wantCheckin = searchParams.get('checkin') === '1';
+
+    let cancelled = false;
+    (async () => {
+      let target = (ledger.decisions || []).find((d) => d.id === decisionId) || null;
+      if (!target) {
+        try {
+          const res = await fetch(`/api/projects/${id}/decisions/${decisionId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            target = await res.json();
+            if (!cancelled) setExtraDecision(target);
+          }
+        } catch {
+          /* ignore — highlight still attempts */
+        }
+      }
+      if (cancelled) return;
+
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`decision-${decisionId}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+
+      if (
+        wantCheckin &&
+        target &&
+        target.status !== 'closed' &&
+        target.status !== 'cancelled'
+      ) {
+        openCheckIn(target);
+        const next = new URLSearchParams(searchParams);
+        next.delete('checkin');
+        setSearchParams(next, { replace: true });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ledger, searchParams, id, token]);
 
   const closeCheckIn = () => {
     if (checkInSaving) return;
@@ -214,6 +318,17 @@ export default function ProjectDetail() {
   const featurePreviewCols = columnSource
     .filter((col) => col !== project?.target_column)
     .slice(0, 5);
+
+  const visibleDecisions = useMemo(() => {
+    const all = [...(ledger?.decisions || [])];
+    if (extraDecision && !all.some((d) => d.id === extraDecision.id)) {
+      all.unshift(extraDecision);
+    }
+    if (!focusDecisionId) return all.slice(0, 8);
+    const focused = all.find((d) => d.id === focusDecisionId);
+    const rest = all.filter((d) => d.id !== focusDecisionId).slice(0, 7);
+    return focused ? [focused, ...rest] : all.slice(0, 8);
+  }, [ledger, extraDecision, focusDecisionId]);
 
   /** Stable customer/row id for feedback join later. */
   const resolveEntityId = (row, idx) => {
@@ -485,71 +600,78 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {isReady && rows.length > 0 && (
-        <section className="grid lg:grid-cols-5 gap-8 mb-10">
+      {isReady && (rows.length > 0 || prediction || predicting || predictError) && (
+        <section id="case-brief" className="grid lg:grid-cols-5 gap-8 mb-10">
           <div className="lg:col-span-3 min-w-0">
             <h2 className="font-display text-lg font-semibold text-ink mb-1">Who needs attention?</h2>
             <p className="text-sm text-[var(--muted)] mb-4">
-              Click a row to open their brief. “In data” is the labeled outcome in your dataset
-              (when available) — not something the model “knew” in advance.
+              {rows.length > 0
+                ? 'Click a row to open their brief. “In data” is the labeled outcome in your dataset (when available) — not something the model “knew” in advance.'
+                : 'Opened from Priorities — full case brief is on the right.'}
             </p>
-            <div className="surface overflow-x-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>In data</th>
-                    {featurePreviewCols.map((col) => (
-                      <th key={col} className="truncate max-w-[6rem]">
-                        {String(col).replace(/[_-]+/g, ' ')}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.slice(0, 15).map((row, idx) => {
-                    const actual =
-                      String(row[project.target_column]) === String(project.target_positive_label);
-                    const selected = selectedRowIdx === idx;
-                    return (
-                      <tr
-                        key={idx}
-                        onClick={() => handlePredictRow(row, idx)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handlePredictRow(row, idx);
-                          }
-                        }}
-                        tabIndex={0}
-                        role="button"
-                        aria-pressed={selected}
-                        aria-label={`Open case ${idx + 1}`}
-                        className={`cursor-pointer transition-colors hover:bg-mist/40 ${
-                          selected ? 'bg-teal-soft/30 ring-1 ring-inset ring-teal/30' : ''
-                        }`}
-                      >
-                        <td className="text-[var(--muted)]">{idx + 1}</td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              actual ? 'bg-coral-soft text-ink' : 'bg-mist text-ink'
-                            }`}
-                          >
-                            {actual ? 'Yes' : 'No'}
-                          </span>
-                        </td>
-                        {featurePreviewCols.map((col) => (
-                          <td key={col} className="truncate max-w-[6rem] text-[var(--muted)]">
-                            {String(row[col] ?? '')}
+            {rows.length > 0 ? (
+              <div className="surface overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>In data</th>
+                      {featurePreviewCols.map((col) => (
+                        <th key={col} className="truncate max-w-[6rem]">
+                          {String(col).replace(/[_-]+/g, ' ')}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0, 15).map((row, idx) => {
+                      const actual =
+                        String(row[project.target_column]) === String(project.target_positive_label);
+                      const selected = selectedRowIdx === idx;
+                      return (
+                        <tr
+                          key={idx}
+                          onClick={() => handlePredictRow(row, idx)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handlePredictRow(row, idx);
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-pressed={selected}
+                          aria-label={`Open case ${idx + 1}`}
+                          className={`cursor-pointer transition-colors hover:bg-mist/40 ${
+                            selected ? 'bg-teal-soft/30 ring-1 ring-inset ring-teal/30' : ''
+                          }`}
+                        >
+                          <td className="text-[var(--muted)]">{idx + 1}</td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                actual ? 'bg-coral-soft text-ink' : 'bg-mist text-ink'
+                              }`}
+                            >
+                              {actual ? 'Yes' : 'No'}
+                            </span>
                           </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          {featurePreviewCols.map((col) => (
+                            <td key={col} className="truncate max-w-[6rem] text-[var(--muted)]">
+                              {String(row[col] ?? '')}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="border border-mist px-5 py-6 text-sm text-[var(--muted)]">
+                No sample rows loaded here — the stored case brief still opens on the right.
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-2">
@@ -595,18 +717,12 @@ export default function ProjectDetail() {
         </section>
       )}
 
-      {isReady &&
-        project.problem_type !== 'regression' &&
-        Array.isArray(ledger?.decisions) &&
-        ledger.decisions.length > 0 && (
-          <section className="mb-8 border border-mist">
+      {isReady && project.problem_type !== 'regression' && visibleDecisions.length > 0 && (
+          <section id="follow-ups" className="mb-8 border border-mist">
             <div className="px-5 py-4 border-b border-mist">
               <h2 className="font-display text-lg font-semibold text-ink">Your follow-ups</h2>
               <p className="text-sm text-[var(--muted)] mt-1">
-                {ledger.plain_summary || 'Actions you saved from cases.'}
-                {ledger.due_for_recheck > 0
-                  ? ` ${ledger.due_for_recheck} due for a check-in.`
-                  : ''}
+                {ledger?.plain_summary || 'Actions you saved from cases.'}
               </p>
             </div>
             {lastAutopsy && (
@@ -616,7 +732,7 @@ export default function ProjectDetail() {
               </div>
             )}
             <ul className="divide-y divide-mist">
-              {ledger.decisions.slice(0, 8).map((d) => {
+              {visibleDecisions.map((d) => {
                 const statusLabel =
                   d.status === 'committed'
                     ? 'Scheduled'
@@ -629,10 +745,14 @@ export default function ProjectDetail() {
                           : d.status === 'proposed'
                             ? 'Proposed'
                             : String(d.status || '').replace(/_/g, ' ');
+                const focused = focusDecisionId === d.id;
                 return (
                   <li
+                    id={`decision-${d.id}`}
                     key={d.id}
-                    className="px-5 py-3 flex flex-wrap items-start justify-between gap-3 text-sm"
+                    className={`px-5 py-3 flex flex-wrap items-start justify-between gap-3 text-sm transition-colors ${
+                      focused ? 'bg-teal-soft/35 ring-1 ring-inset ring-teal/30' : ''
+                    }`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-medium text-ink">{d.action_name}</div>
@@ -649,15 +769,25 @@ export default function ProjectDetail() {
                         </p>
                       )}
                     </div>
-                    {d.status !== 'closed' && d.status !== 'cancelled' && (
-                      <button
-                        type="button"
-                        onClick={() => openCheckIn(d)}
-                        className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
-                      >
-                        Update
-                      </button>
-                    )}
+                    <div className="shrink-0 flex flex-wrap gap-2">
+                      {d.prediction_id && (
+                        <Link
+                          to={`/projects/${id}?prediction=${d.prediction_id}&decision=${d.id}`}
+                          className="text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
+                        >
+                          Open case
+                        </Link>
+                      )}
+                      {d.status !== 'closed' && d.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          onClick={() => openCheckIn(d)}
+                          className="text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
+                        >
+                          Update
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}
@@ -891,6 +1021,11 @@ export default function ProjectDetail() {
                 <p className="text-sm text-[var(--muted)] leading-relaxed max-w-2xl mb-4">
                   {feedbackSummary.plain_summary}
                 </p>
+                {feedbackSummary.learning?.plain && (
+                  <p className="text-sm text-teal mb-4 leading-relaxed max-w-2xl">
+                    {feedbackSummary.learning.plain}
+                  </p>
+                )}
                 <div className="grid sm:grid-cols-3 gap-px bg-mist border border-mist">
                   <div className="bg-paper px-3 py-3">
                     <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
@@ -915,11 +1050,15 @@ export default function ProjectDetail() {
                   </div>
                   <div className="bg-paper px-3 py-3">
                     <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
-                      Action types tracked
+                      Reshaping rankings
                     </div>
                     <div className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
-                      {Object.keys(feedbackSummary.action_effectiveness || {}).length}
+                      {feedbackSummary.learning?.actions_reshaping_rankings ?? 0}
                     </div>
+                    <p className="text-xs text-[var(--muted)] mt-1">
+                      of {Object.keys(feedbackSummary.action_effectiveness || {}).length} tracked
+                      actions (need 3+ outcomes)
+                    </p>
                   </div>
                 </div>
                 {Array.isArray(feedbackSummary.action_effectiveness_ranked) &&
@@ -933,9 +1072,12 @@ export default function ProjectDetail() {
                           <span className="text-ink font-medium">
                             {a.action_name || a.action_code}
                           </span>
-                          <span className="tabular-nums text-[var(--muted)]">
-                            favorable in {a.success_n}/{a.n} logged cases
-                            {!a.reliable ? ' · small sample' : ''}
+                          <span className="tabular-nums text-[var(--muted)] text-right">
+                            {a.success_n}/{a.n} favorable
+                            {a.reliable ? ' · reshapes ranking' : ' · small sample'}
+                            {a.learning_note ? (
+                              <span className="block text-xs text-teal mt-0.5">{a.learning_note}</span>
+                            ) : null}
                           </span>
                         </li>
                       ))}

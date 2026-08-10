@@ -15,6 +15,7 @@ export default function Projects() {
     feature_columns: [],
     problem_type: 'binary_classification',
     target_positive_label: '',
+    target_description: '',
   });
   const [selectedDataset, setSelectedDataset] = useState(null);
   const [targetLabels, setTargetLabels] = useState([]);
@@ -22,7 +23,28 @@ export default function Projects() {
   const [error, setError] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deletingProjectId, setDeletingProjectId] = useState(null);
+  const [intentDraft, setIntentDraft] = useState(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [showManualSetup, setShowManualSetup] = useState(false);
   const navigate = useNavigate();
+
+  const resetCreateForm = () => {
+    setNewProject({
+      name: '',
+      description: '',
+      dataset_id: '',
+      target_column: '',
+      feature_columns: [],
+      problem_type: 'binary_classification',
+      target_positive_label: '',
+      target_description: '',
+    });
+    setSelectedDataset(null);
+    setTargetLabels([]);
+    setIntentDraft(null);
+    setShowManualSetup(false);
+    setError('');
+  };
 
   const preferredPositive = [
     'yes', 'y', 'true', 't', '1', 'positive', 'pos', 'high',
@@ -73,8 +95,11 @@ export default function Projects() {
       target_column: '',
       feature_columns: [],
       target_positive_label: '',
+      target_description: '',
     }));
     setTargetLabels([]);
+    setIntentDraft(null);
+    setShowManualSetup(false);
     const dataset = datasets.find((d) => d.id === datasetId);
     if (dataset) {
       const res = await fetch(`/api/datasets/${datasetId}/preview?rows=0`, {
@@ -82,8 +107,100 @@ export default function Projects() {
       });
       if (res.ok) {
         const data = await res.json();
-        setSelectedDataset({ ...dataset, columns: data.columns });
+        const cols = (data.columns || [])
+          .map((c) => (typeof c === 'string' ? c : c?.name))
+          .filter(Boolean);
+        setSelectedDataset({ ...dataset, columns: cols });
       }
+    }
+  };
+
+  const applyIntentDraft = async (draft) => {
+    if (!draft) return;
+    const features = Array.isArray(draft.feature_columns)
+      ? draft.feature_columns.map((c) => (typeof c === 'string' ? c : c?.name)).filter(Boolean)
+      : [];
+    setNewProject((prev) => ({
+      ...prev,
+      name: prev.name?.trim() ? prev.name : draft.suggested_name || prev.name,
+      description: prev.description?.trim()
+        ? prev.description
+        : draft.problem_description || prev.description,
+      problem_type: draft.problem_type || prev.problem_type,
+      target_column: draft.target_column || '',
+      target_positive_label: draft.target_positive_label || '',
+      target_description: draft.target_description || '',
+      feature_columns: features,
+    }));
+    if (Array.isArray(draft.present_target_labels) && draft.present_target_labels.length) {
+      setTargetLabels(draft.present_target_labels.map(String));
+    } else if (
+      draft.target_column &&
+      draft.problem_type !== 'regression' &&
+      newProject.dataset_id
+    ) {
+      // Fetch labels if suggest payload omitted them
+      try {
+        const res = await fetch(
+          `/api/datasets/${newProject.dataset_id}/columns/${encodeURIComponent(draft.target_column)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (res.ok) {
+          const stats = await res.json();
+          let values = [];
+          if (stats.value_counts) values = Object.keys(stats.value_counts);
+          else if (Array.isArray(stats.categories)) values = stats.categories.map(String);
+          setTargetLabels(values.map(String).sort());
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    setShowManualSetup(true);
+  };
+
+  const handleSuggestSetup = async () => {
+    if (!newProject.dataset_id) {
+      setError('Choose a dataset first.');
+      return;
+    }
+    if (!newProject.description?.trim()) {
+      setError('Describe the decision problem in plain language first.');
+      return;
+    }
+    setSuggesting(true);
+    setError('');
+    try {
+      const res = await fetch('/api/projects/suggest-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          dataset_id: newProject.dataset_id,
+          problem_description: newProject.description,
+          project_name: newProject.name || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data.detail;
+        setError(
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
+              : 'Could not suggest a setup'
+        );
+        return;
+      }
+      setIntentDraft(data);
+      applyIntentDraft(data);
+    } catch {
+      setError('Network error while suggesting setup.');
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -126,17 +243,40 @@ export default function Projects() {
     setCreating(true);
     setError('');
     try {
+      const payload = {
+        ...newProject,
+        name:
+          newProject.name?.trim() ||
+          intentDraft?.suggested_name ||
+          selectedDataset?.name ||
+          'New project',
+        target_description:
+          newProject.target_description?.trim() ||
+          newProject.target_column ||
+          'outcome',
+        description: newProject.description?.trim() || null,
+      };
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(newProject),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) navigate(`/projects/${data.id}`);
-      else setError(data.detail || 'Failed to create project');
+      else {
+        const detail = data.detail;
+        setError(
+          typeof detail === 'string'
+            ? detail
+            : detail?.message ||
+              (Array.isArray(detail)
+                ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
+                : 'Failed to create project')
+        );
+      }
     } catch {
       setError('Network error. Please try again.');
     } finally {
@@ -191,7 +331,14 @@ export default function Projects() {
             Connect a dataset, prepare guidance, then review cases and choose next steps.
           </p>
         </div>
-        <button type="button" onClick={() => setShowCreate(true)} className="btn-primary">
+        <button
+          type="button"
+          onClick={() => {
+            resetCreateForm();
+            setShowCreate(true);
+          }}
+          className="btn-primary"
+        >
           New project
         </button>
       </div>
@@ -207,11 +354,11 @@ export default function Projects() {
           <div className="bg-surface border border-mist rounded-control w-full max-w-2xl p-6 animate-page-in">
             <h2 className="font-display text-xl font-semibold text-ink mb-1">Create project</h2>
             <p className="text-sm text-[var(--muted)] mb-4">
-              Name it, pick your data, and tell us what you want to predict.
+              Describe the decision in plain language — we&apos;ll draft the setup for you to confirm.
             </p>
             {error && (
               <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">
-                {error}
+                {typeof error === 'string' ? error : JSON.stringify(error)}
               </div>
             )}
             <form onSubmit={handleCreateProject} className="space-y-4">
@@ -221,16 +368,7 @@ export default function Projects() {
                   className="input"
                   value={newProject.name}
                   onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Description</label>
-                <textarea
-                  className="input"
-                  rows={2}
-                  value={newProject.description}
-                  onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="Optional — we can suggest one"
                 />
               </div>
               <div>
@@ -258,8 +396,88 @@ export default function Projects() {
                   </select>
                 )}
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  What decision are you trying to make?
+                </label>
+                <textarea
+                  className="input"
+                  rows={3}
+                  value={newProject.description}
+                  onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="e.g. Spot telecom customers likely to churn so we can retain them"
+                  required
+                />
+                <p className="text-xs text-[var(--muted)] mt-1">
+                  Plain language is enough — churn, attrition, conversion, spend, etc.
+                </p>
+              </div>
               {selectedDataset && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-primary text-sm"
+                    disabled={suggesting || !newProject.description.trim()}
+                    onClick={handleSuggestSetup}
+                  >
+                    {suggesting ? 'Suggesting…' : 'Suggest setup'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost text-sm"
+                    onClick={() => setShowManualSetup((v) => !v)}
+                  >
+                    {showManualSetup ? 'Hide manual setup' : 'Set up manually'}
+                  </button>
+                </div>
+              )}
+              {intentDraft && (
+                <div className="border border-mist px-4 py-3 space-y-2 bg-mist/15">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">
+                    Suggested setup
+                    {intentDraft.confidence != null ? (
+                      <span className="ml-2 font-normal normal-case tracking-normal text-[var(--muted)]">
+                        confidence {Math.round(Number(intentDraft.confidence) * 100)}%
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-sm text-ink leading-relaxed">{intentDraft.rationale}</p>
+                  <ul className="text-xs text-[var(--muted)] space-y-1">
+                    <li>
+                      Question:{' '}
+                      {intentDraft.problem_type === 'regression' ? 'How much?' : 'Will it happen?'}
+                    </li>
+                    <li>Target column: {intentDraft.target_column}</li>
+                    <li>Business label: {intentDraft.target_description}</li>
+                    {intentDraft.target_positive_label ? (
+                      <li>Positive label: {intentDraft.target_positive_label}</li>
+                    ) : null}
+                    <li>
+                      Features: {(intentDraft.feature_columns || []).length} columns (IDs/constants
+                      removed)
+                    </li>
+                  </ul>
+                  <p className="text-xs text-[var(--muted)]">
+                    Review the fields below, then create — nothing is saved until you confirm.
+                  </p>
+                </div>
+              )}
+              {selectedDataset && showManualSetup && (
                 <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Business outcome label</label>
+                    <input
+                      className="input"
+                      value={newProject.target_description}
+                      onChange={(e) =>
+                        setNewProject((p) => ({ ...p, target_description: e.target.value }))
+                      }
+                      placeholder="e.g. churn, attrition"
+                    />
+                    <p className="text-xs text-[var(--muted)] mt-1">
+                      Used in Priorities, insights, and follow-up language.
+                    </p>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">What kind of question?</label>
                     <div className="grid grid-cols-2 gap-2">
@@ -387,8 +605,22 @@ export default function Projects() {
                   )}
                 </>
               )}
+              {!newProject.target_column || !newProject.feature_columns.length ? (
+                <p className="text-xs text-[var(--muted)]">
+                  {newProject.dataset_id && newProject.description?.trim()
+                    ? 'Click “Suggest setup” (or set up manually) before creating.'
+                    : 'Choose a dataset and describe the decision to continue.'}
+                </p>
+              ) : null}
               <div className="flex gap-2 pt-2">
-                <button type="button" className="btn-secondary flex-1" onClick={() => setShowCreate(false)}>
+                <button
+                  type="button"
+                  className="btn-secondary flex-1"
+                  onClick={() => {
+                    setShowCreate(false);
+                    resetCreateForm();
+                  }}
+                >
                   Cancel
                 </button>
                 <button
@@ -396,6 +628,7 @@ export default function Projects() {
                   className="btn-primary flex-1"
                   disabled={
                     creating ||
+                    !newProject.target_column ||
                     !newProject.feature_columns.length ||
                     (newProject.problem_type === 'binary_classification' &&
                       !newProject.target_positive_label)
@@ -417,7 +650,14 @@ export default function Projects() {
             to try.
           </p>
           {datasets.length > 0 ? (
-            <button type="button" onClick={() => setShowCreate(true)} className="btn-primary">
+            <button
+              type="button"
+              onClick={() => {
+                resetCreateForm();
+                setShowCreate(true);
+              }}
+              className="btn-primary"
+            >
               Create your first project
             </button>
           ) : (

@@ -12,6 +12,9 @@ export type ExplanationDriver = {
   strength?: string;
   text?: string;
   value?: unknown;
+  intervenability?: string;
+  blindspot?: boolean;
+  blindspot_codes?: string[];
 };
 
 export type InsightItem = {
@@ -54,6 +57,8 @@ export type PredictionPayload = {
     action_context?: {
       primary_lever?: { display_name?: string; feature?: string; suggestion?: string } | null;
       addressable_factors?: Array<{ display_name?: string; suggestion?: string }>;
+      blindspot_reranked?: boolean;
+      previous_primary_feature?: string;
     };
   };
   recommendations?: Array<{
@@ -74,6 +79,11 @@ export type PredictionPayload = {
     impact_disclaimer?: string;
     implementation_time?: string;
     rank?: number;
+    effectiveness_rate?: number | null;
+    n_outcomes?: number;
+    success_n?: number;
+    learning_applied?: boolean;
+    learning_note?: string | null;
   }>;
   prediction_id?: string;
   entity_id?: string;
@@ -97,6 +107,8 @@ export type PredictionPayload = {
     cost_weight?: number;
     relevance_weight?: number;
     soft_case?: boolean;
+    uses_feedback_effectiveness?: boolean;
+    effectiveness_n_actions?: number;
   };
   explanation_consistency?: {
     score?: number | null;
@@ -118,6 +130,22 @@ export type PredictionPayload = {
     degraded?: boolean;
     error?: string;
     methods_available?: string[];
+  };
+  blindspot_warnings?: Array<{
+    code?: string;
+    feature?: string;
+    severity?: string;
+    plain?: string;
+  }>;
+  blindspots?: {
+    warnings?: Array<{
+      code?: string;
+      feature?: string;
+      severity?: string;
+      plain?: string;
+    }>;
+    plain_summary?: string;
+    layer?: string;
   };
 };
 
@@ -210,6 +238,8 @@ export function PredictionPanel({
     [];
 
   const explainError = result.explanations?.error;
+  const blindspotWarnings =
+    result.blindspot_warnings || result.blindspots?.warnings || [];
 
   const [fbOutcome, setFbOutcome] = useState(() => {
     const o = result.feedback?.actual_outcome;
@@ -234,6 +264,30 @@ export function PredictionPanel({
   const [decStatus, setDecStatus] = useState<string | null>(null);
   const [decError, setDecError] = useState('');
   const [decSaving, setDecSaving] = useState(false);
+
+  const formatApiError = (detail: unknown, fallback: string) => {
+    if (detail == null) return fallback;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d) =>
+          typeof d === 'object' && d && 'msg' in d
+            ? String((d as { msg?: string }).msg || JSON.stringify(d))
+            : JSON.stringify(d)
+        )
+        .join('; ');
+    }
+    if (typeof detail === 'object') {
+      const obj = detail as { message?: string };
+      if (obj.message) return obj.message;
+      try {
+        return JSON.stringify(detail);
+      } catch {
+        return fallback;
+      }
+    }
+    return String(detail);
+  };
 
   const canLog =
     Boolean(projectId && authToken && result.prediction_id) && !isReg;
@@ -286,7 +340,7 @@ export function PredictionPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setDecError(data.detail || 'Could not save follow-up');
+        setDecError(formatApiError(data.detail, 'Could not save follow-up'));
       } else {
         setDecStatus(data.plain_summary || 'Follow-up saved.');
         onDecisionCommitted?.(data);
@@ -319,7 +373,7 @@ export function PredictionPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFbError(data.detail || 'Could not save');
+        setFbError(formatApiError(data.detail, 'Could not save'));
       } else {
         setFbStatus(data.plain_summary || 'Saved — thanks.');
         setFbMatch(data.model_matched_outcome);
@@ -387,8 +441,11 @@ export function PredictionPanel({
             </p>
           )}
           <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
-            Playbook suggestions ranked for this case. Impact labels are guides — run a what-if to
-            see a real before/after for this person.
+            Playbook suggestions ranked for this case
+            {result.recommendation_scoring?.uses_feedback_effectiveness
+              ? ' — adjusted with logged outcomes where we have enough history'
+              : ''}
+            . Impact labels are guides — run a what-if to see a real before/after for this person.
           </p>
           <ol className="space-y-4">
             {result.recommendations.slice(0, 3).map((r, i) => {
@@ -412,11 +469,15 @@ export function PredictionPanel({
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     {punch} · {effort}
                     {r.implementation_time ? ` · ${r.implementation_time}` : ''}
+                    {r.learning_applied ? ' · learned from outcomes' : ''}
                   </p>
                   {(r.description || r.reasoning) && (
                     <p className="mt-2 text-[var(--muted)] leading-relaxed">
                       {r.reasoning || r.description}
                     </p>
+                  )}
+                  {r.learning_note && (
+                    <p className="mt-2 text-xs text-teal leading-relaxed">{r.learning_note}</p>
                   )}
                 </li>
               );
@@ -489,11 +550,33 @@ export function PredictionPanel({
       {(brief?.theme_rollup?.length ||
         primaryLever ||
         (result.insights && result.insights.length > 0) ||
-        drivers.length > 0) && (
+        drivers.length > 0 ||
+        blindspotWarnings.length > 0) && (
         <div className="space-y-4 border-t border-mist pt-5">
           <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
             Why it looks this way
           </h4>
+          {blindspotWarnings.length > 0 && (
+            <div className="border border-mist px-3 py-3 space-y-2 bg-mist/20">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">
+                Treat as context, not a dial
+              </div>
+              <ul className="space-y-2">
+                {blindspotWarnings.slice(0, 3).map((w, i) => (
+                  <li
+                    key={`${w.code || 'bs'}-${w.feature || i}`}
+                    className={`text-sm leading-relaxed border-l-2 pl-3 ${
+                      w.severity === 'critical'
+                        ? 'border-coral text-ink'
+                        : 'border-mist text-[var(--muted)]'
+                    }`}
+                  >
+                    {w.plain}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {brief?.theme_rollup && brief.theme_rollup.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {brief.theme_rollup.map((t) => (
@@ -512,6 +595,11 @@ export function PredictionPanel({
                 {primaryLever.display_name || humanize(String(primaryLever.feature || 'Driver'))}
               </span>
               <span className="text-[var(--muted)]"> — {primaryLever.suggestion}</span>
+              {brief?.action_context?.blindspot_reranked && (
+                  <span className="block mt-1 text-xs text-[var(--muted)]">
+                    Preferred over a top driver that isn’t a short-term lever.
+                  </span>
+                )}
             </p>
           )}
           {result.insights && result.insights.length > 0 && (
@@ -533,7 +621,12 @@ export function PredictionPanel({
                 const up = f.direction === 'increases' || impact > 0;
                 return (
                   <li key={f.feature} className="text-sm flex justify-between gap-3">
-                    <span className="text-ink">{f.label || humanize(f.feature)}</span>
+                    <span className="text-ink">
+                      {f.label || humanize(f.feature)}
+                      {f.blindspot || f.intervenability === 'low' ? (
+                        <span className="ml-2 text-[11px] text-[var(--muted)]">context</span>
+                      ) : null}
+                    </span>
                     <span className={`shrink-0 ${up ? 'text-coral' : 'text-teal'}`}>
                       {up ? 'raises risk' : 'lowers risk'}
                     </span>

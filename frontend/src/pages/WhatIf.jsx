@@ -229,6 +229,8 @@ export default function WhatIf() {
         body: JSON.stringify({
           base_features: baseFeatures,
           modified_features: activeChanges,
+          n_draws: 200,
+          noise_scale: 0.05,
         }),
       });
 
@@ -618,13 +620,31 @@ export default function WhatIf() {
                         ))}
                       </ul>
                     )}
-                  {!isReg && Math.abs(Number(simulationResult.impact) || 0) < 0.005 && (
-                    <div className="mt-4 px-3 py-3 border border-mist text-sm text-[var(--muted)] leading-relaxed">
-                      This dial didn&apos;t change the estimate for this person. Use a suggested
-                      lever on the right (often Overtime or pay) — those are ranked by how much
-                      they actually move <em>this</em> case.
-                    </div>
-                  )}
+                  {!isReg &&
+                    Math.abs(Number(simulationResult.impact) || 0) < 0.005 &&
+                    Array.isArray(simulationResult.suggested_tweaks) &&
+                    simulationResult.suggested_tweaks.some(
+                      (t) => Math.abs(Number(t.expected_delta) || 0) >= 0.005
+                    ) && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {simulationResult.suggested_tweaks
+                          .filter((t) => Math.abs(Number(t.expected_delta) || 0) >= 0.005)
+                          .slice(0, 3)
+                          .map((t) => (
+                            <button
+                              key={`${t.feature}-${t.suggested_value}`}
+                              type="button"
+                              className="text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
+                              onClick={() => applySuggestion(t.feature, t.suggested_value)}
+                            >
+                              Try {humanize(t.label || t.feature)} → {String(t.suggested_value)}
+                              <span className="text-teal ml-1 tabular-nums">
+                                {(Number(t.expected_delta) * 100).toFixed(0)} pts
+                              </span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-px bg-mist">
@@ -640,6 +660,13 @@ export default function WhatIf() {
                         {simulationResult.original.risk_level}
                       </div>
                     )}
+                    {simulationResult.monte_carlo?.before && (
+                      <div className="text-[11px] text-[var(--muted)] mt-2 tabular-nums">
+                        {isReg
+                          ? `${Number(simulationResult.monte_carlo.before.p10).toFixed(2)}–${Number(simulationResult.monte_carlo.before.p90).toFixed(2)}`
+                          : `${pct(simulationResult.monte_carlo.before.p10)}–${pct(simulationResult.monte_carlo.before.p90)}`}
+                      </div>
+                    )}
                   </div>
                   <div className="bg-paper px-4 py-5 text-center">
                     <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">After</div>
@@ -651,6 +678,13 @@ export default function WhatIf() {
                     {!isReg && simulationResult.modified?.risk_level && (
                       <div className="text-xs text-[var(--muted)] mt-1">
                         {simulationResult.modified.risk_level}
+                      </div>
+                    )}
+                    {simulationResult.monte_carlo?.after && (
+                      <div className="text-[11px] text-[var(--muted)] mt-2 tabular-nums">
+                        {isReg
+                          ? `${Number(simulationResult.monte_carlo.after.p10).toFixed(2)}–${Number(simulationResult.monte_carlo.after.p90).toFixed(2)}`
+                          : `${pct(simulationResult.monte_carlo.after.p10)}–${pct(simulationResult.monte_carlo.after.p90)}`}
                       </div>
                     )}
                   </div>
@@ -680,8 +714,83 @@ export default function WhatIf() {
                         ? 'no change'
                         : simulationResult.risk_level_change || simulationResult.direction}
                     </div>
+                    {simulationResult.monte_carlo?.delta && (
+                      <div className="text-[11px] text-[var(--muted)] mt-2 tabular-nums">
+                        {isReg
+                          ? `p10–p90 ${Number(simulationResult.monte_carlo.delta.p10).toFixed(2)} to ${Number(simulationResult.monte_carlo.delta.p90).toFixed(2)}`
+                          : `p10–p90 ${(Number(simulationResult.monte_carlo.delta.p10) * 100).toFixed(1)} to ${(Number(simulationResult.monte_carlo.delta.p90) * 100).toFixed(1)} pts`}
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {simulationResult.monte_carlo && (
+                  <div className="px-5 py-4 border-t border-mist">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] mb-2">
+                      Uncertainty across {simulationResult.monte_carlo.n_draws} draws
+                    </h4>
+                    <p className="text-sm text-ink leading-relaxed mb-3">
+                      {simulationResult.monte_carlo.plain_summary}
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 text-center mb-4">
+                      <div className="border border-mist px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-teal">Helps</div>
+                        <div className="font-display text-xl tabular-nums text-ink mt-1">
+                          {Math.round((simulationResult.monte_carlo.p_improve || 0) * 100)}%
+                        </div>
+                      </div>
+                      <div className="border border-mist px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Flat</div>
+                        <div className="font-display text-xl tabular-nums text-ink mt-1">
+                          {Math.round((simulationResult.monte_carlo.p_unchanged || 0) * 100)}%
+                        </div>
+                      </div>
+                      <div className="border border-mist px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-coral">Hurts</div>
+                        <div className="font-display text-xl tabular-nums text-ink mt-1">
+                          {Math.round((simulationResult.monte_carlo.p_worsen || 0) * 100)}%
+                        </div>
+                      </div>
+                    </div>
+                    {Array.isArray(simulationResult.monte_carlo.histogram?.counts) && (
+                      <div>
+                        <div className="flex items-end gap-0.5 h-16">
+                          {(() => {
+                            const counts = simulationResult.monte_carlo.histogram.counts;
+                            const max = Math.max(...counts, 1);
+                            return counts.map((c, i) => (
+                              <div
+                                key={i}
+                                className="flex-1 bg-teal/70 min-w-0"
+                                style={{ height: `${Math.max(4, (c / max) * 100)}%` }}
+                                title={`${c} draws`}
+                              />
+                            ));
+                          })()}
+                        </div>
+                        <div className="flex justify-between text-[10px] text-[var(--muted)] mt-1 tabular-nums">
+                          <span>
+                            {Number(simulationResult.monte_carlo.histogram.bin_edges?.[0] ?? 0).toFixed(1)}
+                            {simulationResult.monte_carlo.histogram.unit === 'pp' ? ' pp' : ''}
+                          </span>
+                          <span>impact distribution</span>
+                          <span>
+                            {Number(
+                              simulationResult.monte_carlo.histogram.bin_edges?.[
+                                simulationResult.monte_carlo.histogram.bin_edges.length - 1
+                              ] ?? 0
+                            ).toFixed(1)}
+                            {simulationResult.monte_carlo.histogram.unit === 'pp' ? ' pp' : ''}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[var(--muted)] mt-2 leading-relaxed">
+                          Your dials stay fixed; other numeric fields get small noise so we see how often
+                          the change still helps.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {simulationResult.change_log?.length > 0 && (
                   <div className="px-5 py-4 border-t border-mist">

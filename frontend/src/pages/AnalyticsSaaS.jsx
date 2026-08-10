@@ -37,10 +37,70 @@ export default function AnalyticsSaaS() {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
   const [projectDetails, setProjectDetails] = useState(null);
+  const [portfolio, setPortfolio] = useState(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioError, setPortfolioError] = useState('');
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepNote, setSweepNote] = useState('');
 
   useEffect(() => {
-    if (token) fetchProjects();
+    if (token) {
+      fetchProjects();
+      fetchPortfolio();
+    }
   }, [token]);
+
+  const fetchPortfolio = async () => {
+    setPortfolioLoading(true);
+    setPortfolioError('');
+    try {
+      const res = await fetch('/api/projects/decisions/portfolio?limit=80', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setPortfolio(await res.json());
+      } else {
+        setPortfolio(null);
+        const data = await res.json().catch(() => ({}));
+        const detail = data.detail;
+        setPortfolioError(
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
+              : `Could not load follow-ups (${res.status})`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setPortfolio(null);
+      setPortfolioError(err?.message || 'Could not load follow-ups');
+    }
+    setPortfolioLoading(false);
+  };
+
+  const runRecheckSweep = async () => {
+    setSweeping(true);
+    setSweepNote('');
+    try {
+      const res = await fetch('/api/projects/decisions/recheck-sweep?limit=200', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSweepNote(
+          typeof data.detail === 'string' ? data.detail : 'Could not sync due follow-ups'
+        );
+      } else {
+        setSweepNote(data.plain_summary || `Flagged ${data.flagged || 0} follow-up(s).`);
+        await fetchPortfolio();
+      }
+    } catch (err) {
+      setSweepNote(err?.message || 'Could not sync due follow-ups');
+    }
+    setSweeping(false);
+  };
 
   const fetchProjects = async () => {
     try {
@@ -194,6 +254,150 @@ export default function AnalyticsSaaS() {
             </select>
           </div>
 
+          {/* Org follow-up board */}
+          <section className="mb-10 border border-mist">
+            <div className="px-5 py-4 border-b border-mist flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-semibold text-ink">Follow-ups due</h2>
+                <p className="text-sm text-[var(--muted)] mt-1 max-w-2xl">
+                  {portfolioLoading
+                    ? 'Loading scheduled check-ins…'
+                    : portfolioError
+                      ? portfolioError
+                      : portfolio?.plain_summary ||
+                        'Actions you saved from cases — check in when they come due.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={runRecheckSweep}
+                  disabled={sweeping || portfolioLoading}
+                  className="btn-ghost text-sm"
+                  title="Mark due scheduled follow-ups for check-in"
+                >
+                  {sweeping ? 'Syncing…' : 'Sync due'}
+                </button>
+                <button
+                  type="button"
+                  onClick={fetchPortfolio}
+                  disabled={portfolioLoading}
+                  className="btn-ghost text-sm"
+                >
+                  {portfolioLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+            </div>
+            {sweepNote && (
+              <div className="px-5 py-2 border-b border-mist text-xs text-[var(--muted)]">
+                {sweepNote}
+              </div>
+            )}
+            {portfolio && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-mist border-b border-mist">
+                  {[
+                    {
+                      key: 'overdue',
+                      label: 'Overdue',
+                      value: portfolio.counts?.overdue ?? 0,
+                      accent: 'text-coral',
+                    },
+                    {
+                      key: 'due_now',
+                      label: 'Due now',
+                      value: portfolio.counts?.due_now ?? 0,
+                      accent: 'text-ink',
+                    },
+                    {
+                      key: 'upcoming',
+                      label: 'Upcoming',
+                      value: portfolio.counts?.upcoming ?? 0,
+                      accent: 'text-teal',
+                    },
+                    {
+                      key: 'closed_recent',
+                      label: 'Closed recently',
+                      value: portfolio.counts?.closed_recent ?? 0,
+                      accent: 'text-[var(--muted)]',
+                    },
+                  ].map((cell) => (
+                    <div key={cell.key} className="bg-paper px-4 py-4">
+                      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+                        {cell.label}
+                      </div>
+                      <div
+                        className={`mt-1 font-display text-2xl font-semibold tabular-nums ${cell.accent}`}
+                      >
+                        {cell.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {(() => {
+                  const rows = [
+                    ...(portfolio.overdue || []).map((d) => ({ ...d, _bucket: 'Overdue' })),
+                    ...(portfolio.due_now || []).map((d) => ({ ...d, _bucket: 'Due now' })),
+                    ...(portfolio.upcoming || []).slice(0, 6).map((d) => ({
+                      ...d,
+                      _bucket: 'Upcoming',
+                    })),
+                  ];
+                  if (rows.length === 0) {
+                    return (
+                      <div className="px-5 py-6 text-sm text-[var(--muted)]">
+                        No open follow-ups yet. Open a case, pick an action, and save a follow-up —
+                        it will show up here when a check-in is due.
+                      </div>
+                    );
+                  }
+                  return (
+                    <ul className="divide-y divide-mist">
+                      {rows.slice(0, 12).map((d) => (
+                        <li
+                          key={d.id}
+                          className="px-5 py-3 flex flex-wrap items-start justify-between gap-3 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium text-ink">{d.action_name}</div>
+                            <p className="text-xs text-[var(--muted)] mt-1">
+                              <span
+                                className={
+                                  d._bucket === 'Overdue'
+                                    ? 'text-coral'
+                                    : d._bucket === 'Due now'
+                                      ? 'text-ink'
+                                      : ''
+                                }
+                              >
+                                {d._bucket}
+                              </span>
+                              {d.project_name ? ` · ${d.project_name}` : ''}
+                              {d.recheck_at
+                                ? ` · check back ${String(d.recheck_at).slice(0, 10)}`
+                                : ''}
+                              {d.impact_hint ? ` · ${d.impact_hint}` : ''}
+                            </p>
+                          </div>
+                          <Link
+                            to={`/projects/${d.project_id}?decision=${d.id}&checkin=1${
+                              d.prediction_id ? `&prediction=${d.prediction_id}` : ''
+                            }`}
+                            className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
+                          >
+                            {d._bucket === 'Overdue' || d._bucket === 'Due now'
+                              ? 'Update follow-up'
+                              : 'Open follow-up'}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+              </>
+            )}
+          </section>
+
           {/* What matters today */}
           <section className="mb-10">
             <h2 className="font-display text-lg font-semibold text-ink mb-1">Today&apos;s focus</h2>
@@ -271,6 +475,9 @@ export default function AnalyticsSaaS() {
                       pred.probability != null
                         ? Math.round(Number(pred.probability) * 100)
                         : null;
+                    const caseHref = pred.id
+                      ? `/projects/${selectedProject}?prediction=${pred.id}`
+                      : `/projects/${selectedProject}`;
                     return (
                       <li key={pred.id || idx} className="py-4 flex flex-wrap items-start gap-4">
                         <span className="text-[var(--muted)] tabular-nums w-6 shrink-0 pt-0.5">
@@ -312,6 +519,12 @@ export default function AnalyticsSaaS() {
                             </p>
                           )}
                         </div>
+                        <Link
+                          to={caseHref}
+                          className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control self-center"
+                        >
+                          Open case
+                        </Link>
                       </li>
                     );
                   })}

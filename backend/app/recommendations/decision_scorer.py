@@ -180,6 +180,16 @@ class DecisionScorer:
             outcome_label=outcome_label,
         )
 
+        learning = impact_result.get("learning") or {}
+        # Mild final-score nudge only when learning was applied.
+        # Important: 0.0 is a valid rate — do not use `or 0.5`.
+        if learning.get("applied") and learning.get("effectiveness_rate") is not None:
+            rate = float(learning["effectiveness_rate"])
+            if rate >= 0.65:
+                final_score = min(1.0, final_score + 0.03)
+            elif rate <= 0.35:
+                final_score = max(0.0, final_score - 0.03)
+
         return {
             "action_code": action.code,
             "action_name": action.name,
@@ -203,6 +213,11 @@ class DecisionScorer:
                 "Illustrative estimate from action-catalog heuristics — "
                 "not a re-simulated outcome for this case."
             ),
+            "effectiveness_rate": learning.get("effectiveness_rate"),
+            "n_outcomes": learning.get("n_outcomes") or 0,
+            "success_n": learning.get("success_n"),
+            "learning_applied": bool(learning.get("applied")),
+            "learning_note": learning.get("learning_note"),
             "reasoning": reasoning,
             "implementation_time": action.implementation_time,
         }

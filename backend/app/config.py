@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # Auth
     jwt_secret: str = "dev-secret-change-in-production"
 
+    # Celery / scheduled B3 rechecks
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
+    celery_recheck_interval_minutes: int = 60
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
