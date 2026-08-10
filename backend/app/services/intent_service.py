@@ -136,6 +136,24 @@ _REGRESSION_HINTS = (
     "predict the number",
     "numeric",
 )
+_DECISION_HINTS = _BINARY_HINTS + _REGRESSION_HINTS + (
+    "predict",
+    "forecast",
+    "risk",
+    "likely",
+    "who will",
+    "which customers",
+    "which employees",
+    "retain",
+    "intervene",
+)
+
+_UNSUPPORTED_INTENT_MSG = (
+    "That doesn't match a Knowa decision use case yet. "
+    "Describe a business outcome we can score — e.g. churn, attrition, conversion, "
+    "fraud, loan default, or how much someone will spend — "
+    "or click Set up manually and pick the target column yourself."
+)
 
 
 class IntentService:
@@ -159,21 +177,27 @@ class IntentService:
         if not problem_description:
             raise ValueError("Describe the decision problem in plain language.")
 
-        text = " ".join(
-            x for x in (problem_description, project_name or "", dataset.name or "") if x
+        # Intent matching uses what the human typed — not the file name —
+        # so "help me with bananas" on a telco CSV still rejects.
+        intent_text = " ".join(
+            x for x in (problem_description, project_name or "") if x
+        ).strip()
+        # Column scoring may still peek at the dataset name for weak hints.
+        column_text = " ".join(
+            x for x in (intent_text, dataset.name or "") if x
         ).strip()
 
         df = self.datasets.load_dataframe(dataset_id)
         columns = list(df.columns)
 
-        outcome = self._match_outcome(text)
-        problem_type = self._infer_problem_type(text, outcome)
-        target_description = (outcome or {}).get("label") or self._fallback_label(text)
+        outcome = self._match_outcome(intent_text)
+        problem_type = self._infer_problem_type(intent_text, outcome)
+        target_description = (outcome or {}).get("label") or self._fallback_label(intent_text)
 
         target_column, target_score, target_rationale = self._pick_target(
             df,
             columns,
-            text=text,
+            text=column_text,
             outcome=outcome,
             problem_type=problem_type,
         )
@@ -182,6 +206,15 @@ class IntentService:
                 "Could not suggest a target column from this description. "
                 "Pick the target manually below."
             )
+
+        ok, reject_reason = self._intent_is_supported(
+            problem_description=problem_description,
+            outcome=outcome,
+            target_column=target_column,
+            target_score=target_score,
+        )
+        if not ok:
+            raise ValueError(reject_reason)
 
         positive_label = None
         present_labels: list[str] = []
@@ -247,6 +280,33 @@ class IntentService:
                 best_hits = hits
                 best = pattern
         return best if best_hits else None
+
+    def _intent_is_supported(
+        self,
+        *,
+        problem_description: str,
+        outcome: Optional[dict[str, Any]],
+        target_column: str,
+        target_score: float,
+    ) -> tuple[bool, str]:
+        """Reject gibberish / off-scope prompts instead of inventing a project."""
+        if outcome:
+            return True, ""
+
+        low = (problem_description or "").lower()
+        decisionish = any(kw in low for kw in _DECISION_HINTS)
+        text_tokens = set(re.findall(r"[a-z0-9]+", low))
+        col_tokens = set(_norm(target_column).split("_"))
+        named_target = bool(text_tokens & col_tokens) or _norm(target_column) in _norm(
+            low.replace(" ", "_")
+        )
+
+        # Allow: user named the column + wrote a decision-ish sentence, even if
+        # the catalog keyword set didn't fire (e.g. niche outcome names).
+        if decisionish and named_target and float(target_score) >= 3.0:
+            return True, ""
+
+        return False, _UNSUPPORTED_INTENT_MSG
 
     def _infer_problem_type(
         self, text: str, outcome: Optional[dict[str, Any]]

@@ -155,6 +155,55 @@ class TestIntentSuggest(unittest.TestCase):
         self.assertEqual(out["target_column"], "Converted")
         self.assertNotIn("lead_id", out["feature_columns"])
 
+    def test_off_topic_bananas_rejected(self):
+        df = pd.DataFrame(
+            {
+                "customerID": [f"C{i}" for i in range(40)],
+                "tenure": list(range(40)),
+                "MonthlyCharges": [30 + i for i in range(40)],
+                "Churn": ["Yes", "No"] * 20,
+            }
+        )
+        ds = self.fx.add_dataset("telco-bananas", df)
+        with self.assertRaises(ValueError) as ctx:
+            self.svc.suggest_config(
+                dataset_id=ds.id,
+                problem_description="help me with bananas",
+            )
+        msg = str(ctx.exception).lower()
+        self.assertIn("doesn't match", msg)
+        self.assertIn("manually", msg)
+
+    def test_gibberish_rejected_even_with_classic_target_column(self):
+        df = pd.DataFrame(
+            {
+                "x1": list(range(20)),
+                "Attrition": ["Yes", "No"] * 10,
+            }
+        )
+        ds = self.fx.add_dataset("hr-gibberish", df)
+        with self.assertRaises(ValueError):
+            self.svc.suggest_config(
+                dataset_id=ds.id,
+                problem_description="asdf qwerty hello world",
+            )
+
+    def test_named_column_without_catalog_keyword_still_ok(self):
+        """User names the column + decision language → accept without catalog hit."""
+        df = pd.DataFrame(
+            {
+                "visits": list(range(30)),
+                "Upgraded": ["Yes", "No"] * 15,
+            }
+        )
+        ds = self.fx.add_dataset("upgrade", df)
+        out = self.svc.suggest_config(
+            dataset_id=ds.id,
+            problem_description="Predict whether customers Upgraded based on visits",
+        )
+        self.assertEqual(out["target_column"], "Upgraded")
+        self.assertGreaterEqual(out["confidence"], 0.35)
+
 
 if __name__ == "__main__":
     unittest.main()

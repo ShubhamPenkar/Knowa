@@ -191,6 +191,8 @@ export default function Projects() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const detail = data.detail;
+        setIntentDraft(null);
+        setShowManualSetup(true);
         setError(
           typeof detail === 'string'
             ? detail
@@ -435,7 +437,9 @@ export default function Projects() {
                   autoFocus
                 />
                 <p className="text-xs text-[var(--muted)] mt-1">
-                  Plain language is enough — churn, attrition, conversion, spend, etc.
+                  Must sound like a business decision we can score — churn, attrition, conversion,
+                  fraud, default, or spend. Vague prompts (e.g. “help me with bananas”) are rejected;
+                  you can still set up manually.
                 </p>
               </div>
               {selectedDataset && (
