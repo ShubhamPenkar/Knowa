@@ -38,7 +38,7 @@ class CustomerResponse(BaseModel):
     external_id: Optional[str]
     features: dict[str, Any]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -49,7 +49,7 @@ class PredictionRequest(BaseModel):
     """Request for making a prediction."""
     customer_id: Optional[str] = None
     features: Optional[CustomerFeatures] = None
-    
+
     def model_post_init(self, __context: Any) -> None:
         if not self.customer_id and not self.features:
             raise ValueError("Either customer_id or features must be provided")
@@ -193,7 +193,7 @@ class FeedbackResponse(BaseModel):
     actual_outcome: str
     outcome_date: Optional[datetime]
     recorded_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -317,3 +317,123 @@ class RelationshipValidationRequest(BaseModel):
     source_column: str
     target_dataset_id: str
     target_column: str
+
+
+# ============== Dynamic Product Intelligence Schemas (Phase 3) ==============
+
+class DatasetCoverageItem(BaseModel):
+    """Dataset summary within product intelligence overview."""
+    dataset_id: str
+    dataset_name: str
+    row_count: int
+    column_count: int
+    grain_type: str = "unknown"
+    primary_key: list[str] = Field(default_factory=list)
+    measures_count: int = 0
+    dimensions_count: int = 0
+    timestamps_count: int = 0
+    readiness_status: str = "ready"
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReadinessSummary(BaseModel):
+    """Overall dataset coverage and analysis readiness."""
+    total_datasets: int
+    ready_datasets: int
+    total_rows: int
+    dataset_summaries: list[DatasetCoverageItem] = Field(default_factory=list)
+
+
+class DataDrivenMetricResponse(BaseModel):
+    """Computed data-driven metric or breakdown."""
+    id: str
+    label: str
+    category: str = Field(..., description="summary, distribution, trend, breakdown, top_performers, growth, quality, cross_dataset")
+    dataset_id: str
+    dataset_name: str
+    column_name: Optional[str] = None
+    secondary_column: Optional[str] = None
+    aggregation: str
+    status: str = "available"
+    reason_unavailable: Optional[str] = None
+    value: Optional[Any] = None
+    summary_stats: Optional[dict[str, Any]] = None
+    time_range: Optional[dict[str, Any]] = None
+    grouping: Optional[dict[str, Any]] = None
+    evidence: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class UnavailableMetricItem(BaseModel):
+    """Reason why an expected analytical metric is unsupported."""
+    category: str
+    label: str
+    reason: str
+
+
+class ExplainableInsightResponse(BaseModel):
+    """Explainable business observation backed by metric data."""
+    id: str
+    title: str
+    finding: str
+    evidence: list[str] = Field(default_factory=list)
+    relevant_entity: Optional[str] = None
+    relevant_dimension: Optional[str] = None
+    relevant_time_period: Optional[str] = None
+    why_it_matters: str
+    confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
+    confidence_type: str = Field("heuristic", description="Explicit confidence type label")
+    limitations: list[str] = Field(default_factory=list)
+    is_causal_claim: bool = False
+
+
+class InvestigationOpportunityResponse(BaseModel):
+    """Candidate opportunity for further business investigation."""
+    id: str
+    title: str
+    candidate_area: str
+    linked_metric_id: str
+    linked_insight_id: Optional[str] = None
+    evidence: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    action_type: str = "investigation_candidate"
+
+
+class DataQualityWarningResponse(BaseModel):
+    """Data quality notice such as missingness or high cardinality."""
+    dataset_id: str
+    dataset_name: str
+    column_name: Optional[str] = None
+    warning_type: str
+    message: str
+    impact: str
+
+
+class RelationshipSafetyWarningResponse(BaseModel):
+    """Safety notice regarding joins, fan-out, or ambiguity."""
+    source_dataset_id: str
+    target_dataset_id: str
+    warning_type: str
+    message: str
+    risk: str
+    affected_measures: list[str] = Field(default_factory=list)
+
+
+class ProductIntelligenceOverviewResponse(BaseModel):
+    """Complete Dynamic Product Intelligence overview."""
+    organization_id: str
+    readiness: ReadinessSummary
+    metrics: list[DataDrivenMetricResponse] = Field(default_factory=list)
+    unavailable_metrics: list[UnavailableMetricItem] = Field(default_factory=list)
+    insights: list[ExplainableInsightResponse] = Field(default_factory=list)
+    opportunities: list[InvestigationOpportunityResponse] = Field(default_factory=list)
+    data_quality_warnings: list[DataQualityWarningResponse] = Field(default_factory=list)
+    safety_warnings: list[RelationshipSafetyWarningResponse] = Field(default_factory=list)
+
+
+class ProductIntelligenceRequest(BaseModel):
+    """Optional parameters for overview query."""
+    dataset_ids: Optional[list[str]] = Field(None, description="Subset of dataset IDs to analyze")
+    refresh: bool = Field(False, description="Bypass cache and recompute overview")

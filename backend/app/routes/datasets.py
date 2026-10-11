@@ -11,12 +11,15 @@ from app.schemas import (
     ColumnSemanticUpdate,
     DatasetGrainResponse,
     DatasetRelationshipResponse,
+    ProductIntelligenceOverviewResponse,
+    ProductIntelligenceRequest,
     RelationshipDiscoveryRequest,
     RelationshipDiscoveryResponse,
     RelationshipValidationRequest,
 )
 from app.services.auth_service import AuthContext, get_auth_context
 from app.services.dataset_service import DatasetService
+from app.services.product_intelligence_service import ProductIntelligenceService
 from app.services.relationship_service import DatasetRelationshipService
 
 router = APIRouter()
@@ -59,7 +62,7 @@ async def list_datasets(
     """List all datasets."""
     service = DatasetService(db, auth.org_id)
     datasets = service.list_datasets()
-    
+
     return [
         {
             "id": d.id,
@@ -133,6 +136,42 @@ async def get_dataset_relationships(
     return [r.to_dict() for r in rels]
 
 
+@router.get("/intelligence/overview", response_model=ProductIntelligenceOverviewResponse)
+async def get_product_intelligence_overview(
+    refresh: bool = False,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve dynamic Product Intelligence overview across organization datasets."""
+    service = ProductIntelligenceService(db, auth.org_id)
+    return service.build_overview(refresh=refresh)
+
+
+@router.post("/intelligence/overview", response_model=ProductIntelligenceOverviewResponse)
+async def query_product_intelligence_overview(
+    body: Optional[ProductIntelligenceRequest] = None,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve filtered or refreshed Product Intelligence overview."""
+    service = ProductIntelligenceService(db, auth.org_id)
+    dataset_ids = body.dataset_ids if body else None
+    refresh = body.refresh if body else False
+    return service.build_overview(dataset_ids=dataset_ids, refresh=refresh)
+
+
+@router.get("/{dataset_id}/intelligence", response_model=ProductIntelligenceOverviewResponse)
+async def get_single_dataset_intelligence(
+    dataset_id: str,
+    refresh: bool = False,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve Product Intelligence overview focused on a single dataset."""
+    service = ProductIntelligenceService(db, auth.org_id)
+    return service.build_overview(dataset_ids=[dataset_id], refresh=refresh)
+
+
 @router.get("/{dataset_id}")
 async def get_dataset(
     dataset_id: str,
@@ -142,10 +181,10 @@ async def get_dataset(
     """Get dataset details with columns."""
     service = DatasetService(db, auth.org_id)
     dataset = service.get_dataset(dataset_id)
-    
+
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
+
     return {
         "id": dataset.id,
         "name": dataset.name,
@@ -205,11 +244,11 @@ async def delete_dataset(
     """Delete a dataset."""
     if not auth.has_scope("admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     service = DatasetService(db, auth.org_id)
     if not service.delete_dataset(dataset_id):
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
+
     return {"message": "Dataset deleted"}
 
 

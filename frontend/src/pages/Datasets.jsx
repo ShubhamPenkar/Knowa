@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import ProductIntelligenceOverview from '../components/common/ProductIntelligenceOverview';
 
 const ROLE_OPTIONS = [
   { value: 'dimension', label: 'Dimension (Categorical/Grouping)' },
@@ -28,6 +29,7 @@ export default function Datasets() {
   const [uploadName, setUploadName] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('datasets');
 
   // Semantic Inspection & Correction State
   const [inspectingDatasetId, setInspectingDatasetId] = useState(null);
@@ -188,6 +190,32 @@ export default function Datasets() {
         </button>
       </div>
 
+      {/* View Switcher Tabs */}
+      <div className="flex border-b border-mist mb-6 gap-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('datasets')}
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'datasets'
+              ? 'border-teal text-ink'
+              : 'border-transparent text-[var(--muted)] hover:text-ink'
+          }`}
+        >
+          Datasets & Semantics ({datasets.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('intelligence')}
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'intelligence'
+              ? 'border-teal text-ink'
+              : 'border-transparent text-[var(--muted)] hover:text-ink'
+          }`}
+        >
+          Product Intelligence
+        </button>
+      </div>
+
       {showUpload && (
         <div className="fixed inset-0 z-50 bg-ink/40 flex items-center justify-center p-4">
           <div className="bg-surface border border-mist rounded-control w-full max-w-md p-6 animate-page-in">
@@ -235,7 +263,9 @@ export default function Datasets() {
         </div>
       )}
 
-      {datasets.length === 0 ? (
+      {activeTab === 'intelligence' ? (
+        <ProductIntelligenceOverview token={token} />
+      ) : datasets.length === 0 ? (
         <div className="empty-state">
           <h3 className="font-display text-xl font-semibold">No datasets yet</h3>
           <p className="text-sm text-[var(--muted)] mt-2 mb-6">Upload a CSV to get started.</p>
