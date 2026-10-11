@@ -1,12 +1,23 @@
 """Dataset API routes for SaaS."""
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas import BatchSemanticUpdate, ColumnSemanticUpdate
+from app.schemas import (
+    BatchSemanticUpdate,
+    ColumnSemanticUpdate,
+    DatasetGrainResponse,
+    DatasetRelationshipResponse,
+    RelationshipDiscoveryRequest,
+    RelationshipDiscoveryResponse,
+    RelationshipValidationRequest,
+)
 from app.services.auth_service import AuthContext, get_auth_context
 from app.services.dataset_service import DatasetService
+from app.services.relationship_service import DatasetRelationshipService
 
 router = APIRouter()
 
@@ -61,6 +72,65 @@ async def list_datasets(
         }
         for d in datasets
     ]
+
+
+@router.post("/relationships/discover", response_model=RelationshipDiscoveryResponse)
+async def discover_relationships(
+    body: Optional[RelationshipDiscoveryRequest] = None,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Discover candidate join relationships across organization datasets."""
+    service = DatasetRelationshipService(db, auth.org_id)
+    dataset_ids = body.dataset_ids if body else None
+    refresh = body.refresh if body else False
+    rels = service.discover_relationships(dataset_ids=dataset_ids, refresh=refresh)
+    return {
+        "relationships": [r.to_dict() for r in rels],
+        "total_found": len(rels),
+    }
+
+
+@router.post("/relationships/validate", response_model=DatasetRelationshipResponse)
+async def validate_relationship(
+    body: RelationshipValidationRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Validate a proposed join relationship against actual data and fan-out constraints."""
+    service = DatasetRelationshipService(db, auth.org_id)
+    rel = service.validate_relationship(
+        source_dataset_id=body.source_dataset_id,
+        source_column=body.source_column,
+        target_dataset_id=body.target_dataset_id,
+        target_column=body.target_column,
+    )
+    return rel.to_dict()
+
+
+@router.get("/{dataset_id}/grain", response_model=DatasetGrainResponse)
+async def get_dataset_grain(
+    dataset_id: str,
+    refresh: bool = False,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve inferred dataset grain and supporting evidence."""
+    service = DatasetRelationshipService(db, auth.org_id)
+    grain = service.get_dataset_grain(dataset_id, refresh=refresh)
+    return grain.to_dict()
+
+
+@router.get("/{dataset_id}/relationships", response_model=list[DatasetRelationshipResponse])
+async def get_dataset_relationships(
+    dataset_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve discovered candidate and validated relationships for a dataset."""
+    service = DatasetRelationshipService(db, auth.org_id)
+    rels = service.get_relationships_for_dataset(dataset_id)
+    return [r.to_dict() for r in rels]
 
 
 @router.get("/{dataset_id}")

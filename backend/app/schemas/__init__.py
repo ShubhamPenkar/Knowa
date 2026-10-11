@@ -254,3 +254,66 @@ class ColumnSemanticDetail(BaseModel):
     confidence_type: str = Field("heuristic", description="'heuristic' for inferred rules, 'user_assigned' for manual corrections")
     evidence: list[str] = Field(default_factory=list, description="Privacy-hardened pattern explanations without raw values")
     is_user_corrected: bool = False
+
+
+# ============== Multi-Dataset Intelligence Schemas (Phase 2) ==============
+
+class DatasetGrainResponse(BaseModel):
+    """Inferred dataset grain / level-of-detail."""
+    dataset_id: str
+    dataset_name: str
+    grain_type: str = Field(..., description="entity, transaction, periodic_aggregate, composite_key, unknown")
+    primary_key: list[str] = Field(default_factory=list, description="Primary or composite key identifying the grain")
+    confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
+    confidence_type: str = Field("heuristic", description="Explicit confidence type label")
+    evidence: list[str] = Field(default_factory=list, description="Pattern evidence establishing dataset grain")
+    potential_measures: list[str] = Field(default_factory=list, description="Measures vulnerable to double counting on fan-out")
+    entity_identifiers: list[str] = Field(default_factory=list, description="Foreign key links to business entities")
+    timestamp_columns: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DatasetRelationshipResponse(BaseModel):
+    """Candidate or validated relationship between two datasets."""
+    id: str
+    source_dataset_id: str
+    source_dataset_name: str
+    source_column: str
+    target_dataset_id: str
+    target_dataset_name: str
+    target_column: str
+    cardinality: str = Field(..., description="one_to_one, one_to_many, many_to_one, many_to_many, unknown")
+    source_uniqueness_ratio: float
+    target_uniqueness_ratio: float
+    containment_ratio: float
+    jaccard_similarity: float
+    overlapping_values_count: int
+    confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
+    confidence_type: str = Field("heuristic", description="Explicit confidence type label")
+    evidence: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    validation_status: str = Field(..., description="candidate, validated, ambiguous, rejected")
+    is_ambiguous: bool = False
+    fan_out_ratio: float = Field(1.0, description="Joined row expansion multiplier")
+    double_counting_risk: bool = Field(False, description="Flag indicating potential measure inflation")
+    double_counting_measures: list[str] = Field(default_factory=list)
+
+
+class RelationshipDiscoveryRequest(BaseModel):
+    """Request parameters for discovering relationships."""
+    dataset_ids: Optional[list[str]] = Field(None, description="Subset of dataset IDs to analyze (defaults to all)")
+    refresh: bool = Field(False, description="Force re-discovery rather than returning cached candidates")
+
+
+class RelationshipDiscoveryResponse(BaseModel):
+    """Discovered candidate join relationships."""
+    relationships: list[DatasetRelationshipResponse]
+    total_found: int
+
+
+class RelationshipValidationRequest(BaseModel):
+    """Request to validate a proposed join relationship against actual data."""
+    source_dataset_id: str
+    source_column: str
+    target_dataset_id: str
+    target_column: str
