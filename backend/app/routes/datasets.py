@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.schemas import BatchSemanticUpdate, ColumnSemanticUpdate
 from app.services.auth_service import AuthContext, get_auth_context
 from app.services.dataset_service import DatasetService
 
@@ -140,3 +141,48 @@ async def delete_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
     
     return {"message": "Dataset deleted"}
+
+
+@router.patch("/{dataset_id}/columns/{column}/semantic")
+async def update_column_semantic(
+    dataset_id: str,
+    column: str,
+    update: ColumnSemanticUpdate,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """User correction for a column's semantic type and role."""
+    service = DatasetService(db, auth.org_id)
+    dataset = service.update_column_semantic(
+        dataset_id=dataset_id,
+        column_name=column,
+        semantic_type=update.semantic_type,
+        role=update.role,
+        notes=update.notes,
+    )
+    col_meta = next((c for c in dataset.columns if c.get("name") == column), None)
+    return {
+        "dataset_id": dataset.id,
+        "column": column,
+        "updated": col_meta,
+    }
+
+
+@router.put("/{dataset_id}/semantics")
+async def batch_update_semantics(
+    dataset_id: str,
+    body: BatchSemanticUpdate,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Batch update user corrections across multiple columns."""
+    service = DatasetService(db, auth.org_id)
+    corrections_dict = {
+        col: {"semantic_type": upd.semantic_type, "role": upd.role, "notes": upd.notes}
+        for col, upd in body.corrections.items()
+    }
+    dataset = service.batch_update_semantics(dataset_id, corrections_dict)
+    return {
+        "dataset_id": dataset.id,
+        "columns": dataset.columns,
+    }

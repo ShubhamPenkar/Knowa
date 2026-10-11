@@ -552,7 +552,7 @@ class ProjectService:
                 max_foundation_features=settings.foundation_max_features,
                 force_strategy=force,
             )
-            print(f"Model routing: {decision.strategy} — {decision.reason}")
+            print(f"Model routing: {decision.strategy} - {decision.reason}")
 
             start_time = time.time()
             model = build_model_for_strategy(

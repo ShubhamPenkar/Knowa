@@ -1,9 +1,9 @@
 """Pydantic schemas for API request/response validation."""
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============== Customer Schemas ==============
@@ -65,6 +65,8 @@ class ConfidenceInterval(BaseModel):
 
 class PredictionResponse(BaseModel):
     """Prediction result with confidence and conformal uncertainty."""
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     id: str
     customer_id: Optional[str]
     churn_probability: float = Field(..., ge=0, le=1)
@@ -76,9 +78,6 @@ class PredictionResponse(BaseModel):
     confidence_interval: Optional[ConfidenceInterval] = None
     low_confidence: bool = False
     abstention_reason: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 # ============== Explanation Schemas ==============
@@ -203,6 +202,8 @@ class FeedbackResponse(BaseModel):
 
 class ModelMetricsResponse(BaseModel):
     """Model performance metrics."""
+    model_config = ConfigDict(protected_namespaces=())
+
     model_version: str
     evaluation_date: datetime
     accuracy: float
@@ -223,3 +224,22 @@ class ActionEffectivenessResponse(BaseModel):
     adoption_rate: float
     success_rate: float
     avg_probability_reduction: float
+
+
+# ============== Semantic Understanding Schemas (Phase 1) ==============
+
+class ColumnSemanticUpdate(BaseModel):
+    """User correction for a column's inferred semantic meaning."""
+    semantic_type: Literal[
+        "id", "numeric_measure", "categorical", "boolean",
+        "datetime", "geographic", "text", "unknown"
+    ] = Field(..., description="id, numeric_measure, categorical, boolean, datetime, geographic, text, unknown")
+    role: Literal[
+        "identifier", "measure", "dimension", "timestamp", "unknown"
+    ] = Field(..., description="identifier, measure, dimension, timestamp, unknown")
+    notes: Optional[str] = Field(None, description="Optional reasoning for the user correction")
+
+
+class BatchSemanticUpdate(BaseModel):
+    """Batch user corrections for column semantics."""
+    corrections: dict[str, ColumnSemanticUpdate] = Field(..., description="Map of column name to correction")

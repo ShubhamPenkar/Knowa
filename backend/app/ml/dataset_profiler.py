@@ -26,6 +26,13 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+from app.ml.semantic_inferencer import (
+    SemanticAnnotation,
+    SemanticRole,
+    SemanticType,
+    infer_column_semantics,
+)
+
 # ---------------------------------------------------------------------------
 # Thresholds (deterministic, documented)
 # ---------------------------------------------------------------------------
@@ -258,6 +265,12 @@ class ColumnProfile:
     failed_parse_samples: list[str] = field(default_factory=list)
     sample_values: list[str] = field(default_factory=list)
     reason: str = ""
+    # Semantic data understanding (Phase 1)
+    semantic_type: str = SemanticType.UNKNOWN.value
+    role: str = SemanticRole.UNKNOWN.value
+    confidence: float = 0.0
+    evidence: list[str] = field(default_factory=list)
+    is_user_corrected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -278,6 +291,7 @@ class DatasetProfileReport:
     target_positive_label: Optional[str] = None
     present_target_values: Optional[list[str]] = None
     suggested_positive_label: Optional[str] = None
+    user_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def column_map(self) -> dict[str, ColumnProfile]:
         return {c.column_name: c for c in self.columns}
@@ -297,6 +311,7 @@ class DatasetProfileReport:
             "target_positive_label": self.target_positive_label,
             "present_target_values": self.present_target_values,
             "suggested_positive_label": self.suggested_positive_label,
+            "user_overrides": self.user_overrides,
         }
 
     def raise_if_blocking(self) -> None:
@@ -338,13 +353,22 @@ def suggest_positive_label(present_values: list[str]) -> Optional[str]:
     return None
 
 
-def profile_column(name: str, s: pd.Series, n_rows: int) -> ColumnProfile:
+def profile_column(
+    name: str,
+    s: pd.Series,
+    n_rows: int,
+    *,
+    user_override: Optional[dict[str, Any]] = None,
+) -> ColumnProfile:
     null_frac = float(s.isna().mean()) if n_rows else 0.0
     present = s.dropna()
     n_unique = int(present.nunique()) if len(present) else 0
     stats = numeric_parse_stats(s)
     parse_frac = float(stats["parse_frac"])
     samples = present.astype(str).head(5).tolist()
+
+    # Semantic data understanding (Phase 1)
+    sem = infer_column_semantics(name, s, user_override=user_override, n_rows=n_rows)
 
     issues: list[str] = []
     reason = ""
@@ -364,6 +388,11 @@ def profile_column(name: str, s: pd.Series, n_rows: int) -> ColumnProfile:
             failed_parse_samples=stats["failed_samples"],
             sample_values=samples,
             reason="Only one distinct non-null value (or all null) — zero variance.",
+            semantic_type=sem.semantic_type,
+            role=sem.role,
+            confidence=sem.confidence,
+            evidence=sem.evidence,
+            is_user_corrected=sem.is_user_corrected,
         )
 
     # ID detection (behavior + name)
@@ -392,6 +421,11 @@ def profile_column(name: str, s: pd.Series, n_rows: int) -> ColumnProfile:
                 "Excluded as likely identifier — override if this is a real feature. "
                 f"({', '.join(why) or 'heuristic'})"
             ),
+            semantic_type=sem.semantic_type,
+            role=sem.role,
+            confidence=sem.confidence,
+            evidence=sem.evidence,
+            is_user_corrected=sem.is_user_corrected,
         )
 
     # Missing density warning
@@ -407,7 +441,7 @@ def profile_column(name: str, s: pd.Series, n_rows: int) -> ColumnProfile:
             issues.append("coerced_numeric_from_text")
             reason = (
                 f"Numeric-looking text coerced to numeric "
-                f"(parse_frac={parse_frac:.3f} ≥ {NUMERIC_PARSE_THRESHOLD})."
+                f"(parse_frac={parse_frac:.3f} >= {NUMERIC_PARSE_THRESHOLD})."
             )
             if stats["failed_samples"]:
                 issues.append("partial_numeric_parse_failures")
@@ -427,6 +461,11 @@ def profile_column(name: str, s: pd.Series, n_rows: int) -> ColumnProfile:
             failed_parse_samples=stats["failed_samples"],
             sample_values=samples,
             reason=reason,
+            semantic_type=sem.semantic_type,
+            role=sem.role,
+            confidence=sem.confidence,
+            evidence=sem.evidence,
+            is_user_corrected=sem.is_user_corrected,
         )
         if null_frac >= MISSING_WARN_FRAC:
             profile.action_taken = "warn_high_missing" if action == "keep_as_numeric" else action
@@ -461,6 +500,11 @@ def profile_column(name: str, s: pd.Series, n_rows: int) -> ColumnProfile:
         failed_parse_samples=stats["failed_samples"],
         sample_values=samples,
         reason=reason,
+        semantic_type=sem.semantic_type,
+        role=sem.role,
+        confidence=sem.confidence,
+        evidence=sem.evidence,
+        is_user_corrected=sem.is_user_corrected,
     )
 
 
@@ -471,6 +515,7 @@ def profile_dataframe(
     target_positive_label: Optional[str] = None,
     problem_type: str = "binary_classification",
     feature_columns: Optional[list[str]] = None,
+    user_overrides: Optional[dict[str, dict[str, Any]]] = None,
 ) -> DatasetProfileReport:
     """Profile every column; optionally validate target label configuration."""
     if df is None or len(df.columns) == 0:
@@ -487,7 +532,8 @@ def profile_dataframe(
     n_rows = len(df)
     columns: list[ColumnProfile] = []
     for col in df.columns:
-        columns.append(profile_column(str(col), df[col], n_rows))
+        override = (user_overrides or {}).get(str(col))
+        columns.append(profile_column(str(col), df[col], n_rows, user_override=override))
 
     report = DatasetProfileReport(
         n_rows=n_rows,
@@ -495,6 +541,7 @@ def profile_dataframe(
         columns=columns,
         target_column=target_column,
         target_positive_label=target_positive_label,
+        user_overrides=dict(user_overrides or {}),
     )
 
     for c in columns:
@@ -523,7 +570,7 @@ def profile_dataframe(
                     "column": c.column_name,
                     "message": (
                         f"Column '{c.column_name}' is {c.null_frac:.0%} missing "
-                        f"(≥ {MISSING_WARN_FRAC:.0%}). Imputation will dominate."
+                        f"(>= {MISSING_WARN_FRAC:.0%}). Imputation will dominate."
                     ),
                     "null_frac": c.null_frac,
                 }
@@ -694,5 +741,10 @@ def enrich_column_metadata(
             entry["null_frac"] = prof.null_frac
             entry["numeric_parse_frac"] = prof.numeric_parse_frac
             entry["profile_reason"] = prof.reason
+            entry["semantic_type"] = prof.semantic_type
+            entry["role"] = prof.role
+            entry["confidence"] = prof.confidence
+            entry["evidence"] = list(prof.evidence)
+            entry["is_user_corrected"] = prof.is_user_corrected
         out.append(entry)
     return out

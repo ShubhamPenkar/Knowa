@@ -1,0 +1,15 @@
+# Enforce LF line endings for all text files across platforms (Mac, Linux, Windows)
+* text=auto eol=lf
+
+# Windows specific scripts
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.parquet binary
+*.joblib binary
+*.db binary
+*.ico binary

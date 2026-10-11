@@ -10,8 +10,61 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import StratifiedKFold, KFold, cross_val_score
 
 
-def _cv_scorer(problem_type: str) -> str:
-    return "neg_root_mean_squared_error" if problem_type == "regression" else "roc_auc"
+from sklearn.metrics import roc_auc_score
+
+
+def _binary_auc_scorer(estimator: Any, X: Any, y: Any) -> float:
+    """Binary ROC-AUC scorer extracting 1D positive-class probabilities.
+
+    Raises ValueError for mathematically undefined or unsupported conditions
+    (e.g., single-class folds or multiclass targets). Never silently returns
+    0.0 or 0.5.
+    """
+    y_arr = np.asarray(y)
+    unique_classes = np.unique(y_arr)
+    if len(unique_classes) < 2:
+        raise ValueError("Only one class present in y_true. ROC AUC score is not defined in that case.")
+    if len(unique_classes) > 2:
+        raise ValueError(f"Binary ROC-AUC scoring requires exactly 2 classes in y_true, got {len(unique_classes)}.")
+
+    if hasattr(estimator, "predict_proba"):
+        proba = estimator.predict_proba(X)
+        if hasattr(proba, "ndim") and proba.ndim == 2:
+            if proba.shape[1] == 2:
+                scores = proba[:, 1]
+            elif proba.shape[1] == 1:
+                scores = proba.ravel()
+            else:
+                raise ValueError(
+                    f"Expected binary classification probabilities with 2 columns, got shape {proba.shape}."
+                )
+        else:
+            scores = np.asarray(proba).ravel()
+        return float(roc_auc_score(y_arr, scores))
+
+    if hasattr(estimator, "decision_function"):
+        scores = estimator.decision_function(X)
+        return float(roc_auc_score(y_arr, scores))
+
+    preds = estimator.predict(X)
+    return float(roc_auc_score(y_arr, preds))
+
+
+def _cv_scorer(problem_type: str, family: str = "") -> Any:
+    """Return CV scoring strategy.
+
+    Prefers scikit-learn's built-in scorers ('neg_root_mean_squared_error' for
+    regression, 'roc_auc' for RandomForest/LightGBM). Uses _binary_auc_scorer
+    for XGBoost where scikit-learn 1.4+'s built-in scorer encounters 2D proba
+    shape incompatibilities on XGBClassifier.
+    """
+    if problem_type == "regression":
+        return "neg_root_mean_squared_error"
+    if problem_type == "binary_classification":
+        if family == "xgboost":
+            return _binary_auc_scorer
+        return "roc_auc"
+    raise ValueError(f"Unsupported problem_type: {problem_type}")
 
 
 def tune_tree_hyperparameters(
@@ -31,6 +84,9 @@ def tune_tree_hyperparameters(
     Falls back to strong regularized defaults if Optuna is unavailable or
     the search fails.
     """
+    if problem_type not in ("binary_classification", "regression"):
+        raise ValueError(f"Unsupported problem_type: {problem_type}")
+
     defaults = _default_params(family, problem_type)
     if n_trials <= 0:
         return defaults
@@ -42,8 +98,20 @@ def tune_tree_hyperparameters(
         return defaults
 
     y_arr = np.asarray(y)
-    if problem_type != "regression" and len(np.unique(y_arr)) < 2:
-        return defaults
+    if problem_type == "regression":
+        n_splits = min(n_folds, 3, len(y_arr))
+        if n_splits < 2:
+            return defaults
+        cv = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    else:
+        classes, counts = np.unique(y_arr, return_counts=True)
+        if len(classes) < 2:
+            return defaults
+        min_class_count = int(min(counts))
+        n_splits = min(n_folds, 3, min_class_count)
+        if n_splits < 2:
+            return defaults
+        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
     # Subsample large frames for faster search
     X_use, y_use = X, y
@@ -53,12 +121,7 @@ def tune_tree_hyperparameters(
         X_use = X.iloc[idx]
         y_use = y.iloc[idx] if hasattr(y, "iloc") else y_arr[idx]
 
-    cv = (
-        KFold(n_splits=min(n_folds, 3), shuffle=True, random_state=random_state)
-        if problem_type == "regression"
-        else StratifiedKFold(n_splits=min(n_folds, 3), shuffle=True, random_state=random_state)
-    )
-    scoring = _cv_scorer(problem_type)
+    scoring = _cv_scorer(problem_type, family=family)
 
     def objective(trial: "optuna.Trial") -> float:
         params = _suggest_params(trial, family, problem_type, random_state)
@@ -72,14 +135,25 @@ def tune_tree_hyperparameters(
                 scoring=scoring,
                 n_jobs=1,
             )
-            return float(np.nanmean(scores))
+            if np.any(np.isnan(scores)):
+                return -1e9
+            mean_score = float(np.mean(scores))
+            if np.isnan(mean_score):
+                return -1e9
+            return mean_score
         except Exception:
-            return -1e9 if problem_type == "regression" else 0.0
+            return -1e9
 
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=random_state))
     study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False)
 
-    if not study.best_trial or study.best_value is None or study.best_value <= -1e8:
+    try:
+        best_value = study.best_value
+        best_trial = study.best_trial
+    except Exception:
+        return defaults
+
+    if not best_trial or best_value is None or best_value <= -1e8:
         return defaults
 
     best = dict(study.best_params)

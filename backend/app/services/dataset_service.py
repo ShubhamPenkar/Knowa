@@ -1,5 +1,7 @@
 """Dataset management service for SaaS."""
 
+import io
+import json
 import os
 import uuid
 from typing import Any, Optional
@@ -36,13 +38,16 @@ class DatasetService:
         name: str,
         description: Optional[str] = None,
     ) -> Dataset:
-        """Upload CSV, run deterministic profiler, store parquet + profile sidecar."""
-        if not file.filename.endswith(".csv"):
+        filename = file.filename or ""
+        if not filename.lower().endswith(".csv"):
             raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
         try:
             content = await file.read()
-            df = pd.read_csv(pd.io.common.BytesIO(content))
+            try:
+                df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
+            except (UnicodeDecodeError, UnicodeError):
+                df = pd.read_csv(io.BytesIO(content), encoding="latin1")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
 
@@ -114,7 +119,7 @@ class DatasetService:
         )
 
     def get_profile(self, dataset_id: str) -> Optional[dict[str, Any]]:
-        """Return saved profiling report (recompute if sidecar missing)."""
+        """Return saved profiling report (recompute if sidecar missing, preserving user overrides)."""
         dataset = self.get_dataset(dataset_id)
         if not dataset:
             return None
@@ -122,8 +127,17 @@ class DatasetService:
         cached = load_profile_report(path)
         if cached is not None:
             return cached
+        # Reconstruct overrides from dataset.columns if sidecar was missing
+        overrides: dict[str, dict[str, Any]] = {}
+        for col in dataset.columns or []:
+            if col.get("is_user_corrected"):
+                overrides[col["name"]] = {
+                    "semantic_type": col.get("semantic_type"),
+                    "role": col.get("role"),
+                    "notes": "Preserved user correction",
+                }
         df = pd.read_parquet(dataset.file_path)
-        report = profile_dataframe(df)
+        report = profile_dataframe(df, user_overrides=overrides)
         save_profile_report(report, path)
         return report.to_dict()
 
@@ -167,6 +181,11 @@ class DatasetService:
                     "null_frac",
                     "numeric_parse_frac",
                     "profile_reason",
+                    "semantic_type",
+                    "role",
+                    "confidence",
+                    "evidence",
+                    "is_user_corrected",
                 ):
                     if k in meta:
                         stats[k] = meta[k]
@@ -205,3 +224,123 @@ class DatasetService:
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         return pd.read_parquet(dataset.file_path)
+
+    def update_column_semantic(
+        self,
+        dataset_id: str,
+        column_name: str,
+        semantic_type: str,
+        role: str,
+        notes: Optional[str] = None,
+    ) -> Dataset:
+        """Update a column's semantic type and role without modifying raw data."""
+        dataset = self.get_dataset(dataset_id)
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        found = False
+        updated_columns = []
+        user_overrides: dict[str, dict[str, Any]] = {}
+
+        for col in dataset.columns or []:
+            col_entry = dict(col)
+            if col_entry.get("name") == column_name:
+                col_entry["semantic_type"] = semantic_type
+                col_entry["role"] = role
+                col_entry["confidence"] = 1.0
+                col_entry["is_user_corrected"] = True
+                evidence_notes = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{role}', semantic_type='{semantic_type}'"]
+                col_entry["evidence"] = evidence_notes
+                found = True
+            updated_columns.append(col_entry)
+            if col_entry.get("is_user_corrected"):
+                user_overrides[col_entry["name"]] = {
+                    "semantic_type": col_entry.get("semantic_type"),
+                    "role": col_entry.get("role"),
+                    "notes": notes or "User correction",
+                }
+
+        if not found:
+            raise HTTPException(status_code=400, detail=f"Column '{column_name}' not found in dataset")
+
+        dataset.columns = updated_columns
+        self.db.commit()
+        self.db.refresh(dataset)
+
+        # Update profile sidecar report with user override
+        path = profile_path_for_parquet(dataset.file_path)
+        cached = load_profile_report(path)
+        if cached is not None:
+            cached["user_overrides"] = user_overrides
+            for c in cached.get("columns", []):
+                if c.get("column_name") == column_name:
+                    c["semantic_type"] = semantic_type
+                    c["role"] = role
+                    c["confidence"] = 1.0
+                    c["is_user_corrected"] = True
+                    c["evidence"] = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{role}', semantic_type='{semantic_type}'"]
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(cached, f, indent=2)
+
+        return dataset
+
+    def batch_update_semantics(
+        self,
+        dataset_id: str,
+        corrections: dict[str, dict[str, Any]],
+    ) -> Dataset:
+        """Batch update semantic annotations across multiple columns."""
+        dataset = self.get_dataset(dataset_id)
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        col_names = {c.get("name") for c in dataset.columns or []}
+        for target_col in corrections.keys():
+            if target_col not in col_names:
+                raise HTTPException(status_code=400, detail=f"Column '{target_col}' not found in dataset")
+
+        updated_columns = []
+        user_overrides: dict[str, dict[str, Any]] = {}
+        for col in dataset.columns or []:
+            col_entry = dict(col)
+            name = col_entry.get("name")
+            if name in corrections:
+                corr = corrections[name]
+                sem_type = corr.get("semantic_type") or col_entry.get("semantic_type")
+                role = corr.get("role") or col_entry.get("role")
+                notes = corr.get("notes")
+                col_entry["semantic_type"] = sem_type
+                col_entry["role"] = role
+                col_entry["confidence"] = 1.0
+                col_entry["is_user_corrected"] = True
+                col_entry["evidence"] = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{role}', semantic_type='{sem_type}'"]
+            updated_columns.append(col_entry)
+            if col_entry.get("is_user_corrected"):
+                user_overrides[col_entry["name"]] = {
+                    "semantic_type": col_entry.get("semantic_type"),
+                    "role": col_entry.get("role"),
+                }
+
+        dataset.columns = updated_columns
+        self.db.commit()
+        self.db.refresh(dataset)
+
+        # Update profile sidecar report
+        path = profile_path_for_parquet(dataset.file_path)
+        cached = load_profile_report(path)
+        if cached is not None:
+            cached["user_overrides"] = user_overrides
+            for c in cached.get("columns", []):
+                name = c.get("column_name")
+                if name in corrections:
+                    corr = corrections[name]
+                    c["semantic_type"] = corr.get("semantic_type") or c.get("semantic_type")
+                    c["role"] = corr.get("role") or c.get("role")
+                    c["confidence"] = 1.0
+                    c["is_user_corrected"] = True
+                    notes = corr.get("notes")
+                    c["evidence"] = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{c['role']}', semantic_type='{c['semantic_type']}'"]
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(cached, f, indent=2)
+
+        return dataset
