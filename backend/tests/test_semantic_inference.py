@@ -509,3 +509,70 @@ class TestSemanticApiEndpoints:
             assert "city" in recomputed.get("user_overrides", {})
         finally:
             new_db.close()
+
+
+class TestSemanticPrivacyAndHeuristicLabeling:
+    """Tests verifying evidence privacy hardening and heuristic confidence labeling."""
+
+    def test_evidence_excludes_raw_data_sample_values(self):
+        # 1. Confidential categories must not appear in evidence
+        secret_cat1 = "TopSecretDiagnosisAlpha"
+        secret_cat2 = "RestrictedInternalCodeBeta"
+        s_cat = pd.Series([secret_cat1, secret_cat2] * 20)
+        ann_cat = infer_column_semantics("diagnosis_dept", s_cat)
+        assert ann_cat.semantic_type == SemanticType.CATEGORICAL.value
+        for ev in ann_cat.evidence:
+            assert secret_cat1 not in ev
+            assert secret_cat2 not in ev
+        assert any("discrete" in ev.lower() or "categories" in ev.lower() for ev in ann_cat.evidence)
+
+        # 2. Raw UUID values must not appear in evidence
+        secret_uuid = "e3b0c442-98fc-1c14-9afb-f4c59620740e"
+        s_uuid = pd.Series([secret_uuid, "c56a4180-65aa-42ec-a945-5fd21dec75d2"] * 10)
+        ann_uuid = infer_column_semantics("secret_token", s_uuid)
+        assert ann_uuid.semantic_type == SemanticType.ID.value
+        for ev in ann_uuid.evidence:
+            assert secret_uuid not in ev
+        assert any("UUID" in ev for ev in ann_uuid.evidence)
+
+        # 3. Raw date strings must not appear in evidence
+        raw_date = "2024-03-15 09:30:00"
+        s_date = pd.Series([raw_date, "2024-03-16 10:45:00"] * 10)
+        ann_dt = infer_column_semantics("timestamp_col", s_date)
+        for ev in ann_dt.evidence:
+            assert raw_date not in ev
+        assert any("date" in ev.lower() or "timestamp" in ev.lower() for ev in ann_dt.evidence)
+
+        # 4. Raw ZIP codes must not appear in evidence
+        raw_zip = "90210"
+        s_zip = pd.Series([raw_zip, "94105", "10001"] * 10)
+        ann_zip = infer_column_semantics("postal_code", s_zip)
+        for ev in ann_zip.evidence:
+            assert raw_zip not in ev
+
+    def test_confidence_labeled_as_heuristic_score(self):
+        s = pd.Series(["Active", "Inactive"] * 25)
+        ann = infer_column_semantics("status_flag", s)
+        assert ann.confidence_type == "heuristic"
+        assert 0.0 <= ann.confidence <= 1.0
+
+        # User override is explicitly user_assigned
+        override = {"semantic_type": "categorical", "role": "dimension", "notes": "manual"}
+        ann_override = infer_column_semantics("status_flag", s, user_override=override)
+        assert ann_override.confidence_type == "user_assigned"
+        assert ann_override.confidence == 1.0
+
+    def test_column_profile_and_enrichment_propagate_confidence_type(self):
+        df = pd.DataFrame({
+            "code": ["A1", "A2", "A3", "A4", "A5"] * 10,
+            "val": [1.5, 2.5, 3.5, 4.5, 5.5] * 10,
+        })
+        report = profile_dataframe(df)
+        col_map = report.column_map()
+        assert col_map["code"].confidence_type == "heuristic"
+        assert col_map["val"].confidence_type == "heuristic"
+
+        base_cols = [{"name": "code", "dtype": "object"}, {"name": "val", "dtype": "float64"}]
+        enriched = enrich_column_metadata(base_cols, report)
+        for c in enriched:
+            assert c["confidence_type"] == "heuristic"

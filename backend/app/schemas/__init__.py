@@ -243,3 +243,14 @@ class ColumnSemanticUpdate(BaseModel):
 class BatchSemanticUpdate(BaseModel):
     """Batch user corrections for column semantics."""
     corrections: dict[str, ColumnSemanticUpdate] = Field(..., description="Map of column name to correction")
+
+
+class ColumnSemanticDetail(BaseModel):
+    """Detailed column semantic metadata with heuristic score labeling."""
+    name: str
+    semantic_type: str
+    role: str
+    confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
+    confidence_type: str = Field("heuristic", description="'heuristic' for inferred rules, 'user_assigned' for manual corrections")
+    evidence: list[str] = Field(default_factory=list, description="Privacy-hardened pattern explanations without raw values")
+    is_user_corrected: bool = False

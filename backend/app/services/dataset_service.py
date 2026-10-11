@@ -248,6 +248,7 @@ class DatasetService:
                 col_entry["semantic_type"] = semantic_type
                 col_entry["role"] = role
                 col_entry["confidence"] = 1.0
+                col_entry["confidence_type"] = "user_assigned"
                 col_entry["is_user_corrected"] = True
                 evidence_notes = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{role}', semantic_type='{semantic_type}'"]
                 col_entry["evidence"] = evidence_notes
@@ -277,6 +278,7 @@ class DatasetService:
                     c["semantic_type"] = semantic_type
                     c["role"] = role
                     c["confidence"] = 1.0
+                    c["confidence_type"] = "user_assigned"
                     c["is_user_corrected"] = True
                     c["evidence"] = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{role}', semantic_type='{semantic_type}'"]
             with open(path, "w", encoding="utf-8") as f:
@@ -312,6 +314,7 @@ class DatasetService:
                 col_entry["semantic_type"] = sem_type
                 col_entry["role"] = role
                 col_entry["confidence"] = 1.0
+                col_entry["confidence_type"] = "user_assigned"
                 col_entry["is_user_corrected"] = True
                 col_entry["evidence"] = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{role}', semantic_type='{sem_type}'"]
             updated_columns.append(col_entry)
@@ -337,6 +340,7 @@ class DatasetService:
                     c["semantic_type"] = corr.get("semantic_type") or c.get("semantic_type")
                     c["role"] = corr.get("role") or c.get("role")
                     c["confidence"] = 1.0
+                    c["confidence_type"] = "user_assigned"
                     c["is_user_corrected"] = True
                     notes = corr.get("notes")
                     c["evidence"] = [f"User corrected: {notes}"] if notes else [f"User corrected: role='{c['role']}', semantic_type='{c['semantic_type']}'"]

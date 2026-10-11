@@ -53,7 +53,8 @@ class SemanticAnnotation:
     """Structured semantic inference for a column."""
     semantic_type: str = SemanticType.UNKNOWN.value
     role: str = SemanticRole.UNKNOWN.value
-    confidence: float = 0.0
+    confidence: float = 0.0  # Heuristic score in [0.0, 1.0], not a calibrated probability
+    confidence_type: str = "heuristic"  # 'heuristic' for rule inferences, 'user_assigned' for manual overrides
     evidence: list[str] = field(default_factory=list)
     is_user_corrected: bool = False
 
@@ -99,8 +100,9 @@ def detect_identifier(
                 semantic_type=SemanticType.ID.value,
                 role=SemanticRole.IDENTIFIER.value,
                 confidence=0.98,
+                confidence_type="heuristic",
                 evidence=[
-                    f"Sample values match standard UUID format (e.g. '{samples[0]}')",
+                    "Values match standard RFC 4122 UUID pattern",
                     f"Uniqueness ratio = {uniq_ratio:.2f}",
                 ],
             )
@@ -122,10 +124,11 @@ def detect_identifier(
                             semantic_type=SemanticType.ID.value,
                             role=SemanticRole.IDENTIFIER.value,
                             confidence=0.95 if has_id_name else 0.86,
+                            confidence_type="heuristic",
                             evidence=[
                                 "Sequential integer surrogate key pattern (step=1)",
                                 f"Uniqueness ratio = {uniq_ratio:.2f}",
-                                f"Value span starts at {int(ordered[0])}",
+                                "Monotonic integer progression with unit increment",
                             ],
                         )
 
@@ -267,13 +270,13 @@ def detect_datetime(
 
             if total_dt_pattern >= 0.75:
                 conf = 0.96 if has_dt_name else 0.88
-                sample_ex = samples[0]
                 return SemanticAnnotation(
                     semantic_type=SemanticType.DATETIME.value,
                     role=SemanticRole.TIMESTAMP.value,
                     confidence=conf,
+                    confidence_type="heuristic",
                     evidence=[
-                        f"{total_dt_pattern:.0%} of sample values match date formats (e.g. '{sample_ex}')",
+                        f"{total_dt_pattern:.0%} of values match standard calendar date or timestamp patterns",
                         f"Name '{name}' matches temporal token" if has_dt_name else "Detected via date string pattern",
                     ],
                 )
@@ -289,8 +292,9 @@ def detect_datetime(
                     semantic_type=SemanticType.DATETIME.value,
                     role=SemanticRole.TIMESTAMP.value,
                     confidence=0.90,
+                    confidence_type="heuristic",
                     evidence=[
-                        f"Numeric values fall within standard Unix epoch seconds range ({min_v:.0f} to {max_v:.0f})",
+                        "Numeric values fall within standard Unix epoch seconds range",
                         f"Column name '{name}' indicates timestamp",
                     ],
                 )
@@ -300,8 +304,9 @@ def detect_datetime(
                     semantic_type=SemanticType.DATETIME.value,
                     role=SemanticRole.TIMESTAMP.value,
                     confidence=0.90,
+                    confidence_type="heuristic",
                     evidence=[
-                        f"Numeric values fall within Unix epoch millisecond range ({min_v:.0f} to {max_v:.0f})",
+                        "Numeric values fall within standard Unix epoch millisecond range",
                         f"Column name '{name}' indicates timestamp",
                     ],
                 )
@@ -344,13 +349,13 @@ def detect_boolean(
             else:
                 conf = 0.95
 
-            values_str = ", ".join(f"'{v}'" for v in sorted(list(present_str_set)))
             return SemanticAnnotation(
                 semantic_type=SemanticType.BOOLEAN.value,
                 role=SemanticRole.DIMENSION.value,
                 confidence=conf,
+                confidence_type="heuristic",
                 evidence=[
-                    f"Binary values strictly restricted to {{{values_str}}}",
+                    "Values strictly restricted to standard binary boolean indicator set",
                     f"Column name '{name}' suggests boolean flag" if has_bool_name else "Binary categorical indicator",
                 ],
             )
@@ -379,8 +384,9 @@ def detect_geographic(
                         semantic_type=SemanticType.GEOGRAPHIC.value,
                         role=SemanticRole.DIMENSION.value,
                         confidence=0.96,
+                        confidence_type="heuristic",
                         evidence=[
-                            f"Numeric values fall within valid latitude range: [{min_v:.2f}, {max_v:.2f}]",
+                            "Numeric values fall within valid geographic latitude range [-90, +90]",
                             f"Column name '{name}' specifies latitude",
                         ],
                     )
@@ -390,8 +396,9 @@ def detect_geographic(
                         semantic_type=SemanticType.GEOGRAPHIC.value,
                         role=SemanticRole.DIMENSION.value,
                         confidence=0.96,
+                        confidence_type="heuristic",
                         evidence=[
-                            f"Numeric values fall within valid longitude range: [{min_v:.2f}, {max_v:.2f}]",
+                            "Numeric values fall within valid geographic longitude range [-180, +180]",
                             f"Column name '{name}' specifies longitude",
                         ],
                     )
@@ -406,8 +413,9 @@ def detect_geographic(
                     semantic_type=SemanticType.GEOGRAPHIC.value,
                     role=SemanticRole.DIMENSION.value,
                     confidence=0.94,
+                    confidence_type="heuristic",
                     evidence=[
-                        f"Sample values match postal/zip code format (e.g. '{samples[0]}')",
+                        "Values match standard postal/ZIP code format pattern",
                         f"Column name '{name}' indicates postal code",
                     ],
                 )
@@ -517,9 +525,10 @@ def detect_measure(
                     semantic_type=SemanticType.NUMERIC_MEASURE.value,
                     role=SemanticRole.MEASURE.value,
                     confidence=0.95,
+                    confidence_type="heuristic",
                     evidence=[
                         f"Column name '{name}' indicates quantitative metric",
-                        f"Values range from {min_v:g} to {max_v:g} with {n_unique} distinct values",
+                        f"Quantitative numeric distribution with {n_unique} distinct values",
                     ],
                 )
 
@@ -529,9 +538,10 @@ def detect_measure(
                     semantic_type=SemanticType.NUMERIC_MEASURE.value,
                     role=SemanticRole.MEASURE.value,
                     confidence=0.91,
+                    confidence_type="heuristic",
                     evidence=[
-                        f"Continuous numeric distribution (range: [{min_v:g}, {max_v:g}])",
-                        f"{n_unique} unique numeric values among {non_null_count} rows",
+                        f"Continuous numeric distribution with {n_unique} unique values",
+                        f"Quantitative continuous scale without discrete clustering",
                     ],
                 )
 
@@ -541,9 +551,10 @@ def detect_measure(
                     semantic_type=SemanticType.NUMERIC_MEASURE.value,
                     role=SemanticRole.MEASURE.value,
                     confidence=0.85,
+                    confidence_type="heuristic",
                     evidence=[
                         f"Quantitative numeric metric with {n_unique} distinct values",
-                        f"Range: [{min_v:g}, {max_v:g}]",
+                        "High cardinality integer distribution consistent with measure",
                     ],
                 )
 
@@ -563,15 +574,14 @@ def detect_categorical(
 
     # Low-cardinality discrete values (strings or coded numbers)
     if non_null_count > 0 and (n_unique <= 30 or uniq_ratio <= 0.20):
-        samples = s.dropna().astype(str).unique()[:5].tolist()
-        sample_str = ", ".join(f"'{v}'" for v in samples[:4])
         return SemanticAnnotation(
             semantic_type=SemanticType.CATEGORICAL.value,
             role=SemanticRole.DIMENSION.value,
             confidence=0.92 if has_cat_name else 0.86,
+            confidence_type="heuristic",
             evidence=[
                 f"Low-cardinality discrete values ({n_unique} categories)",
-                f"Representative categories: [{sample_str}]",
+                "Repeated discrete categories across rows without exposing raw sample values",
                 f"Name '{name}' matches categorical dimension" if has_cat_name else "Repeated discrete values across rows",
             ],
         )
@@ -607,6 +617,7 @@ def infer_column_semantics(
                 semantic_type=resolved_type,
                 role=resolved_role,
                 confidence=1.0,
+                confidence_type="user_assigned",
                 evidence=[f"User override: {notes}"],
                 is_user_corrected=True,
             )

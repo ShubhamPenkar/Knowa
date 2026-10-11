@@ -268,7 +268,8 @@ class ColumnProfile:
     # Semantic data understanding (Phase 1)
     semantic_type: str = SemanticType.UNKNOWN.value
     role: str = SemanticRole.UNKNOWN.value
-    confidence: float = 0.0
+    confidence: float = 0.0  # Rule-based heuristic score in [0.0, 1.0], not a calibrated probability
+    confidence_type: str = "heuristic"  # 'heuristic' for inferred rules, 'user_assigned' for manual overrides
     evidence: list[str] = field(default_factory=list)
     is_user_corrected: bool = False
 
@@ -391,6 +392,7 @@ def profile_column(
             semantic_type=sem.semantic_type,
             role=sem.role,
             confidence=sem.confidence,
+            confidence_type=sem.confidence_type,
             evidence=sem.evidence,
             is_user_corrected=sem.is_user_corrected,
         )
@@ -424,6 +426,7 @@ def profile_column(
             semantic_type=sem.semantic_type,
             role=sem.role,
             confidence=sem.confidence,
+            confidence_type=sem.confidence_type,
             evidence=sem.evidence,
             is_user_corrected=sem.is_user_corrected,
         )
@@ -464,6 +467,7 @@ def profile_column(
             semantic_type=sem.semantic_type,
             role=sem.role,
             confidence=sem.confidence,
+            confidence_type=sem.confidence_type,
             evidence=sem.evidence,
             is_user_corrected=sem.is_user_corrected,
         )
@@ -503,6 +507,7 @@ def profile_column(
         semantic_type=sem.semantic_type,
         role=sem.role,
         confidence=sem.confidence,
+        confidence_type=sem.confidence_type,
         evidence=sem.evidence,
         is_user_corrected=sem.is_user_corrected,
     )
@@ -744,6 +749,7 @@ def enrich_column_metadata(
             entry["semantic_type"] = prof.semantic_type
             entry["role"] = prof.role
             entry["confidence"] = prof.confidence
+            entry["confidence_type"] = getattr(prof, "confidence_type", "heuristic")
             entry["evidence"] = list(prof.evidence)
             entry["is_user_corrected"] = prof.is_user_corrected
         out.append(entry)

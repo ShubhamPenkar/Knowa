@@ -287,7 +287,7 @@ export default function Datasets() {
                       <div>
                         <h4 className="font-display text-base font-semibold text-ink">Semantic Column Understanding</h4>
                         <p className="text-xs text-[var(--muted)]">
-                          Inferred semantic roles, types, confidence levels, and explainable evidence. Corrections are preserved.
+                          Inferred semantic roles, types, heuristic confidence scores (not calibrated probabilities), and privacy-preserving pattern explanations. Corrections are preserved.
                         </p>
                       </div>
                       {correctionSuccess && (
@@ -314,8 +314,8 @@ export default function Datasets() {
                               <th className="py-2 px-2.5">Native Dtype</th>
                               <th className="py-2 px-2.5">Inferred Role</th>
                               <th className="py-2 px-2.5">Semantic Type</th>
-                              <th className="py-2 px-2.5">Confidence</th>
-                              <th className="py-2 px-2.5">Evidence & Signals</th>
+                              <th className="py-2 px-2.5" title="Rule-based heuristic score, not a calibrated probability">Heuristic Score</th>
+                              <th className="py-2 px-2.5">Pattern Evidence</th>
                               <th className="py-2 px-2.5 text-right">Action</th>
                             </tr>
                           </thead>
@@ -375,7 +375,14 @@ export default function Datasets() {
                                     )}
                                   </td>
                                   <td className="py-2.5 px-2.5">
-                                    <div className="flex items-center gap-1.5">
+                                    <div
+                                      className="flex items-center gap-1.5"
+                                      title={
+                                        col.is_user_corrected
+                                          ? 'User-assigned certainty (100%)'
+                                          : `Rule-based heuristic score: ${confPercent}% (not a calibrated probability)`
+                                      }
+                                    >
                                       <div className="w-12 h-1.5 bg-mist rounded-full overflow-hidden">
                                         <div
                                           className={`h-full ${
@@ -389,6 +396,9 @@ export default function Datasets() {
                                         />
                                       </div>
                                       <span className="text-[11px] text-[var(--muted)]">{confPercent}%</span>
+                                      <span className="text-[9px] uppercase tracking-wider text-[var(--muted)]/60 font-mono">
+                                        {col.is_user_corrected ? 'user' : 'heur.'}
+                                      </span>
                                     </div>
                                   </td>
                                   <td className="py-2.5 px-2.5 text-[11px] text-[var(--muted)] max-w-xs">
