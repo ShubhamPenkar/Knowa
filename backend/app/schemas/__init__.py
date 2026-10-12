@@ -292,11 +292,13 @@ class DatasetRelationshipResponse(BaseModel):
     confidence_type: str = Field("heuristic", description="Explicit confidence type label")
     evidence: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    validation_status: str = Field(..., description="candidate, validated, ambiguous, rejected")
+    validation_status: str = Field(..., description="candidate, needs_review, ambiguous, validated, rejected")
     is_ambiguous: bool = False
     fan_out_ratio: float = Field(1.0, description="Joined row expansion multiplier")
     double_counting_risk: bool = Field(False, description="Flag indicating potential measure inflation")
     double_counting_measures: list[str] = Field(default_factory=list)
+    rejection_reason: Optional[str] = None
+    review_reason: Optional[str] = None
 
 
 class RelationshipDiscoveryRequest(BaseModel):
@@ -431,6 +433,7 @@ class ProductIntelligenceOverviewResponse(BaseModel):
     opportunities: list[InvestigationOpportunityResponse] = Field(default_factory=list)
     data_quality_warnings: list[DataQualityWarningResponse] = Field(default_factory=list)
     safety_warnings: list[RelationshipSafetyWarningResponse] = Field(default_factory=list)
+    relationships: list[DatasetRelationshipResponse] = Field(default_factory=list)
 
 
 class ProductIntelligenceRequest(BaseModel):

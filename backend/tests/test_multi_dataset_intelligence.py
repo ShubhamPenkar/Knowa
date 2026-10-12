@@ -30,6 +30,7 @@ from app.db.models import Dataset, Organization, User
 from app.main import app
 from app.ml.dataset_profiler import enrich_column_metadata, profile_dataframe
 from app.ml.relationship_inferencer import (
+    DatasetRelationship,
     GrainType,
     RelationshipCardinality,
     ValidationStatus,
@@ -302,6 +303,170 @@ class TestRelationshipDiscoveryUnit:
         assert rel.cardinality == RelationshipCardinality.MANY_TO_MANY.value
         assert rel.double_counting_risk is True
         assert any("many-to-many" in w.lower() for w in rel.warnings)
+
+    def test_incompatible_demographic_and_financial_balance_overlap_rejected(self):
+        """Clearly incompatible semantic types (e.g. demographic age vs financial balance) must not join."""
+        # Raw numeric values overlap 100%, but concepts are completely incompatible
+        values = [20, 25, 30, 35, 40, 45, 50, 55, 60]
+        df_a = pd.DataFrame({"customer_age": values})
+        meta_a = {
+            "id": "ds_demo",
+            "name": "Demographics",
+            "columns": [{"name": "customer_age", "role": "dimension", "semantic_type": "categorical"}],
+        }
+        df_b = pd.DataFrame({"account_balance": [float(v) for v in values]})
+        meta_b = {
+            "id": "ds_fin",
+            "name": "Financials",
+            "columns": [{"name": "account_balance", "role": "measure", "semantic_type": "numeric_measure"}],
+        }
+
+        candidates = discover_candidate_relationships(df_a, meta_a, df_b, meta_b)
+        # Incompatible semantic pairs must be rejected early despite identical numbers
+        assert len(candidates) == 0
+
+    def test_valid_join_keys_with_different_column_names(self):
+        """Legitimate relationships must be discovered even when column names differ completely."""
+        ids = [f"ENTITY_REF_{i:04d}" for i in range(1, 41)]
+        df_a = pd.DataFrame({"customer_reference": ids, "plan": ["Pro"] * 40})
+        meta_a = {
+            "id": "ds_a",
+            "name": "Customers",
+            "columns": [
+                {"name": "customer_reference", "role": "identifier", "semantic_type": "id"},
+                {"name": "plan", "role": "dimension", "semantic_type": "categorical"},
+            ],
+        }
+        df_b = pd.DataFrame({"account_holder_key": ids[:36], "score": [88] * 36})
+        meta_b = {
+            "id": "ds_b",
+            "name": "Accounts",
+            "columns": [
+                {"name": "account_holder_key", "role": "identifier", "semantic_type": "id"},
+                {"name": "score", "role": "measure", "semantic_type": "numeric_measure"},
+            ],
+        }
+
+        candidates = discover_candidate_relationships(df_a, meta_a, df_b, meta_b)
+        matched = [c for c in candidates if c.source_column == "customer_reference" and c.target_column == "account_holder_key"]
+        assert len(matched) == 1
+        assert matched[0].validation_status in (ValidationStatus.CANDIDATE.value, ValidationStatus.NEEDS_REVIEW.value)
+        assert any("different column names" in ev for ev in matched[0].evidence)
+
+    def test_compatible_keys_with_poor_containment_requires_review(self):
+        """Keys with low containment should be flagged as needing review rather than high-confidence candidate."""
+        # 25% overlap
+        src_keys = [f"K_{i:03d}" for i in range(1, 41)]
+        tgt_keys = [f"K_{i:03d}" for i in range(1, 11)] + [f"OTHER_{i:03d}" for i in range(1, 31)]
+        df_a = pd.DataFrame({"user_id": src_keys})
+        meta_a = {
+            "id": "a", "name": "A",
+            "columns": [{"name": "user_id", "role": "identifier", "semantic_type": "id"}]
+        }
+        df_b = pd.DataFrame({"user_id": tgt_keys})
+        meta_b = {
+            "id": "b", "name": "B",
+            "columns": [{"name": "user_id", "role": "identifier", "semantic_type": "id"}]
+        }
+
+        candidates = discover_candidate_relationships(df_a, meta_a, df_b, meta_b)
+        assert len(candidates) == 1
+        rel = candidates[0]
+        assert rel.validation_status == ValidationStatus.NEEDS_REVIEW.value
+        assert rel.review_reason is not None
+        assert "containment" in rel.review_reason.lower() or "overlap" in rel.review_reason.lower()
+
+    def test_compatible_keys_with_excessive_nulls_requires_review(self):
+        """Keys with notable missingness (e.g. 40% nulls) should be flagged as needing review."""
+        keys = [f"ID_{i:03d}" for i in range(1, 21)]
+        src_keys = keys + [None] * 15  # ~43% nulls
+        tgt_keys = keys + [f"EXTRA_{i}" for i in range(10)]
+        df_a = pd.DataFrame({"member_id": src_keys})
+        meta_a = {
+            "id": "a", "name": "A",
+            "columns": [{"name": "member_id", "role": "identifier", "semantic_type": "id"}]
+        }
+        df_b = pd.DataFrame({"member_id": tgt_keys})
+        meta_b = {
+            "id": "b", "name": "B",
+            "columns": [{"name": "member_id", "role": "identifier", "semantic_type": "id"}]
+        }
+
+        candidates = discover_candidate_relationships(df_a, meta_a, df_b, meta_b)
+        assert len(candidates) == 1
+        rel = candidates[0]
+        assert rel.validation_status == ValidationStatus.NEEDS_REVIEW.value
+        assert rel.review_reason is not None
+        assert "missingness" in rel.review_reason.lower() or "null" in rel.review_reason.lower()
+
+    def test_unique_vs_non_unique_keys_cardinality_detection(self):
+        """Cardinally should accurately differentiate 1:1, 1:N, N:1, and N:N."""
+        keys = [f"SKU_{i:03d}" for i in range(1, 21)]
+        df_unique = pd.DataFrame({"sku_id": keys})
+        meta_unique = {
+            "id": "u", "name": "Unique",
+            "columns": [{"name": "sku_id", "role": "identifier", "semantic_type": "id"}]
+        }
+        df_repeats = pd.DataFrame({"sku_id": keys * 3})
+        meta_repeats = {
+            "id": "r", "name": "Repeats",
+            "columns": [{"name": "sku_id", "role": "identifier", "semantic_type": "id"}]
+        }
+
+        # Unique -> Repeats: ONE_TO_MANY
+        cands_1n = discover_candidate_relationships(df_unique, meta_unique, df_repeats, meta_repeats)
+        assert len(cands_1n) == 1
+        assert cands_1n[0].cardinality == RelationshipCardinality.ONE_TO_MANY.value
+
+        # Repeats -> Unique: MANY_TO_ONE
+        cands_n1 = discover_candidate_relationships(df_repeats, meta_repeats, df_unique, meta_unique)
+        assert len(cands_n1) == 1
+        assert cands_n1[0].cardinality == RelationshipCardinality.MANY_TO_ONE.value
+
+    def test_competing_candidate_keys_flagged_with_review_reason(self):
+        """Competing candidate keys should include unambiguous review reasons."""
+        keys = [f"ORG_{i:03d}" for i in range(1, 25)]
+        df_a = pd.DataFrame({"org_id": keys})
+        meta_a = {
+            "id": "src", "name": "Source",
+            "columns": [{"name": "org_id", "role": "identifier", "semantic_type": "id"}]
+        }
+        df_b = pd.DataFrame({
+            "billing_org_id": keys,
+            "shipping_org_id": keys,
+        })
+        meta_b = {
+            "id": "tgt", "name": "Target",
+            "columns": [
+                {"name": "billing_org_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "shipping_org_id", "role": "identifier", "semantic_type": "id"},
+            ]
+        }
+        candidates = discover_candidate_relationships(df_a, meta_a, df_b, meta_b)
+        assert len(candidates) == 2
+        for c in candidates:
+            assert c.is_ambiguous is True
+            assert c.validation_status == ValidationStatus.AMBIGUOUS.value
+            assert c.review_reason is not None
+            assert "multiple candidate join keys" in c.review_reason.lower()
+
+    def test_join_validation_zero_matches_sets_rejected_status(self):
+        """Join validation producing zero matches must set validation_status to rejected with reason."""
+        df_a = pd.DataFrame({"id": ["A1", "A2", "A3"]})
+        df_b = pd.DataFrame({"id": ["B1", "B2", "B3"]})
+        cand = DatasetRelationship(
+            id="test_cand",
+            source_dataset_id="a",
+            source_dataset_name="A",
+            source_column="id",
+            target_dataset_id="b",
+            target_dataset_name="B",
+            target_column="id",
+        )
+        res = validate_relationship_join(df_a, "id", df_b, "id", cand)
+        assert res.validation_status == ValidationStatus.REJECTED.value
+        assert res.rejection_reason is not None
+        assert "zero matching rows" in res.rejection_reason.lower()
 
 
 class TestRelationshipApiAndPersistence:

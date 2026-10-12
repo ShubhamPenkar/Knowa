@@ -123,6 +123,19 @@ class DatasetRelationshipService:
 
         discovered: list[DatasetRelationship] = []
 
+        # Check if previous relationships had validated or rejected statuses to preserve
+        previous_decisions: dict[str, dict[str, Any]] = {}
+        if os.path.exists(self.relationships_file):
+            try:
+                with open(self.relationships_file, "r", encoding="utf-8") as f:
+                    for item in json.load(f):
+                        rel_id = item.get("id")
+                        val_stat = item.get("validation_status")
+                        if rel_id and val_stat in ("validated", "rejected"):
+                            previous_decisions[rel_id] = item
+            except Exception:
+                pass
+
         # Pairwise comparison (directional: A -> B and B -> A)
         for i in range(len(loaded)):
             for j in range(len(loaded)):
@@ -137,7 +150,18 @@ class DatasetRelationshipService:
                     target_df=df_tgt,
                     target_meta=meta_tgt,
                 )
-                discovered.extend(rels)
+                for r in rels:
+                    if r.id in previous_decisions:
+                        prev = previous_decisions[r.id]
+                        r.validation_status = prev.get("validation_status", r.validation_status)
+                        r.fan_out_ratio = prev.get("fan_out_ratio", r.fan_out_ratio)
+                        if prev.get("rejection_reason"):
+                            r.rejection_reason = prev.get("rejection_reason")
+                        if prev.get("review_reason"):
+                            r.review_reason = prev.get("review_reason")
+                        if prev.get("evidence"):
+                            r.evidence = prev.get("evidence")
+                    discovered.append(r)
 
         # Persist discovered relationships
         try:

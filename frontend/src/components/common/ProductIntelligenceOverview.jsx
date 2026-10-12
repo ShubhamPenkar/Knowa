@@ -71,6 +71,45 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
     );
   }
 
+  const [expandedPairs, setExpandedPairs] = useState({});
+  const [validatingRelId, setValidatingRelId] = useState(null);
+  const [validationError, setValidationError] = useState('');
+
+  const togglePair = (pairKey) => {
+    setExpandedPairs((prev) => ({ ...prev, [pairKey]: !prev[pairKey] }));
+  };
+
+  const handleValidateRelationship = async (rel) => {
+    if (!token || !rel) return;
+    setValidatingRelId(rel.id);
+    setValidationError('');
+    try {
+      const res = await fetch('/api/datasets/relationships/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          source_dataset_id: rel.source_dataset_id,
+          source_column: rel.source_column,
+          target_dataset_id: rel.target_dataset_id,
+          target_column: rel.target_column,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to validate relationship join');
+      }
+      await fetchOverview(true);
+    } catch (err) {
+      console.error(err);
+      setValidationError(err.message || 'Error validating relationship');
+    } finally {
+      setValidatingRelId(null);
+    }
+  };
+
   const readiness = data?.readiness || { total_datasets: 0, ready_datasets: 0, total_rows: 0, dataset_summaries: [] };
   const metrics = data?.metrics || [];
   const unavailableMetrics = data?.unavailable_metrics || [];
@@ -78,6 +117,60 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
   const opportunities = data?.opportunities || [];
   const qualityWarnings = data?.data_quality_warnings || [];
   const safetyWarnings = data?.safety_warnings || [];
+  const relationships = data?.relationships || [];
+
+  // Group relationships by dataset pair
+  const pairGroups = relationships.reduce((acc, rel) => {
+    const ids = [rel.source_dataset_id, rel.target_dataset_id].sort();
+    const pairKey = `${ids[0]}__${ids[1]}`;
+    if (!acc[pairKey]) {
+      acc[pairKey] = {
+        pairKey,
+        sourceName: rel.source_dataset_name,
+        targetName: rel.target_dataset_name,
+        pairLabel: `${rel.source_dataset_name} ↔ ${rel.target_dataset_name}`,
+        relationships: [],
+        counts: { candidate: 0, needs_review: 0, validated: 0, rejected: 0 },
+        hasDoubleCounting: false,
+      };
+    }
+    acc[pairKey].relationships.push(rel);
+    const status = rel.validation_status;
+    if (status === 'validated') acc[pairKey].counts.validated += 1;
+    else if (status === 'rejected') acc[pairKey].counts.rejected += 1;
+    else if (status === 'needs_review' || status === 'ambiguous') acc[pairKey].counts.needs_review += 1;
+    else acc[pairKey].counts.candidate += 1;
+
+    if (rel.double_counting_risk) {
+      acc[pairKey].hasDoubleCounting = true;
+    }
+    return acc;
+  }, {});
+
+  const pairGroupsList = Object.values(pairGroups);
+
+  const overallCounts = relationships.reduce(
+    (acc, r) => {
+      const status = r.validation_status;
+      if (status === 'validated') acc.validated += 1;
+      else if (status === 'rejected') acc.rejected += 1;
+      else if (status === 'needs_review' || status === 'ambiguous') acc.needs_review += 1;
+      else acc.candidate += 1;
+      return acc;
+    },
+    { candidate: 0, needs_review: 0, validated: 0, rejected: 0 }
+  );
+
+  // Critical double-counting risk measures
+  const doubleCountingWarnings = safetyWarnings.filter(
+    (sw) => sw.risk === 'double_counting_risk' || sw.warning_type === 'fan_out'
+  );
+  const allSafeguardedMeasures = Array.from(
+    new Set(doubleCountingWarnings.flatMap((w) => w.affected_measures || []))
+  );
+
+  const crossDatasetUnavailable = unavailableMetrics.find((um) => um.category === 'cross_dataset');
+  const hasCrossDatasetMetric = metrics.some((m) => m.category === 'cross_dataset');
 
   if (readiness.total_datasets === 0) {
     return (
@@ -116,22 +209,256 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
         </button>
       </div>
 
-      {/* Safety & Quality Alerts */}
-      {(safetyWarnings.length > 0 || qualityWarnings.length > 0) && (
-        <div className="space-y-2">
-          {safetyWarnings.map((sw, idx) => (
-            <div key={`sw-${idx}`} className="p-3.5 border border-coral/30 bg-coral-soft rounded-control flex items-start gap-3 text-xs">
-              <span className="text-coral font-bold shrink-0">⚠️ Safety Notice:</span>
-              <div className="flex-1">
-                <p className="text-ink font-medium">{sw.message}</p>
-                {sw.affected_measures?.length > 0 && (
-                  <p className="text-[var(--muted)] mt-0.5">
-                    Measures safeguarded from double counting: {sw.affected_measures.join(', ')}
-                  </p>
-                )}
+      {/* Prominent Data-Integrity & Double-Counting Safeguard Alert */}
+      {allSafeguardedMeasures.length > 0 && (
+        <div className="p-3.5 border border-coral/40 bg-coral-soft rounded-control flex items-start gap-3 text-xs">
+          <span className="text-coral font-bold shrink-0">🛡️ Double-Counting Safeguards Active:</span>
+          <div className="flex-1">
+            <p className="text-ink font-medium">
+              Fan-out join guards are active to prevent measure inflation across independent grains.
+            </p>
+            <p className="text-[var(--muted)] mt-0.5">
+              Measures safeguarded from double counting: {allSafeguardedMeasures.join(', ')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Compact Relationship Discovery & Review Section */}
+      {(relationships.length > 0 || readiness.total_datasets > 1) && (
+        <section className="border border-mist rounded-control bg-surface p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-display text-sm font-semibold text-ink">
+                  Cross-Dataset Relationship Discovery & Join Safety
+                </h3>
+                <span className="text-xs text-[var(--muted)]">
+                  ({relationships.length} pair{relationships.length !== 1 ? 's' : ''} evaluated)
+                </span>
               </div>
+              <p className="text-xs text-[var(--muted)] mt-0.5 max-w-2xl">
+                {hasCrossDatasetMetric
+                  ? 'Unified cross-dataset metrics active using validated, grain-safe joins.'
+                  : crossDatasetUnavailable
+                  ? crossDatasetUnavailable.reason
+                  : 'Candidate relationships require explicit validation before analytical use to safeguard against fan-out inflation.'}
+              </p>
             </div>
-          ))}
+
+            {/* Overall status count badges */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {overallCounts.candidate > 0 && (
+                <span className="badge bg-teal-soft text-teal border border-teal/20" title="High-confidence candidates awaiting validation">
+                  {overallCounts.candidate} Candidate{overallCounts.candidate !== 1 ? 's' : ''}
+                </span>
+              )}
+              {overallCounts.needs_review > 0 && (
+                <span className="badge bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30" title="Ambiguous or partial overlap pairs requiring confirmation">
+                  {overallCounts.needs_review} Needs Review
+                </span>
+              )}
+              {overallCounts.validated > 0 && (
+                <span className="badge bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30" title="Explicitly validated for analytical use">
+                  {overallCounts.validated} Validated
+                </span>
+              )}
+              {overallCounts.rejected > 0 && (
+                <span className="badge bg-mist text-ink/70 border border-mist" title="Rejected join candidates">
+                  {overallCounts.rejected} Rejected
+                </span>
+              )}
+            </div>
+          </div>
+
+          {validationError && (
+            <div className="p-2.5 rounded bg-coral-soft border border-coral/30 text-xs text-coral">
+              {validationError}
+            </div>
+          )}
+
+          {/* Grouped by Dataset Pair */}
+          {pairGroupsList.length === 0 ? (
+            <p className="text-xs text-[var(--muted)] italic">
+              No plausible cross-dataset key relationships discovered between registered datasets.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {pairGroupsList.map((group) => {
+                const isExpanded = !!expandedPairs[group.pairKey];
+                return (
+                  <div key={group.pairKey} className="border border-mist rounded-control bg-paper overflow-hidden">
+                    {/* Clickable Header */}
+                    <div
+                      onClick={() => togglePair(group.pairKey)}
+                      className="p-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-mist/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-semibold text-xs text-ink">{group.pairLabel}</span>
+                        <div className="flex items-center gap-1.5 text-[11px]">
+                          {group.counts.validated > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 font-medium">
+                              {group.counts.validated} validated
+                            </span>
+                          )}
+                          {group.counts.candidate > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-teal-soft text-teal font-medium">
+                              {group.counts.candidate} candidate{group.counts.candidate !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {group.counts.needs_review > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 font-medium">
+                              {group.counts.needs_review} needs review
+                            </span>
+                          )}
+                          {group.counts.rejected > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-mist text-ink/70">
+                              {group.counts.rejected} rejected
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {group.hasDoubleCounting && (
+                          <span className="text-[10px] text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-medium">
+                            Fan-out Guarded
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-teal hover:underline flex items-center gap-1"
+                        >
+                          {isExpanded ? 'Hide Details ▲' : `Review Candidates (${group.relationships.length}) ▼`}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expandable Candidates List */}
+                    {isExpanded && (
+                      <div className="p-3.5 border-t border-mist space-y-3 bg-surface">
+                        {group.relationships.map((rel) => {
+                          const isVal = rel.validation_status === 'validated';
+                          const isRej = rel.validation_status === 'rejected';
+                          const isReview = rel.validation_status === 'needs_review' || rel.validation_status === 'ambiguous';
+                          const isValidating = validatingRelId === rel.id;
+
+                          return (
+                            <div key={rel.id} className="p-3 border border-mist rounded bg-paper space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-xs font-mono">
+                                  <span className="font-semibold text-ink">{rel.source_dataset_name}.{rel.source_column}</span>
+                                  <span className="text-[var(--muted)]">➔</span>
+                                  <span className="font-semibold text-ink">{rel.target_dataset_name}.{rel.target_column}</span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`badge text-[10px] ${
+                                      isVal
+                                        ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/30'
+                                        : isRej
+                                        ? 'bg-mist text-ink/70 border border-mist'
+                                        : isReview
+                                        ? 'bg-amber-500/10 text-amber-700 border border-amber-500/30'
+                                        : 'bg-teal-soft text-teal border border-teal/20'
+                                    }`}
+                                  >
+                                    {isVal ? 'Validated' : isRej ? 'Rejected' : isReview ? 'Needs Review' : 'Candidate'}
+                                  </span>
+                                  <span className="badge text-[10px] bg-mist text-ink/70">
+                                    {rel.cardinality.replace('_', ' ')}
+                                  </span>
+                                  <span className="badge text-[10px] bg-mist text-ink/70" title="Rule-based heuristic score, not calibrated probability">
+                                    Heuristic: {(rel.confidence * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Metrics & Overlap Grid */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] text-[var(--muted)] border-t border-mist">
+                                <div>Src Uniqueness: {(rel.source_uniqueness_ratio * 100).toFixed(0)}%</div>
+                                <div>Tgt Uniqueness: {(rel.target_uniqueness_ratio * 100).toFixed(0)}%</div>
+                                <div>Containment: {(rel.containment_ratio * 100).toFixed(1)}%</div>
+                                <div>Distinct Overlap: {rel.overlapping_values_count.toLocaleString()}</div>
+                              </div>
+
+                              {/* Notice / Reason Callouts */}
+                              {rel.is_ambiguous && (
+                                <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded text-[11px] text-amber-700 dark:text-amber-300">
+                                  ⚠️ <strong>Ambiguity Notice:</strong> Multiple candidate join keys in target share comparable confidence. Review required to confirm intended join.
+                                </div>
+                              )}
+                              {rel.review_reason && !rel.is_ambiguous && (
+                                <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded text-[11px] text-amber-700 dark:text-amber-300">
+                                  ℹ️ <strong>Needs Review:</strong> {rel.review_reason}
+                                </div>
+                              )}
+                              {rel.rejection_reason && (
+                                <div className="p-2 bg-coral-soft border border-coral/30 rounded text-[11px] text-coral font-medium">
+                                  ✕ <strong>Rejected:</strong> {rel.rejection_reason}
+                                </div>
+                              )}
+
+                              {/* Evidence list */}
+                              {rel.evidence?.length > 0 && (
+                                <div className="space-y-0.5 text-[11px] text-[var(--muted)] pt-1">
+                                  {rel.evidence.map((ev, ei) => (
+                                    <p key={ei}>• {ev}</p>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Warnings list */}
+                              {rel.warnings?.length > 0 && (
+                                <div className="space-y-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                                  {rel.warnings.map((w, wi) => (
+                                    <p key={wi}>⚠️ {w}</p>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Review & Validation Action */}
+                              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-mist">
+                                {!isVal && !isRej ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleValidateRelationship(rel)}
+                                    disabled={isValidating}
+                                    className="btn-secondary text-[11px] px-2.5 py-1 flex items-center gap-1.5"
+                                  >
+                                    {isValidating && <Spinner className="h-3 w-3 text-teal" />}
+                                    {isValidating ? 'Validating Join…' : 'Validate Join for Metrics'}
+                                  </button>
+                                ) : isVal ? (
+                                  <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                                    ✓ Validated join key active for analytical metrics
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-coral font-medium">
+                                    Join key excluded from analytical use
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-[var(--muted)] italic">
+                                  Manual rejection and mapping overrides are planned for future releases.
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Data Quality Alerts */}
+      {qualityWarnings.length > 0 && (
+        <div className="space-y-2">
           {qualityWarnings.slice(0, 3).map((qw, idx) => (
             <div key={`qw-${idx}`} className="p-3 border border-mist bg-paper rounded-control flex items-start gap-3 text-xs">
               <span className="text-amber-500 font-semibold shrink-0">ℹ️ Data Quality:</span>

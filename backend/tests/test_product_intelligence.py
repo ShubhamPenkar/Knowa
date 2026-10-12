@@ -240,9 +240,26 @@ class TestDynamicProductIntelligence(unittest.TestCase):
         rels = self.rel_svc_a.discover_relationships(dataset_ids=[ds_orders.id, ds_cust.id], refresh=True)
         self.assertTrue(len(rels) >= 1)
 
+        # Before validation: candidate relationships are excluded from analytical metrics
+        pre_overview = self.intel_svc_a.build_overview(dataset_ids=[ds_orders.id, ds_cust.id], refresh=True)
+        pre_metric = next((m for m in pre_overview["metrics"] if m["category"] == "cross_dataset"), None)
+        self.assertIsNone(pre_metric)
+        unavail = next((u for u in pre_overview["unavailable_metrics"] if u["category"] == "cross_dataset"), None)
+        self.assertIsNotNone(unavail)
+        self.assertIn("explicit review and validation", unavail["reason"])
+
+        # Explicitly validate relationship
+        validated_rel = self.rel_svc_a.validate_relationship(
+            source_dataset_id=ds_orders.id,
+            source_column="customer_id",
+            target_dataset_id=ds_cust.id,
+            target_column="customer_id",
+        )
+        self.assertEqual(validated_rel.validation_status, "validated")
+
         overview = self.intel_svc_a.build_overview(dataset_ids=[ds_orders.id, ds_cust.id], refresh=True)
 
-        # Cross-dataset metric should be present and safe
+        # Cross-dataset metric should now be present and safe
         cross_metric = next((m for m in overview["metrics"] if m["category"] == "cross_dataset"), None)
         self.assertIsNotNone(cross_metric)
         self.assertEqual(cross_metric["aggregation"], "cross_sum_by_group")
@@ -375,6 +392,92 @@ class TestDynamicProductIntelligence(unittest.TestCase):
             async def override_get_auth():
                 return AuthContext(organization=self.org_a, user=self.user_a, scopes=["admin"])
             app.dependency_overrides[get_auth_context] = override_get_auth
+
+    def test_grouping_repeated_warnings_by_dataset_pair_and_counts(self):
+        """Verify overview returns structured relationships list and deduplicated warnings."""
+        df1 = pd.DataFrame({
+            "client_id": [f"CL_{i:02d}" for i in range(1, 21)],
+            "contract_type": ["Annual", "Monthly"] * 10,
+        })
+        df2 = pd.DataFrame({
+            "billing_client_id": [f"CL_{i:02d}" for i in range(1, 21)],
+            "shipping_client_id": [f"CL_{i:02d}" for i in range(1, 21)],
+            "invoice_total": [100.0 * i for i in range(1, 21)],
+        })
+        ds1 = self._create_csv_dataset(self.ds_svc_a, "Contracts", df1, self.org_a.id)
+        ds2 = self._create_csv_dataset(self.ds_svc_a, "Invoices", df2, self.org_a.id)
+
+        overview = self.intel_svc_a.build_overview(dataset_ids=[ds1.id, ds2.id], refresh=True)
+        self.assertIn("relationships", overview)
+        rels = overview["relationships"]
+        self.assertTrue(len(rels) >= 2)
+
+        # Check status fields exist and reasons are provided for ambiguous / needs_review
+        for r in rels:
+            self.assertIn("validation_status", r)
+            self.assertIn(r["validation_status"], ["candidate", "needs_review", "ambiguous", "validated", "rejected"])
+            if r["validation_status"] in ("needs_review", "ambiguous"):
+                self.assertTrue(r.get("review_reason") is not None or r.get("is_ambiguous") is True)
+
+        # Safety warnings must be deduplicated
+        warning_keys = [
+            (w.get("source_dataset_id"), w.get("target_dataset_id"), w.get("warning_type"), w.get("message"))
+            for w in overview.get("safety_warnings", [])
+        ]
+        self.assertEqual(len(warning_keys), len(set(warning_keys)), "Safety warnings must not contain duplicate notices")
+
+    def test_unvalidated_or_rejected_relationships_excluded_from_cross_dataset_metrics(self):
+        """Unvalidated and rejected candidate pairs must be excluded from analytical metrics."""
+        df_stores = pd.DataFrame({
+            "store_code": [f"ST_{i}" for i in range(10)],
+            "region": ["North", "South"] * 5,
+        })
+        df_sales = pd.DataFrame({
+            "store_code": [f"ST_{i % 8}" for i in range(50)],
+            "revenue": [500.0 + i * 10 for i in range(50)],
+        })
+        ds_stores = self._create_csv_dataset(self.ds_svc_a, "Stores", df_stores, self.org_a.id)
+        ds_sales = self._create_csv_dataset(self.ds_svc_a, "Sales", df_sales, self.org_a.id)
+
+        # Build overview without validation
+        overview = self.intel_svc_a.build_overview(dataset_ids=[ds_stores.id, ds_sales.id], refresh=True)
+        cross_metric = next((m for m in overview["metrics"] if m["category"] == "cross_dataset"), None)
+        self.assertIsNone(cross_metric, "Unvalidated relationship must not produce cross-dataset metric")
+
+        # Unavailable metrics explains why
+        unavail = next((u for u in overview["unavailable_metrics"] if u["category"] == "cross_dataset"), None)
+        self.assertIsNotNone(unavail)
+        self.assertIn("validation", unavail["reason"].lower())
+
+    def test_validated_relationships_respect_fan_out_safeguards(self):
+        """Even if validated, severe fan-out (> 1.5x) or many-to-many must block metric calculation."""
+        df_a = pd.DataFrame({
+            "category": ["A", "B"] * 25,
+            "cost": [10.0 * i for i in range(50)],
+        })
+        df_b = pd.DataFrame({
+            "category": ["A", "B"] * 40,
+            "units": [1, 2] * 40,
+        })
+        ds_a = self._create_csv_dataset(self.ds_svc_a, "Cost Cat", df_a, self.org_a.id)
+        ds_b = self._create_csv_dataset(self.ds_svc_a, "Units Cat", df_b, self.org_a.id)
+
+        # Force validate a many-to-many relationship
+        cand = self.rel_svc_a.validate_relationship(ds_a.id, "category", ds_b.id, "category")
+        self.assertEqual(cand.cardinality, "many_to_many")
+
+        overview = self.intel_svc_a.build_overview(dataset_ids=[ds_a.id, ds_b.id], refresh=True)
+        cross_metric = next((m for m in overview["metrics"] if m["category"] == "cross_dataset"), None)
+        self.assertIsNone(cross_metric, "Severe fan-out or many-to-many join must be blocked from computing metric")
+
+    def test_empty_relationship_results_and_large_candidate_sets(self):
+        """Single dataset or disjoint datasets must return empty relationships list without errors."""
+        df_single = pd.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+        ds_single = self._create_csv_dataset(self.ds_svc_a, "Solo", df_single, self.org_a.id)
+
+        overview = self.intel_svc_a.build_overview(dataset_ids=[ds_single.id], refresh=True)
+        self.assertEqual(overview["relationships"], [])
+        self.assertEqual(overview["safety_warnings"], [])
 
 
 if __name__ == "__main__":

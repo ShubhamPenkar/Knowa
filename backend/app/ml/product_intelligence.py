@@ -406,6 +406,37 @@ def compute_cross_dataset_metric(
     fan_out = rel.get("fan_out_ratio", 1.0)
     has_double_counting = rel.get("double_counting_risk", False)
 
+    # 0. Validation status check: only explicitly validated relationships may be used for cross-dataset metrics
+    if val_status != "validated":
+        if is_ambiguous:
+            safety_warnings.append({
+                "source_dataset_id": source_id,
+                "target_dataset_id": target_id,
+                "warning_type": "ambiguous_relationship",
+                "message": f"Join between '{source_name}.{source_col}' and '{target_name}.{target_col}' is ambiguous with competing candidates. Cross-dataset metrics excluded.",
+                "risk": "ambiguity_risk",
+                "affected_measures": rel.get("double_counting_measures", []),
+            })
+        elif val_status == "rejected":
+            safety_warnings.append({
+                "source_dataset_id": source_id,
+                "target_dataset_id": target_id,
+                "warning_type": "rejected_relationship",
+                "message": f"Join between '{source_name}.{source_col}' and '{target_name}.{target_col}' was rejected ({rel.get('rejection_reason') or 'unmet join constraints'}). Cross-dataset metrics excluded.",
+                "risk": "rejected_join_risk",
+                "affected_measures": rel.get("double_counting_measures", []),
+            })
+        elif has_double_counting or fan_out > 1.05:
+            safety_warnings.append({
+                "source_dataset_id": source_id,
+                "target_dataset_id": target_id,
+                "warning_type": "fan_out",
+                "message": f"Join between '{source_name}' and '{target_name}' exhibits fan-out multiplier of {fan_out:.2f}x (cardinality: {cardinality}). Unaggregated measures risk double counting.",
+                "risk": "double_counting_risk",
+                "affected_measures": rel.get("double_counting_measures", []),
+            })
+        return None, safety_warnings
+
     # 1. Ambiguity check: do NOT silently proceed if ambiguous
     if is_ambiguous:
         safety_warnings.append({

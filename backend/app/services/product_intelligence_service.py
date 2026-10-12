@@ -245,12 +245,14 @@ class ProductIntelligenceService:
                         })
 
         # 3. Cross-Dataset Metrics and Relationship Safety
+        all_discovered_rels: list[Any] = []
         if len(datasets) > 1:
             try:
                 rels = self.rel_service.discover_relationships(
                     dataset_ids=[d.id for d in datasets],
                     refresh=refresh,
                 )
+                all_discovered_rels = rels
                 for r in rels:
                     r_dict = r.to_dict()
                     src_id = r_dict["source_dataset_id"]
@@ -285,6 +287,16 @@ class ProductIntelligenceService:
             except Exception:
                 pass
 
+        # Deduplicate safety warnings by message and dataset pair to avoid repetitive notices
+        seen_warnings = set()
+        deduped_safety_warnings = []
+        for sw in safety_warnings:
+            key = (sw.get("source_dataset_id"), sw.get("target_dataset_id"), sw.get("warning_type"), sw.get("message"))
+            if key not in seen_warnings:
+                seen_warnings.add(key)
+                deduped_safety_warnings.append(sw)
+        safety_warnings = deduped_safety_warnings
+
         # 4. Check for Unavailable Analysis Capabilities
         has_timestamps = any(s["timestamps_count"] > 0 for s in dataset_summaries)
         if not has_timestamps:
@@ -303,13 +315,18 @@ class ProductIntelligenceService:
             })
 
         if len(datasets) > 1 and not any(m.get("category") == "cross_dataset" for m in metrics):
+            if all_discovered_rels:
+                has_validated = any(r.validation_status == "validated" for r in all_discovered_rels)
+                if not has_validated:
+                    reason = "Cross-dataset metrics are unavailable because candidate relationships require explicit review and validation before analytical use."
+                else:
+                    reason = "Cross-dataset joins excluded due to high fan-out row multiplication or many-to-many grain mismatch."
+            else:
+                reason = "No matching primary/foreign key relationships discovered between datasets"
             unavailable_metrics.append({
                 "category": "cross_dataset",
                 "label": "Unified Cross-Dataset Intelligence",
-                "reason": (
-                    "Cross-dataset joins excluded due to ambiguity, fan-out double counting risks, or lack of validated keys"
-                    if safety_warnings else "No matching primary/foreign key relationships discovered between datasets"
-                ),
+                "reason": reason,
             })
 
         # 5. Synthesize Explainable Insights & Opportunities
@@ -330,6 +347,7 @@ class ProductIntelligenceService:
             "opportunities": opportunities,
             "data_quality_warnings": data_quality_warnings,
             "safety_warnings": safety_warnings,
+            "relationships": [r.to_dict() for r in all_discovered_rels],
         }
 
         # Cache result if it covers all datasets
