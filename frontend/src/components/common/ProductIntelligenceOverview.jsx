@@ -7,6 +7,44 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [showUnavailable, setShowUnavailable] = useState(false);
+  const [expandedPairs, setExpandedPairs] = useState({});
+  const [validatingRelId, setValidatingRelId] = useState(null);
+  const [validationError, setValidationError] = useState('');
+
+  const togglePair = (pairKey) => {
+    setExpandedPairs((prev) => ({ ...prev, [pairKey]: !prev[pairKey] }));
+  };
+
+  const handleValidateRelationship = async (rel) => {
+    if (!token || !rel) return;
+    setValidatingRelId(rel.id);
+    setValidationError('');
+    try {
+      const res = await fetch('/api/datasets/relationships/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          source_dataset_id: rel.source_dataset_id,
+          source_column: rel.source_column,
+          target_dataset_id: rel.target_dataset_id,
+          target_column: rel.target_column,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to validate relationship join');
+      }
+      await fetchOverview(true);
+    } catch (err) {
+      console.error(err);
+      setValidationError(err.message || 'Error validating relationship');
+    } finally {
+      setValidatingRelId(null);
+    }
+  };
 
   const fetchOverview = async (forceRefresh = false) => {
     if (!token) return;
@@ -70,45 +108,6 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
       </div>
     );
   }
-
-  const [expandedPairs, setExpandedPairs] = useState({});
-  const [validatingRelId, setValidatingRelId] = useState(null);
-  const [validationError, setValidationError] = useState('');
-
-  const togglePair = (pairKey) => {
-    setExpandedPairs((prev) => ({ ...prev, [pairKey]: !prev[pairKey] }));
-  };
-
-  const handleValidateRelationship = async (rel) => {
-    if (!token || !rel) return;
-    setValidatingRelId(rel.id);
-    setValidationError('');
-    try {
-      const res = await fetch('/api/datasets/relationships/validate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          source_dataset_id: rel.source_dataset_id,
-          source_column: rel.source_column,
-          target_dataset_id: rel.target_dataset_id,
-          target_column: rel.target_column,
-        }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to validate relationship join');
-      }
-      await fetchOverview(true);
-    } catch (err) {
-      console.error(err);
-      setValidationError(err.message || 'Error validating relationship');
-    } finally {
-      setValidatingRelId(null);
-    }
-  };
 
   const readiness = data?.readiness || { total_datasets: 0, ready_datasets: 0, total_rows: 0, dataset_summaries: [] };
   const metrics = data?.metrics || [];
@@ -195,7 +194,7 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
             </span>
           </div>
           <p className="text-xs text-[var(--muted)] mt-1 max-w-2xl">
-            Synthesized across {readiness.total_rows.toLocaleString()} records using inferred semantic roles and validated relationships. Never assumes rigid industry schemas or unproven causation.
+            Synthesized across {(readiness.total_rows || 0).toLocaleString()} records using inferred semantic roles and validated relationships. Never assumes rigid industry schemas or unproven causation.
           </p>
         </div>
         <button
@@ -367,20 +366,20 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
                                     {isVal ? 'Validated' : isRej ? 'Rejected' : isReview ? 'Needs Review' : 'Candidate'}
                                   </span>
                                   <span className="badge text-[10px] bg-mist text-ink/70">
-                                    {rel.cardinality.replace('_', ' ')}
+                                    {(rel.cardinality || 'relationship').replace('_', ' ')}
                                   </span>
                                   <span className="badge text-[10px] bg-mist text-ink/70" title="Rule-based heuristic score, not calibrated probability">
-                                    Heuristic: {(rel.confidence * 100).toFixed(0)}%
+                                    Heuristic: {((rel.confidence || 0) * 100).toFixed(0)}%
                                   </span>
                                 </div>
                               </div>
 
                               {/* Metrics & Overlap Grid */}
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] text-[var(--muted)] border-t border-mist">
-                                <div>Src Uniqueness: {(rel.source_uniqueness_ratio * 100).toFixed(0)}%</div>
-                                <div>Tgt Uniqueness: {(rel.target_uniqueness_ratio * 100).toFixed(0)}%</div>
-                                <div>Containment: {(rel.containment_ratio * 100).toFixed(1)}%</div>
-                                <div>Distinct Overlap: {rel.overlapping_values_count.toLocaleString()}</div>
+                                <div>Src Uniqueness: {((rel.source_uniqueness_ratio || 0) * 100).toFixed(0)}%</div>
+                                <div>Tgt Uniqueness: {((rel.target_uniqueness_ratio || 0) * 100).toFixed(0)}%</div>
+                                <div>Containment: {((rel.containment_ratio || 0) * 100).toFixed(1)}%</div>
+                                <div>Distinct Overlap: {(rel.overlapping_values_count || 0).toLocaleString()}</div>
                               </div>
 
                               {/* Notice / Reason Callouts */}
@@ -513,7 +512,7 @@ export default function ProductIntelligenceOverview({ token, initialDatasetId = 
                 <div>
                   <div className="flex justify-between items-start gap-2 mb-2">
                     <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-mist text-ink/70">
-                      {m.category.replace('_', ' ')}
+                      {(m.category || 'metric').replace('_', ' ')}
                     </span>
                     <span className="text-[10px] text-[var(--muted)] truncate max-w-[120px]">
                       {m.dataset_name}
