@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from app.ml.semantic_inferencer import (
+    BusinessRole,
     SemanticAnnotation,
     SemanticRole,
     SemanticType,
@@ -268,10 +269,21 @@ class ColumnProfile:
     # Semantic data understanding (Phase 1)
     semantic_type: str = SemanticType.UNKNOWN.value
     role: str = SemanticRole.UNKNOWN.value
+    business_role: str = BusinessRole.UNKNOWN.value
     confidence: float = 0.0  # Rule-based heuristic score in [0.0, 1.0], not a calibrated probability
     confidence_type: str = "heuristic"  # 'heuristic' for inferred rules, 'user_assigned' for manual overrides
     evidence: list[str] = field(default_factory=list)
     is_user_corrected: bool = False
+    physical_type: str = ""
+    nullable: bool = False
+    missing_ratio: float = 0.0
+    unique_ratio: float = 0.0
+    cardinality: int = 0
+    is_identifier: bool = False
+    is_target_candidate: bool = False
+    target_recommendation: Optional[dict[str, Any]] = None
+    distribution_stats: dict[str, Any] = field(default_factory=dict)
+    quality_issues: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -293,6 +305,13 @@ class DatasetProfileReport:
     present_target_values: Optional[list[str]] = None
     suggested_positive_label: Optional[str] = None
     user_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Phase 1 Extended Fields
+    duplicate_rows_count: int = 0
+    duplicate_rows_ratio: float = 0.0
+    quality_score: float = 100.0
+    potential_targets: list[dict[str, Any]] = field(default_factory=list)
+    column_relationships: list[dict[str, Any]] = field(default_factory=list)
+    quality_summary: dict[str, Any] = field(default_factory=dict)
 
     def column_map(self) -> dict[str, ColumnProfile]:
         return {c.column_name: c for c in self.columns}
@@ -305,6 +324,66 @@ class DatasetProfileReport:
             "blocking": self.blocking,
             "blocking_issues": self.blocking_issues,
             "warnings": self.warnings,
+            "excluded_as_id": self.excluded_as_id,
+            "dropped_as_constant": self.dropped_as_constant,
+            "recommended_features": self.recommended_features,
+            "target_column": self.target_column,
+            "target_positive_label": self.target_positive_label,
+            "present_target_values": self.present_target_values,
+            "suggested_positive_label": self.suggested_positive_label,
+            "user_overrides": self.user_overrides,
+            "duplicate_rows_count": self.duplicate_rows_count,
+            "duplicate_rows_ratio": self.duplicate_rows_ratio,
+            "quality_score": self.quality_score,
+            "potential_targets": self.potential_targets,
+            "column_relationships": self.column_relationships,
+            "quality_summary": self.quality_summary,
+        }
+
+    def to_semantic_profile(self, dataset_name: str = "") -> dict[str, Any]:
+        """Produce structured Phase 1 semantic data understanding profile."""
+        cols = []
+        for c in self.columns:
+            cols.append({
+                "name": c.column_name,
+                "physical_type": c.physical_type,
+                "inferred_type": c.inferred_type,
+                "semantic_type": c.semantic_type,
+                "role": c.role,
+                "business_role": c.business_role,
+                "confidence": c.confidence,
+                "confidence_type": c.confidence_type,
+                "evidence": c.evidence,
+                "is_user_corrected": c.is_user_corrected,
+                "nullable": c.nullable,
+                "missing_ratio": c.missing_ratio,
+                "unique_ratio": c.unique_ratio,
+                "cardinality": c.cardinality,
+                "is_identifier": c.is_identifier,
+                "is_target_candidate": c.is_target_candidate,
+                "target_recommendation": c.target_recommendation,
+                "distribution_stats": c.distribution_stats,
+                "quality_issues": c.quality_issues,
+                "sample_values": c.sample_values,
+                "action_taken": c.action_taken,
+                "reason": c.reason,
+            })
+        return {
+            "dataset": {
+                "name": dataset_name,
+                "row_count": self.n_rows,
+                "column_count": self.n_columns,
+                "duplicate_rows_count": self.duplicate_rows_count,
+                "duplicate_rows_ratio": self.duplicate_rows_ratio,
+                "quality_score": self.quality_score,
+            },
+            "columns": cols,
+            "potential_targets": self.potential_targets,
+            "column_relationships": self.column_relationships,
+            "quality_summary": self.quality_summary,
+            "warnings": self.warnings,
+            "blocking": self.blocking,
+            "blocking_issues": self.blocking_issues,
             "excluded_as_id": self.excluded_as_id,
             "dropped_as_constant": self.dropped_as_constant,
             "recommended_features": self.recommended_features,
@@ -373,32 +452,16 @@ def profile_column(
 
     issues: list[str] = []
     reason = ""
+    inferred = "categorical"
+    action = "keep_as_categorical"
 
     # Constant / zero-variance (after dropping nulls)
     if len(present) == 0 or n_unique <= 1:
         issues.append("constant_or_empty")
-        return ColumnProfile(
-            column_name=name,
-            inferred_type="constant",
-            n_rows=n_rows,
-            n_unique=n_unique,
-            null_frac=null_frac,
-            numeric_parse_frac=parse_frac,
-            issues=issues,
-            action_taken="drop_constant",
-            failed_parse_samples=stats["failed_samples"],
-            sample_values=samples,
-            reason="Only one distinct non-null value (or all null) — zero variance.",
-            semantic_type=sem.semantic_type,
-            role=sem.role,
-            confidence=sem.confidence,
-            confidence_type=sem.confidence_type,
-            evidence=sem.evidence,
-            is_user_corrected=sem.is_user_corrected,
-        )
-
-    # ID detection (behavior + name)
-    if is_likely_id_column(name, s):
+        inferred = "constant"
+        action = "drop_constant"
+        reason = "Only one distinct non-null value (or all null) — zero variance."
+    elif is_likely_id_column(name, s):
         why = []
         if name_suggests_id(name):
             why.append("name_looks_like_id")
@@ -408,108 +471,81 @@ def profile_column(
         if uniq_ratio >= ID_UNIQUENESS_RATIO:
             why.append(f"uniqueness={uniq_ratio:.3f}")
         issues.append("likely_identifier")
-        return ColumnProfile(
-            column_name=name,
-            inferred_type="id",
-            n_rows=n_rows,
-            n_unique=n_unique,
-            null_frac=null_frac,
-            numeric_parse_frac=parse_frac,
-            issues=issues,
-            action_taken="exclude_as_id",
-            failed_parse_samples=stats["failed_samples"],
-            sample_values=samples,
-            reason=(
-                "Excluded as likely identifier — override if this is a real feature. "
-                f"({', '.join(why) or 'heuristic'})"
-            ),
-            semantic_type=sem.semantic_type,
-            role=sem.role,
-            confidence=sem.confidence,
-            confidence_type=sem.confidence_type,
-            evidence=sem.evidence,
-            is_user_corrected=sem.is_user_corrected,
-        )
-
-    # Missing density warning
-    if null_frac >= MISSING_WARN_FRAC:
-        issues.append("high_missing_density")
-
-    # Type inference via coercion rate
-    already_numeric = pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
-    if already_numeric or parse_frac >= NUMERIC_PARSE_THRESHOLD:
-        inferred = "numeric"
-        action = "keep_as_numeric"
-        if not already_numeric and parse_frac >= NUMERIC_PARSE_THRESHOLD:
-            issues.append("coerced_numeric_from_text")
-            reason = (
-                f"Numeric-looking text coerced to numeric "
-                f"(parse_frac={parse_frac:.3f} >= {NUMERIC_PARSE_THRESHOLD})."
-            )
-            if stats["failed_samples"]:
-                issues.append("partial_numeric_parse_failures")
-                reason += f" Failed samples (kept as NaN): {stats['failed_samples'][:5]}"
-        else:
-            reason = "Native or coerced numeric."
-        # Low-cardinality integers can still be fine as numeric for trees
-        profile = ColumnProfile(
-            column_name=name,
-            inferred_type=inferred,
-            n_rows=n_rows,
-            n_unique=n_unique,
-            null_frac=null_frac,
-            numeric_parse_frac=parse_frac,
-            issues=issues,
-            action_taken=action,
-            failed_parse_samples=stats["failed_samples"],
-            sample_values=samples,
-            reason=reason,
-            semantic_type=sem.semantic_type,
-            role=sem.role,
-            confidence=sem.confidence,
-            confidence_type=sem.confidence_type,
-            evidence=sem.evidence,
-            is_user_corrected=sem.is_user_corrected,
-        )
-        if null_frac >= MISSING_WARN_FRAC:
-            profile.action_taken = "warn_high_missing" if action == "keep_as_numeric" else action
-            # still keep as numeric; warning is separate
-            profile.action_taken = "keep_as_numeric"
-        return profile
-
-    # Non-numeric → categorical (do NOT silently zero as continuous)
-    issues.append("treated_as_categorical")
-    if parse_frac > 0 and parse_frac < NUMERIC_PARSE_THRESHOLD:
-        issues.append("failed_numeric_coercion_below_threshold")
+        inferred = "id"
+        action = "exclude_as_id"
         reason = (
-            f"Parse success {parse_frac:.3f} < {NUMERIC_PARSE_THRESHOLD}; "
-            f"kept categorical. Failed samples: {stats['failed_samples'][:5]}"
+            "Excluded as likely identifier — override if this is a real feature. "
+            f"({', '.join(why) or 'heuristic'})"
         )
     else:
-        reason = "Non-numeric values — categorical encoding."
+        # Missing density warning
+        if null_frac >= MISSING_WARN_FRAC:
+            issues.append("high_missing_density")
 
-    uniq_ratio = float(n_unique / max(n_rows, 1))
-    if uniq_ratio >= HIGH_CARD_RATIO:
-        issues.append("high_cardinality_categorical")
+        already_numeric = pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
+        if already_numeric or parse_frac >= NUMERIC_PARSE_THRESHOLD:
+            inferred = "numeric"
+            action = "keep_as_numeric"
+            if not already_numeric and parse_frac >= NUMERIC_PARSE_THRESHOLD:
+                issues.append("coerced_numeric_from_text")
+                reason = (
+                    f"Numeric-looking text coerced to numeric "
+                    f"(parse_frac={parse_frac:.3f} >= {NUMERIC_PARSE_THRESHOLD})."
+                )
+                if stats["failed_samples"]:
+                    issues.append("partial_numeric_parse_failures")
+                    reason += f" Failed samples (kept as NaN): {stats['failed_samples'][:5]}"
+            else:
+                reason = "Native or coerced numeric."
+        else:
+            issues.append("treated_as_categorical")
+            if parse_frac > 0 and parse_frac < NUMERIC_PARSE_THRESHOLD:
+                issues.append("failed_numeric_coercion_below_threshold")
+                reason = (
+                    f"Parse success {parse_frac:.3f} < {NUMERIC_PARSE_THRESHOLD}; "
+                    f"kept categorical. Failed samples: {stats['failed_samples'][:5]}"
+                )
+            else:
+                reason = "Non-numeric values — categorical encoding."
 
+            uniq_ratio = float(n_unique / max(n_rows, 1))
+            if uniq_ratio >= HIGH_CARD_RATIO:
+                issues.append("high_cardinality_categorical")
+
+    all_issues = list(dict.fromkeys(issues + getattr(sem, "quality_issues", [])))
     return ColumnProfile(
         column_name=name,
-        inferred_type="categorical",
+        inferred_type=inferred,
         n_rows=n_rows,
         n_unique=n_unique,
         null_frac=null_frac,
         numeric_parse_frac=parse_frac,
-        issues=issues,
-        action_taken="keep_as_categorical",
+        issues=all_issues,
+        action_taken=action,
         failed_parse_samples=stats["failed_samples"],
         sample_values=samples,
         reason=reason,
         semantic_type=sem.semantic_type,
         role=sem.role,
+        business_role=getattr(sem, "business_role", BusinessRole.UNKNOWN.value),
         confidence=sem.confidence,
         confidence_type=sem.confidence_type,
         evidence=sem.evidence,
         is_user_corrected=sem.is_user_corrected,
+        physical_type=str(s.dtype),
+        nullable=bool(null_frac > 0),
+        missing_ratio=round(null_frac, 4),
+        unique_ratio=round(float(n_unique / max(n_rows, 1)), 4),
+        cardinality=n_unique,
+        is_identifier=getattr(sem, "is_identifier", False) or (inferred == "id"),
+        is_target_candidate=getattr(sem, "is_target_candidate", False),
+        target_recommendation=(
+            {"target_type": sem.target_type, "confidence": sem.target_confidence}
+            if getattr(sem, "is_target_candidate", False)
+            else None
+        ),
+        distribution_stats=getattr(sem, "distribution_summary", {}),
+        quality_issues=all_issues,
     )
 
 
@@ -612,6 +648,169 @@ def profile_dataframe(
     candidates = feature_columns if feature_columns is not None else [str(c) for c in df.columns]
     report.recommended_features = [c for c in candidates if c not in skip and c in df.columns]
 
+    # Duplicate rows analysis
+    dup_count = int(df.duplicated().sum()) if n_rows > 0 else 0
+    dup_ratio = round(float(dup_count / max(n_rows, 1)), 4)
+    report.duplicate_rows_count = dup_count
+    report.duplicate_rows_ratio = dup_ratio
+    if dup_count > 0:
+        report.warnings.append(
+            {
+                "code": "duplicate_rows_detected",
+                "message": f"Dataset contains {dup_count} duplicate rows ({dup_ratio:.1%}).",
+                "duplicate_count": dup_count,
+                "duplicate_ratio": dup_ratio,
+            }
+        )
+
+    # Outlier detection on numeric columns
+    for c in columns:
+        if c.inferred_type == "numeric" and c.column_name in df.columns:
+            nums = pd.to_numeric(df[c.column_name], errors="coerce").dropna()
+            if len(nums) >= 20:
+                q25 = float(np.percentile(nums, 25))
+                q75 = float(np.percentile(nums, 75))
+                iqr = q75 - q25
+                if iqr > 1e-6:
+                    lower_bound = q25 - 1.5 * iqr
+                    upper_bound = q75 + 1.5 * iqr
+                    outliers_count = int(((nums < lower_bound) | (nums > upper_bound)).sum())
+                    if outliers_count > 0:
+                        outlier_ratio = round(outliers_count / len(nums), 4)
+                        if outlier_ratio >= 0.02:
+                            if "contains_outliers" not in c.quality_issues:
+                                c.quality_issues.append("contains_outliers")
+                            if "contains_outliers" not in c.issues:
+                                c.issues.append("contains_outliers")
+
+    # Potential targets identification & ranking
+    potential_targets: list[dict[str, Any]] = []
+    seen_target_cols: set[str] = set()
+    for c in columns:
+        if c.is_target_candidate and c.column_name not in seen_target_cols:
+            seen_target_cols.add(c.column_name)
+            rec = c.target_recommendation or {}
+            potential_targets.append({
+                "column_name": c.column_name,
+                "target_type": rec.get("target_type", "classification"),
+                "confidence": rec.get("confidence", 0.7),
+                "business_role": c.business_role,
+                "semantic_type": c.semantic_type,
+                "evidence": c.evidence,
+            })
+        elif c.column_name.lower() in {"target", "label", "outcome", "churn", "churned", "converted", "default"} and c.column_name not in seen_target_cols:
+            seen_target_cols.add(c.column_name)
+            ttype = "classification" if c.cardinality <= 10 or c.inferred_type == "categorical" else "regression"
+            potential_targets.append({
+                "column_name": c.column_name,
+                "target_type": ttype,
+                "confidence": 0.88,
+                "business_role": c.business_role if c.business_role != BusinessRole.UNKNOWN.value else "target",
+                "semantic_type": c.semantic_type,
+                "evidence": ["Column name indicates machine learning target", f"Type: {c.inferred_type}"],
+            })
+    # If no target identified yet, check candidate binary/low-cardinality flags (non-constant, non-id, non-datetime)
+    if not potential_targets and n_rows >= 10:
+        for c in columns:
+            if c.column_name not in seen_target_cols and not c.is_identifier and c.action_taken != "drop_constant":
+                if c.cardinality == 2 and c.missing_ratio < 0.5:
+                    seen_target_cols.add(c.column_name)
+                    potential_targets.append({
+                        "column_name": c.column_name,
+                        "target_type": "binary_classification",
+                        "confidence": 0.65,
+                        "business_role": c.business_role,
+                        "semantic_type": c.semantic_type,
+                        "evidence": ["Binary feature with two unique outcomes; candidate for classification target"],
+                    })
+
+    potential_targets.sort(key=lambda x: x["confidence"], reverse=True)
+    report.potential_targets = potential_targets
+
+    # Column relationships & correlations
+    column_relationships: list[dict[str, Any]] = []
+    numeric_cols = [c.column_name for c in columns if c.inferred_type == "numeric" and c.column_name in df.columns]
+    if len(numeric_cols) >= 2:
+        sampled_df = df[numeric_cols[:25]]
+        if len(sampled_df) > 5000:
+            sampled_df = sampled_df.sample(5000, random_state=42)
+        try:
+            numeric_data = sampled_df.apply(pd.to_numeric, errors="coerce")
+            corr_matrix = numeric_data.corr()
+            cols = list(corr_matrix.columns)
+            for i in range(len(cols)):
+                for j in range(i + 1, len(cols)):
+                    col_a = cols[i]
+                    col_b = cols[j]
+                    val = corr_matrix.loc[col_a, col_b]
+                    if pd.notna(val) and abs(val) >= 0.85:
+                        column_relationships.append({
+                            "type": "high_correlation",
+                            "columns": [col_a, col_b],
+                            "strength": round(float(val), 3),
+                            "description": f"High linear correlation ({val:+.2f}) between '{col_a}' and '{col_b}'. Potential multicollinearity.",
+                        })
+        except Exception:
+            pass
+
+    # Entity link candidate detection
+    for c in columns:
+        cn = c.column_name.lower()
+        if (cn.endswith("_id") or cn.endswith("id") or cn.endswith("_ref") or cn.endswith("_fk")) and not c.is_identifier:
+            if 0.02 < c.unique_ratio < 0.98 and c.cardinality > 2:
+                column_relationships.append({
+                    "type": "entity_link_candidate",
+                    "columns": [c.column_name],
+                    "strength": 0.8,
+                    "description": f"Column '{c.column_name}' appears to be a foreign key reference or dimension link.",
+                })
+
+    report.column_relationships = column_relationships
+
+    # Overall dataset quality score computation (0 to 100)
+    total_cells = max(n_rows * len(df.columns), 1)
+    missing_cells = int(df.isna().sum().sum())
+    missing_cells_ratio = round(missing_cells / total_cells, 4)
+
+    score = 100.0
+    score -= min(missing_cells_ratio * 40.0, 25.0)
+    score -= min(dup_ratio * 30.0, 15.0)
+    score -= min(len(report.dropped_as_constant) * 5.0, 15.0)
+    high_missing_cols = sum(1 for c in columns if c.null_frac >= MISSING_WARN_FRAC)
+    score -= min(high_missing_cols * 5.0, 15.0)
+    format_issues = sum(
+        1 for c in columns
+        if any(iss in ("inconsistent_casing", "contains_whitespace_padding", "impossible_negative_numeric") for iss in c.quality_issues)
+    )
+    score -= min(format_issues * 2.0, 10.0)
+
+    quality_score = max(0.0, min(100.0, round(score, 1)))
+
+    if quality_score >= 90.0:
+        grade = "Excellent"
+    elif quality_score >= 75.0:
+        grade = "Good"
+    elif quality_score >= 60.0:
+        grade = "Fair"
+    else:
+        grade = "Poor"
+
+    report.quality_score = quality_score
+    report.quality_summary = {
+        "overall_score": quality_score,
+        "grade": grade,
+        "total_rows": n_rows,
+        "total_columns": len(df.columns),
+        "duplicate_rows": dup_count,
+        "duplicate_ratio": dup_ratio,
+        "missing_cells_count": missing_cells,
+        "missing_cells_ratio": missing_cells_ratio,
+        "constant_columns_count": len(report.dropped_as_constant),
+        "identifier_columns_count": len(report.excluded_as_id),
+        "target_candidates_count": len(potential_targets),
+        "high_missing_columns_count": high_missing_cols,
+    }
+
     # Target label validation
     if target_column and problem_type != "regression":
         if target_column not in df.columns:
@@ -645,9 +844,6 @@ def profile_dataframe(
             if target_positive_label is not None and str(target_positive_label).strip() != "":
                 pos = str(target_positive_label)
                 if pos not in present:
-                    # Stale API default "1" + clear suggestion → still block at profiler
-                    # level when explicitly validating; create_project may auto-adopt
-                    # suggestion only for default "1" (handled in service).
                     report.blocking = True
                     msg = (
                         f"Positive label '{pos}' does not appear in target column "
@@ -748,9 +944,20 @@ def enrich_column_metadata(
             entry["profile_reason"] = prof.reason
             entry["semantic_type"] = prof.semantic_type
             entry["role"] = prof.role
+            entry["business_role"] = getattr(prof, "business_role", BusinessRole.UNKNOWN.value)
             entry["confidence"] = prof.confidence
             entry["confidence_type"] = getattr(prof, "confidence_type", "heuristic")
             entry["evidence"] = list(prof.evidence)
             entry["is_user_corrected"] = prof.is_user_corrected
+            entry["physical_type"] = getattr(prof, "physical_type", "")
+            entry["nullable"] = getattr(prof, "nullable", False)
+            entry["missing_ratio"] = getattr(prof, "missing_ratio", 0.0)
+            entry["unique_ratio"] = getattr(prof, "unique_ratio", 0.0)
+            entry["cardinality"] = getattr(prof, "cardinality", 0)
+            entry["is_identifier"] = getattr(prof, "is_identifier", False)
+            entry["is_target_candidate"] = getattr(prof, "is_target_candidate", False)
+            entry["target_recommendation"] = getattr(prof, "target_recommendation", None)
+            entry["distribution_stats"] = getattr(prof, "distribution_stats", {})
+            entry["quality_issues"] = getattr(prof, "quality_issues", [])
         out.append(entry)
     return out

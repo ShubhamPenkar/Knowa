@@ -232,11 +232,15 @@ class ColumnSemanticUpdate(BaseModel):
     """User correction for a column's inferred semantic meaning."""
     semantic_type: Literal[
         "id", "numeric_measure", "categorical", "boolean",
-        "datetime", "geographic", "text", "unknown"
-    ] = Field(..., description="id, numeric_measure, categorical, boolean, datetime, geographic, text, unknown")
+        "datetime", "geographic", "text", "unknown",
+        "identifier", "entity_id", "measure", "dimension",
+        "ordinal", "percentage", "currency", "date",
+        "duration", "email", "phone", "target_candidate"
+    ] = Field(..., description="Semantic type")
     role: Literal[
         "identifier", "measure", "dimension", "timestamp", "unknown"
     ] = Field(..., description="identifier, measure, dimension, timestamp, unknown")
+    business_role: Optional[str] = Field(None, description="Optional business role (e.g., revenue, churn, customer, etc.)")
     notes: Optional[str] = Field(None, description="Optional reasoning for the user correction")
 
 
@@ -250,10 +254,51 @@ class ColumnSemanticDetail(BaseModel):
     name: str
     semantic_type: str
     role: str
+    business_role: str = "unknown"
     confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
     confidence_type: str = Field("heuristic", description="'heuristic' for inferred rules, 'user_assigned' for manual corrections")
     evidence: list[str] = Field(default_factory=list, description="Privacy-hardened pattern explanations without raw values")
     is_user_corrected: bool = False
+    physical_type: str = ""
+    nullable: bool = False
+    missing_ratio: float = 0.0
+    unique_ratio: float = 0.0
+    cardinality: int = 0
+    is_identifier: bool = False
+    is_target_candidate: bool = False
+    target_recommendation: Optional[dict[str, Any]] = None
+    distribution_stats: dict[str, Any] = Field(default_factory=dict)
+    quality_issues: list[str] = Field(default_factory=list)
+
+
+class SemanticProfileDatasetOverview(BaseModel):
+    id: Optional[str] = None
+    name: str = ""
+    row_count: int = 0
+    column_count: int = 0
+    duplicate_rows_count: int = 0
+    duplicate_rows_ratio: float = 0.0
+    quality_score: float = 100.0
+
+
+class SemanticProfileResponse(BaseModel):
+    """Structured semantic data understanding profile for a dataset."""
+    dataset: SemanticProfileDatasetOverview
+    columns: list[dict[str, Any]]
+    potential_targets: list[dict[str, Any]] = Field(default_factory=list)
+    column_relationships: list[dict[str, Any]] = Field(default_factory=list)
+    quality_summary: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    blocking: bool = False
+    blocking_issues: list[dict[str, Any]] = Field(default_factory=list)
+    excluded_as_id: list[str] = Field(default_factory=list)
+    dropped_as_constant: list[str] = Field(default_factory=list)
+    recommended_features: list[str] = Field(default_factory=list)
+    target_column: Optional[str] = None
+    target_positive_label: Optional[str] = None
+    present_target_values: Optional[list[str]] = None
+    suggested_positive_label: Optional[str] = None
+    user_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 # ============== Multi-Dataset Intelligence Schemas (Phase 2) ==============
@@ -365,6 +410,10 @@ class DataDrivenMetricResponse(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    description: Optional[str] = Field(None, description="Plain English description of what this metric measures")
+    unit: Optional[str] = Field(None, description="Inferred or known unit of measurement (e.g. $, %, count, Hz)")
+    semantic_meaning: Optional[str] = Field(None, description="Inferred semantic category or operational context")
+    is_business_metric: bool = Field(True, description="True for interpretable business metrics, False for raw technical distributions")
 
 
 class UnavailableMetricItem(BaseModel):
@@ -388,6 +437,8 @@ class ExplainableInsightResponse(BaseModel):
     confidence_type: str = Field("heuristic", description="Explicit confidence type label")
     limitations: list[str] = Field(default_factory=list)
     is_causal_claim: bool = False
+    priority_score: Optional[float] = Field(None, description="Internal relevance and evidence priority score")
+    source_dataset_name: Optional[str] = Field(None, description="Clean name of dataset providing primary evidence")
 
 
 class InvestigationOpportunityResponse(BaseModel):

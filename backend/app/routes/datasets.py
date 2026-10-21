@@ -16,6 +16,7 @@ from app.schemas import (
     RelationshipDiscoveryRequest,
     RelationshipDiscoveryResponse,
     RelationshipValidationRequest,
+    SemanticProfileResponse,
 )
 from app.services.auth_service import AuthContext, get_auth_context
 from app.services.dataset_service import DatasetService
@@ -211,6 +212,28 @@ async def get_dataset_profile(
     return profile
 
 
+@router.post("/{dataset_id}/profile")
+async def trigger_dataset_profile(
+    dataset_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Trigger profiling or re-profiling of a dataset."""
+    service = DatasetService(db, auth.org_id)
+    return service.recompute_profile(dataset_id)
+
+
+@router.get("/{dataset_id}/semantic-profile", response_model=SemanticProfileResponse)
+async def get_dataset_semantic_profile(
+    dataset_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Return structured Phase 1 semantic data understanding profile for a dataset."""
+    service = DatasetService(db, auth.org_id)
+    return service.get_semantic_profile(dataset_id)
+
+
 @router.get("/{dataset_id}/preview")
 async def preview_dataset(
     dataset_id: str,
@@ -260,13 +283,14 @@ async def update_column_semantic(
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
 ):
-    """User correction for a column's semantic type and role."""
+    """User correction for a column's semantic type, role, and business role."""
     service = DatasetService(db, auth.org_id)
     dataset = service.update_column_semantic(
         dataset_id=dataset_id,
         column_name=column,
         semantic_type=update.semantic_type,
         role=update.role,
+        business_role=update.business_role,
         notes=update.notes,
     )
     col_meta = next((c for c in dataset.columns if c.get("name") == column), None)
@@ -287,7 +311,12 @@ async def batch_update_semantics(
     """Batch update user corrections across multiple columns."""
     service = DatasetService(db, auth.org_id)
     corrections_dict = {
-        col: {"semantic_type": upd.semantic_type, "role": upd.role, "notes": upd.notes}
+        col: {
+            "semantic_type": upd.semantic_type,
+            "role": upd.role,
+            "business_role": upd.business_role,
+            "notes": upd.notes,
+        }
         for col, upd in body.corrections.items()
     }
     dataset = service.batch_update_semantics(dataset_id, corrections_dict)
@@ -295,3 +324,4 @@ async def batch_update_semantics(
         "dataset_id": dataset.id,
         "columns": dataset.columns,
     }
+
