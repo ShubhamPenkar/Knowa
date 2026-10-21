@@ -32,10 +32,12 @@ from app.ml.dataset_profiler import enrich_column_metadata, profile_dataframe
 from app.ml.relationship_inferencer import (
     DatasetRelationship,
     GrainType,
+    JoinSafety,
     RelationshipCardinality,
     ValidationStatus,
     discover_candidate_relationships,
     infer_dataset_grain,
+    simulate_relationship_join,
     validate_relationship_join,
 )
 from app.services.auth_service import AuthContext, get_auth_context
@@ -135,6 +137,55 @@ class TestDatasetGrainInference:
         assert grain.grain_type == GrainType.UNKNOWN.value
         assert grain.confidence <= 0.35
         assert len(grain.warnings) > 0
+
+    def test_bridge_grain_association_table(self):
+        """Bridge table connecting students and courses with composite foreign keys and no measures."""
+        df = pd.DataFrame({
+            "student_id": ["S1", "S1", "S2", "S2", "S3"],
+            "course_id": ["C101", "C102", "C101", "C103", "C102"],
+            "enrollment_status": ["enrolled", "completed", "enrolled", "dropped", "enrolled"],
+        })
+        meta = {
+            "id": "student_courses",
+            "name": "StudentCourses",
+            "columns": [
+                {"name": "student_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "course_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "enrollment_status", "role": "dimension", "semantic_type": "categorical"},
+            ],
+        }
+        grain = infer_dataset_grain(df, meta)
+        assert grain.grain_type == GrainType.BRIDGE.value
+        assert grain.entity_type == "bridge"
+        assert set(grain.primary_key) == {"student_id", "course_id"}
+        assert grain.confidence >= 0.85
+        assert "association" in grain.grain_description.lower()
+
+    def test_event_grain_activity_log(self):
+        """Event stream logging user actions over time."""
+        df = pd.DataFrame({
+            "event_id": [f"EVT-{i:04d}" for i in range(1, 51)],
+            "user_id": [f"USR-{1 + (i % 5):03d}" for i in range(1, 51)],
+            "timestamp": [f"2023-08-01 10:{i:02d}:00" for i in range(1, 51)],
+            "event_type": ["login", "view_page", "click_cta", "logout", "purchase"] * 10,
+        })
+        meta = {
+            "id": "event_logs",
+            "name": "EventLogs",
+            "columns": [
+                {"name": "event_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "user_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "timestamp", "role": "timestamp", "semantic_type": "datetime"},
+                {"name": "event_type", "role": "dimension", "semantic_type": "categorical"},
+            ],
+        }
+        grain = infer_dataset_grain(df, meta)
+        assert grain.grain_type == GrainType.EVENT.value
+        assert grain.entity_type == "event"
+        assert grain.primary_key == ["event_id"]
+        assert grain.confidence >= 0.85
+        assert "event" in grain.grain_description.lower()
+
 
 
 class TestRelationshipDiscoveryUnit:
@@ -468,6 +519,144 @@ class TestRelationshipDiscoveryUnit:
         assert res.rejection_reason is not None
         assert "zero matching rows" in res.rejection_reason.lower()
 
+    def test_join_safety_separation_from_validity_1_to_n(self):
+        """Relationship is structurally valid (is_valid=True) but has fanout double-counting risk for measures."""
+        df_cust = pd.DataFrame({
+            "customer_id": [f"C{i:03d}" for i in range(1, 21)],
+            "annual_revenue": [1000.0 * i for i in range(1, 21)],
+        })
+        meta_cust = {
+            "id": "customers",
+            "name": "Customers",
+            "columns": [
+                {"name": "customer_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "annual_revenue", "role": "measure", "semantic_type": "numeric_measure"},
+            ],
+        }
+
+        df_orders = pd.DataFrame({
+            "order_id": [f"ORD-{i:03d}" for i in range(1, 61)],
+            "customer_id": [f"C{1 + (i % 20):03d}" for i in range(1, 61)],  # 3 orders per customer
+            "order_amount": [50.0 + i for i in range(1, 61)],
+        })
+        meta_orders = {
+            "id": "orders",
+            "name": "Orders",
+            "columns": [
+                {"name": "order_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "customer_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "order_amount", "role": "measure", "semantic_type": "numeric_measure"},
+            ],
+        }
+
+        candidates = discover_candidate_relationships(df_cust, meta_cust, df_orders, meta_orders)
+        rel = next((c for c in candidates if c.source_column == "customer_id" and c.target_column == "customer_id"), None)
+        assert rel is not None
+        assert rel.is_valid is True  # Structurally valid!
+        assert rel.cardinality == RelationshipCardinality.ONE_TO_MANY.value
+        assert rel.join_safety == JoinSafety.FANOUT_RISK.value  # Analytically unsafe for customer measures
+        assert rel.double_counting_risk is True
+        assert "annual_revenue" in rel.double_counting_measures
+        assert rel.fan_out_ratio >= 2.5
+        assert any("double-counting" in w.lower() for w in rel.warnings)
+
+    def test_data_quality_casing_and_whitespace_mismatches(self):
+        """Detect join key cleanliness issues such as whitespace padding and casing differences."""
+        df_a = pd.DataFrame({
+            "code": ["KEY-01 ", "KEY-02", "KEY-03", "KEY-04"],  # Unstripped whitespace
+        })
+        meta_a = {
+            "id": "a",
+            "name": "A",
+            "columns": [{"name": "code", "role": "identifier", "semantic_type": "id"}],
+        }
+        df_b = pd.DataFrame({
+            "code": ["key-01", "key-02", "key-03", "key-04"],  # Lowercase mismatch
+        })
+        meta_b = {
+            "id": "b",
+            "name": "B",
+            "columns": [{"name": "code", "role": "identifier", "semantic_type": "id"}],
+        }
+        candidates = discover_candidate_relationships(df_a, meta_a, df_b, meta_b)
+        assert len(candidates) >= 1
+        rel = candidates[0]
+        assert len(rel.quality_notes) > 0
+        assert any("whitespace" in q.lower() or "casing" in q.lower() for q in rel.quality_notes)
+
+    def test_unrelated_datasets_produce_no_candidate_joins(self):
+        """Completely disjoint datasets should not produce false positive relationships."""
+        df_weather = pd.DataFrame({
+            "city": ["Tokyo", "Paris", "Berlin", "Sydney"],
+            "temperature_c": [22.5, 18.0, 16.5, 25.0],
+        })
+        meta_weather = {
+            "id": "weather",
+            "name": "Weather",
+            "columns": [
+                {"name": "city", "role": "dimension", "semantic_type": "geographic"},
+                {"name": "temperature_c", "role": "measure", "semantic_type": "numeric_measure"},
+            ],
+        }
+        df_employees = pd.DataFrame({
+            "employee_id": ["E101", "E102", "E103", "E104"],
+            "salary": [75000, 82000, 91000, 68000],
+        })
+        meta_employees = {
+            "id": "employees",
+            "name": "Employees",
+            "columns": [
+                {"name": "employee_id", "role": "identifier", "semantic_type": "id"},
+                {"name": "salary", "role": "measure", "semantic_type": "numeric_measure"},
+            ],
+        }
+        candidates = discover_candidate_relationships(df_weather, meta_weather, df_employees, meta_employees)
+        assert len(candidates) == 0
+
+
+class TestJoinSimulation:
+    """Unit tests for non-destructive join simulation and row expansion calculations."""
+
+    def test_simulate_relationship_join_1_to_n_fanout(self):
+        df_customers = pd.DataFrame({
+            "customer_id": [f"C{i:03d}" for i in range(1, 11)],
+            "region": ["East", "West"] * 5,
+        })
+        df_orders = pd.DataFrame({
+            "order_id": [f"O{i:03d}" for i in range(1, 51)],
+            "customer_id": [f"C{1 + (i % 10):03d}" for i in range(1, 51)],  # 5 orders per customer
+        })
+
+        sim = simulate_relationship_join(df_customers, "customer_id", df_orders, "customer_id")
+        assert sim["rows_before"] == 10
+        assert sim["target_rows_before"] == 50
+        assert sim["rows_after"] == 50
+        assert sim["row_expansion_factor"] == 5.0
+        assert sim["matched_rows"] == 50
+        assert sim["unmatched_source_rows"] == 0
+        assert sim["join_safety"] == JoinSafety.FANOUT_RISK.value
+        assert sim["is_valid"] is True
+        assert len(sim["warnings"]) > 0
+
+    def test_simulate_relationship_join_zero_matches(self):
+        df_a = pd.DataFrame({"id": ["A1", "A2", "A3"]})
+        df_b = pd.DataFrame({"id": ["B1", "B2", "B3"]})
+
+        sim = simulate_relationship_join(df_a, "id", df_b, "id")
+        assert sim["rows_after"] == 0
+        assert sim["matched_rows"] == 0
+        assert sim["unmatched_source_rows"] == 3
+        assert sim["is_valid"] is False
+        assert sim["join_safety"] == JoinSafety.INSUFFICIENT_EVIDENCE.value
+
+    def test_simulate_relationship_join_many_to_many_multiplication(self):
+        df_a = pd.DataFrame({"tag": ["T1", "T1", "T2", "T2"]})
+        df_b = pd.DataFrame({"tag": ["T1", "T1", "T1", "T2"]})
+
+        sim = simulate_relationship_join(df_a, "tag", df_b, "tag")
+        assert sim["duplicate_key_multiplication"] is True
+        assert sim["join_safety"] == JoinSafety.MANY_TO_MANY_RISK.value
+
 
 class TestRelationshipApiAndPersistence:
     """Integration tests verifying database isolation, API routes, sidecars, and validation."""
@@ -631,3 +820,30 @@ class TestRelationshipApiAndPersistence:
         }
         res_val = self.client.post("/api/datasets/relationships/validate", json=bad_body)
         assert res_val.status_code == 404
+
+    def test_get_organization_relationships_endpoint(self):
+        """GET /api/datasets/relationships should list discovered relationships."""
+        # Prime discovery
+        self.client.post("/api/datasets/relationships/discover")
+        res = self.client.get("/api/datasets/relationships")
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert "relationships" in data
+        assert data["total_found"] >= 1
+
+    def test_simulate_relationship_join_endpoint(self):
+        """POST /api/datasets/relationships/simulate executes non-destructive simulation."""
+        body = {
+            "source_dataset_id": self.ds_users.id,
+            "source_column": "user_id",
+            "target_dataset_id": self.ds_activity.id,
+            "target_column": "user_id",
+        }
+        res = self.client.post("/api/datasets/relationships/simulate", json=body)
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert data["rows_after"] > 0
+        assert data["row_expansion_factor"] >= 1.0
+        assert data["is_valid"] is True
+        assert "join_safety" in data
+        assert len(data["evidence"]) > 0

@@ -41,11 +41,23 @@ class ValidationStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class JoinSafety(str, Enum):
+    SAFE = "safe"
+    SAFE_WITH_AGGREGATION = "safe_with_aggregation"
+    FANOUT_RISK = "fanout_risk"
+    MANY_TO_MANY_RISK = "many_to_many_risk"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+
+
 class GrainType(str, Enum):
     ENTITY = "entity"
     TRANSACTION = "transaction"
+    EVENT = "event"
+    SNAPSHOT = "snapshot"
+    TIME_SERIES = "time_series"
     PERIODIC_AGGREGATE = "periodic_aggregate"
     COMPOSITE_KEY = "composite_key"
+    BRIDGE = "bridge"
     UNKNOWN = "unknown"
 
 
@@ -59,7 +71,9 @@ class DatasetGrain:
     dataset_id: str
     dataset_name: str
     grain_type: str = GrainType.UNKNOWN.value
+    grain_description: str = ""
     primary_key: list[str] = field(default_factory=list)
+    entity_type: Optional[str] = None
     confidence: float = 0.0  # Heuristic score in [0.0, 1.0], not a calibrated probability
     confidence_type: str = "heuristic"
     evidence: list[str] = field(default_factory=list)
@@ -86,14 +100,19 @@ class DatasetRelationship:
     source_uniqueness_ratio: float = 0.0
     target_uniqueness_ratio: float = 0.0
     containment_ratio: float = 0.0  # Fraction of source keys in target
+    source_unmatched_rate: float = 0.0
+    target_unmatched_rate: float = 0.0
     jaccard_similarity: float = 0.0
     overlapping_values_count: int = 0
     confidence: float = 0.0  # Heuristic score in [0.0, 1.0], not a calibrated probability
     confidence_type: str = "heuristic"
     evidence: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    quality_notes: list[str] = field(default_factory=list)
     validation_status: str = ValidationStatus.CANDIDATE.value
     is_ambiguous: bool = False
+    is_valid: bool = True  # Distinguishes relationship validity from analytical safety
+    join_safety: str = JoinSafety.SAFE.value
     fan_out_ratio: float = 1.0  # Joined rows / source rows
     double_counting_risk: bool = False
     double_counting_measures: list[str] = field(default_factory=list)
@@ -102,6 +121,7 @@ class DatasetRelationship:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +179,23 @@ def infer_dataset_grain(
         else:
             dimensions.append(col_str)
 
+    # Helper to derive singular entity name from column or dataset
+    def _singular_entity(col_or_dataset: str) -> str:
+        s = re.sub(r"(_id|_key|_code|_uuid)$", "", str(col_or_dataset), flags=re.I).strip().lower()
+        if s.endswith("ies") and len(s) > 3:
+            s = s[:-3] + "y"
+        elif s.endswith("ses") and len(s) > 3:
+            s = s[:-2]
+        elif s.endswith("s") and not s.endswith("ss") and len(s) > 2:
+            s = s[:-1]
+        return s or "entity"
+
+    # Event indicator columns (actions, events, logs)
+    event_indicator_cols = [
+        c for c in df.columns
+        if bool(re.search(r"(event|action|activity|log|click|pageview|session|audit|status_change)", str(c), re.I))
+    ]
+
     # 1. Check for single-column unique primary key
     unique_pks: list[str] = []
     for col in df.columns:
@@ -172,19 +209,48 @@ def infer_dataset_grain(
             if meta.get("role") != SemanticRole.MEASURE.value:
                 unique_pks.append(col_str)
 
-    # Distinguish Entity vs Transaction vs Periodic Aggregate
+    # Distinguish Entity vs Transaction vs Event vs Snapshot
     if unique_pks:
         primary_pk = unique_pks[0]
+        entity_name = _singular_entity(primary_pk) if primary_pk != "id" else _singular_entity(dataset_name)
+
         # Check if another column looks like a repeated entity FK (e.g. customer_id, user_id)
         entity_fks = [
             c for c in df.columns
             if str(c) != primary_pk
-            and bool(re.search(r"(customer|user|account|client|patient|member|employee|store|entity)_?id", str(c), re.I))
+            and bool(re.search(r"(customer|user|account|client|patient|member|employee|store|student|course|product|entity)_?id", str(c), re.I))
             and int(df[c].nunique()) < n_rows
         ]
 
+        # Event Grain with surrogate key (e.g. event_id, click_id, log_id)
+        if (
+            bool(re.search(r"(event|click|log|activity|action|visit)_?id", primary_pk, re.I))
+            or bool(re.search(r"(event|log|audit|click)", dataset_name, re.I))
+            or (event_indicator_cols and timestamps and len(measures) <= 1)
+        ):
+            evidence = [
+                f"Unique row identifier '{primary_pk}' represents discrete event occurrence",
+                f"Temporal tracking present with {len(timestamps)} timestamp column(s)",
+            ]
+            if entity_fks:
+                evidence.append(f"Linked to parent entity via foreign key ({', '.join(entity_fks)})")
+            return DatasetGrain(
+                dataset_id=dataset_id,
+                dataset_name=dataset_name,
+                grain_type=GrainType.EVENT.value,
+                grain_description="1 row per event occurrence",
+                primary_key=[primary_pk],
+                entity_type="event",
+                confidence=0.94,
+                confidence_type="heuristic",
+                evidence=evidence,
+                potential_measures=measures,
+                entity_identifiers=entity_fks,
+                timestamp_columns=timestamps,
+            )
+
+        # Transaction grain: order_id is unique, but customer_id repeats over time
         if timestamps and measures and entity_fks:
-            # Transaction grain: order_id is unique, but customer_id repeats over time
             evidence = [
                 f"Unique row identifier present without nulls ({len(unique_pks)} unique column)",
                 f"Repeated entity foreign key present with non-unique distribution",
@@ -195,7 +261,9 @@ def infer_dataset_grain(
                 dataset_id=dataset_id,
                 dataset_name=dataset_name,
                 grain_type=GrainType.TRANSACTION.value,
+                grain_description=f"1 row per {entity_name}",
                 primary_key=[primary_pk],
+                entity_type=entity_name,
                 confidence=0.92,
                 confidence_type="heuristic",
                 evidence=evidence,
@@ -216,7 +284,9 @@ def infer_dataset_grain(
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             grain_type=GrainType.ENTITY.value,
+            grain_description=f"1 row per {entity_name}",
             primary_key=[primary_pk],
+            entity_type=entity_name,
             confidence=0.95,
             confidence_type="heuristic",
             evidence=evidence,
@@ -226,7 +296,7 @@ def infer_dataset_grain(
         )
 
     # 2. Check for composite key if no single unique key exists
-    # Test pairs of columns (e.g. store_id + date, order_id + line_number)
+    # Test pairs of columns (e.g. store_id + date, order_id + line_number, student_id + course_id)
     non_null_cols = [c for c in df.columns if df[c].isnull().sum() == 0 and str(c) not in measures]
     composite_candidates: list[list[str]] = []
 
@@ -244,50 +314,113 @@ def infer_dataset_grain(
     if composite_candidates:
         best_composite = composite_candidates[0]
         has_time = any(c in timestamps for c in best_composite)
+
+        # Check for Bridge / Association table pattern:
+        # e.g. student_courses (student_id + course_id), order_items (order_id + product_id)
+        # 2+ entity foreign keys uniquely identifying row without heavy independent metric payload
+        is_composite_fks = (
+            len(best_composite) >= 2
+            and all(bool(re.search(r"(_?id|_?key|_?code)$", str(c), re.I)) for c in best_composite)
+            and not has_time
+        )
+        if is_composite_fks and len(measures) <= 1:
+            assoc_entities = [_singular_entity(c) for c in best_composite]
+            assoc_label = "-".join(assoc_entities)
+            return DatasetGrain(
+                dataset_id=dataset_id,
+                dataset_name=dataset_name,
+                grain_type=GrainType.BRIDGE.value,
+                grain_description=f"1 row per {assoc_label} association",
+                primary_key=best_composite,
+                entity_type="bridge",
+                confidence=0.91,
+                confidence_type="heuristic",
+                evidence=[
+                    f"Bridge / Association pattern: composite key ({' + '.join(best_composite)}) connects multiple entities",
+                    f"Table models a many-to-many relationship between {' and '.join(assoc_entities)}",
+                ],
+                potential_measures=measures,
+                entity_identifiers=best_composite,
+                timestamp_columns=timestamps,
+            )
+
+        # Snapshot / Periodic Aggregate / Time-series
         if has_time and measures:
-            grain_type = GrainType.PERIODIC_AGGREGATE.value if len(dimensions) >= 1 else GrainType.TRANSACTION.value
+            is_snapshot = bool(re.search(r"(balance|inventory|snapshot|level|stock|rate|headcount)", " ".join(measures), re.I))
+            grain_type = GrainType.SNAPSHOT.value if is_snapshot else GrainType.PERIODIC_AGGREGATE.value
+            entity_part = [c for c in best_composite if c not in timestamps]
+            entity_label = _singular_entity(entity_part[0]) if entity_part else "entity"
+            grain_desc = f"1 row per {entity_label}-period snapshot" if is_snapshot else f"1 row per {entity_label}-period aggregate"
             return DatasetGrain(
                 dataset_id=dataset_id,
                 dataset_name=dataset_name,
                 grain_type=grain_type,
+                grain_description=grain_desc,
                 primary_key=best_composite,
+                entity_type=entity_label,
                 confidence=0.88,
                 confidence_type="heuristic",
                 evidence=[
                     f"Compound composite key ({' + '.join(best_composite)}) uniquely identifies rows without nulls",
-                    f"Temporal tracking present with {len(measures)} measures",
+                    f"Temporal tracking present with {len(measures)} measures ({grain_type.replace('_', ' ')})",
                 ],
                 potential_measures=measures,
-                entity_identifiers=[c for c in best_composite if c not in timestamps],
+                entity_identifiers=entity_part,
                 timestamp_columns=timestamps,
             )
 
+        combo_label = " + ".join(best_composite)
+        assoc_entities = [_singular_entity(c) for c in best_composite]
         return DatasetGrain(
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             grain_type=GrainType.COMPOSITE_KEY.value,
+            grain_description=f"1 row per {'-'.join(assoc_entities)} combination",
             primary_key=best_composite,
+            entity_type="composite",
             confidence=0.85,
             confidence_type="heuristic",
             evidence=[
-                f"Compound composite key ({' + '.join(best_composite)}) uniquely identifies rows (100% uniqueness)",
+                f"Compound composite key ({combo_label}) uniquely identifies rows (100% uniqueness)",
             ],
             potential_measures=measures,
             entity_identifiers=best_composite,
             timestamp_columns=timestamps,
         )
 
-    # 3. Check for repeated transactions without explicit surrogate key
+    # 3. Check for repeated transactions or events without explicit surrogate key
     entity_fks = [
         c for c in df.columns
-        if bool(re.search(r"(customer|user|account|client|patient|member|store)_?id", str(c), re.I))
+        if bool(re.search(r"(customer|user|account|client|patient|member|store|student|course)_?id", str(c), re.I))
     ]
+    if event_indicator_cols and timestamps:
+        return DatasetGrain(
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            grain_type=GrainType.EVENT.value,
+            grain_description="1 row per event occurrence",
+            primary_key=[],
+            entity_type="event",
+            confidence=0.82,
+            confidence_type="heuristic",
+            evidence=[
+                "Event pattern: timestamp tracking + event action indicators",
+                "No explicit unique row surrogate key present; rows represent event-level occurrences",
+            ],
+            potential_measures=measures,
+            entity_identifiers=entity_fks,
+            timestamp_columns=timestamps,
+            warnings=["Dataset lacks unique primary row key; rows represent event-level occurrences"],
+        )
+
     if timestamps and measures and entity_fks:
         return DatasetGrain(
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             grain_type=GrainType.TRANSACTION.value,
+            grain_description="1 row per transaction",
             primary_key=[],
+            entity_type="transaction",
             confidence=0.78,
             confidence_type="heuristic",
             evidence=[
@@ -305,7 +438,9 @@ def infer_dataset_grain(
         dataset_id=dataset_id,
         dataset_name=dataset_name,
         grain_type=GrainType.UNKNOWN.value,
+        grain_description="Dataset grain could not be reliably established",
         primary_key=[],
+        entity_type="unknown",
         confidence=0.25,
         confidence_type="heuristic",
         evidence=[
@@ -317,6 +452,7 @@ def infer_dataset_grain(
         timestamp_columns=timestamps,
         warnings=["Dataset grain could not be reliably established; manual specification recommended"],
     )
+
 
 
 # ---------------------------------------------------------------------------
@@ -502,6 +638,12 @@ def discover_candidate_relationships(
         or bool(_FINANCIAL_OR_MEASURE_WORDS_RE.search(_normalize_name(str(c.get("name")))))
     ]
 
+    t_measures = [
+        c.get("name") for c in target_meta.get("columns", [])
+        if c.get("role") == SemanticRole.MEASURE.value or c.get("semantic_type") == SemanticType.NUMERIC_MEASURE.value
+        or bool(_FINANCIAL_OR_MEASURE_WORDS_RE.search(_normalize_name(str(c.get("name")))))
+    ]
+
     candidates: list[DatasetRelationship] = []
 
     for s_col_name in source_df.columns:
@@ -632,11 +774,38 @@ def discover_candidate_relationships(
             else:
                 cardinality = RelationshipCardinality.MANY_TO_MANY.value
 
+            # Unmatched rates
+            src_unmatched_rate = round(max(0.0, 1.0 - containment_src), 3)
+            tgt_unmatched_rate = round(max(0.0, 1.0 - containment_tgt), 3)
+
+            # Warnings and Quality Notes
+            warnings: list[str] = []
+            quality_notes: list[str] = []
+
+            # Data quality checks on candidate keys
+            s_raw_sample = [str(x) for x in s_series.dropna().head(1000)]
+            t_raw_sample = [str(x) for x in t_series.dropna().head(1000)]
+            if any(x != x.strip() for x in s_raw_sample) or any(x != x.strip() for x in t_raw_sample):
+                quality_notes.append("Whitespace differences detected in join keys (e.g. leading or trailing spaces); clean/trim keys prior to joining.")
+                warnings.append("Whitespace differences detected in join keys; exact join matching will drop uncleaned records.")
+
+            s_raw_set = {str(x).strip() for x in s_raw_sample}
+            t_raw_set = {str(x).strip() for x in t_raw_sample}
+            exact_overlap = len(s_raw_set.intersection(t_raw_set))
+            lower_s_set = {x.lower() for x in s_raw_set}
+            lower_t_set = {x.lower() for x in t_raw_set}
+            ci_overlap = len(lower_s_set.intersection(lower_t_set))
+            if ci_overlap > exact_overlap and exact_overlap < max(len(s_raw_set), 1) * 0.95:
+                quality_notes.append("Casing discrepancies detected between key values (e.g. 'C001' vs 'c001'); case-folding required before joining.")
+                warnings.append("Casing differences detected across join keys; case-sensitive joins will fail to match.")
+
+            if s_null_ratio > 0.05 or t_null_ratio > 0.05:
+                quality_notes.append(f"Null keys present: {s_null_ratio:.1%} in source, {t_null_ratio:.1%} in target.")
+
             # Double counting and Fan-out risk analysis
             fan_out_ratio = 1.0
             double_counting_risk = False
             double_counting_measures: list[str] = []
-            warnings: list[str] = []
 
             if cardinality in (RelationshipCardinality.ONE_TO_MANY.value, RelationshipCardinality.MANY_TO_MANY.value):
                 target_counts = t_series.dropna().value_counts()
@@ -657,6 +826,37 @@ def discover_candidate_relationships(
             max_null_ratio = max(s_null_ratio, t_null_ratio)
             if max_null_ratio >= 0.20:
                 warnings.append(f"Join key missingness is notable ({max_null_ratio:.1%} nulls); records without keys will not match.")
+
+            # Separate Relationship Validity from Analytical Safety
+            is_valid = True
+            if cardinality == RelationshipCardinality.ONE_TO_ONE.value:
+                join_safety = JoinSafety.SAFE.value
+            elif cardinality == RelationshipCardinality.ONE_TO_MANY.value:
+                if double_counting_risk:
+                    join_safety = JoinSafety.FANOUT_RISK.value
+                    warnings.append(
+                        f"⚠️ Potential double-counting: Joining {s_name} → {t_name} creates a 1:N expansion (estimated {fan_out_ratio:.1f}x). "
+                        f"Source-level measures {double_counting_measures[:3]} should not be summed after this join without pre-aggregation or grain normalization."
+                    )
+                else:
+                    join_safety = JoinSafety.SAFE_WITH_AGGREGATION.value
+            elif cardinality == RelationshipCardinality.MANY_TO_ONE.value:
+                if t_measures:
+                    join_safety = JoinSafety.SAFE_WITH_AGGREGATION.value
+                    warnings.append(
+                        f"Target dimension {t_name} attributes can safely enrich {s_name}; "
+                        f"target measures {t_measures[:3]} will repeat across matching source rows."
+                    )
+                else:
+                    join_safety = JoinSafety.SAFE.value
+            elif cardinality == RelationshipCardinality.MANY_TO_MANY.value:
+                join_safety = JoinSafety.MANY_TO_MANY_RISK.value
+                warnings.append(
+                    f"⚠️ Many-to-many join risk: Direct join between {s_name} and {t_name} causes Cartesian row multiplication. "
+                    "Use a bridge/association table or aggregate both sides before joining."
+                )
+            else:
+                join_safety = JoinSafety.INSUFFICIENT_EVIDENCE.value
 
             # Compute transparent heuristic confidence score
             conf = 0.35 * max_containment + 0.20 * jaccard
@@ -729,14 +929,19 @@ def discover_candidate_relationships(
                     source_uniqueness_ratio=round(s_uniq_ratio, 3),
                     target_uniqueness_ratio=round(t_uniq_ratio, 3),
                     containment_ratio=round(containment_src, 3),
+                    source_unmatched_rate=src_unmatched_rate,
+                    target_unmatched_rate=tgt_unmatched_rate,
                     jaccard_similarity=round(jaccard, 3),
                     overlapping_values_count=overlap_count,
                     confidence=conf,
                     confidence_type="heuristic",
                     evidence=evidence,
                     warnings=warnings,
+                    quality_notes=quality_notes,
                     validation_status=val_status,
                     is_ambiguous=False,
+                    is_valid=is_valid,
+                    join_safety=join_safety,
                     fan_out_ratio=round(fan_out_ratio, 2),
                     double_counting_risk=double_counting_risk,
                     double_counting_measures=double_counting_measures,
@@ -818,6 +1023,8 @@ def validate_relationship_join(
             candidate.validation_status = ValidationStatus.REJECTED.value
             candidate.rejection_reason = "Join validation failed: zero matching rows produced"
             candidate.warnings.append("Join validation failed: zero matching rows produced")
+            candidate.is_valid = False
+            candidate.join_safety = JoinSafety.INSUFFICIENT_EVIDENCE.value
         elif candidate.is_ambiguous:
             candidate.validation_status = ValidationStatus.AMBIGUOUS.value
             candidate.review_reason = "Join produced matching rows, but remains ambiguous with competing candidate keys"
@@ -829,9 +1036,119 @@ def validate_relationship_join(
             candidate.evidence.append(
                 f"Data join validation confirmed: {actual_joined_rows} joined rows produced (fan-out ratio={actual_fan_out:.2f})"
             )
+            if actual_fan_out > 1.05 and candidate.double_counting_risk:
+                candidate.join_safety = JoinSafety.FANOUT_RISK.value
+            elif candidate.cardinality == RelationshipCardinality.MANY_TO_MANY.value:
+                candidate.join_safety = JoinSafety.MANY_TO_MANY_RISK.value
     except Exception as e:
         candidate.validation_status = ValidationStatus.REJECTED.value
         candidate.rejection_reason = f"Join execution error: {str(e)}"
         candidate.warnings.append(f"Join execution error: {str(e)}")
+        candidate.is_valid = False
 
     return candidate
+
+
+# ---------------------------------------------------------------------------
+# Join Simulation
+# ---------------------------------------------------------------------------
+
+def simulate_relationship_join(
+    source_df: pd.DataFrame,
+    source_col: str,
+    target_df: pd.DataFrame,
+    target_col: str,
+    max_sample_rows: int = 50000,
+) -> dict[str, Any]:
+    """Perform a non-destructive join simulation between two datasets.
+
+    Computes:
+    - rows_before
+    - target_rows_before
+    - rows_after
+    - row_expansion_factor
+    - matched_rows
+    - unmatched_source_rows
+    - unmatched_target_rows
+    - duplicate_key_multiplication
+    - join_safety
+    - warnings
+    - evidence
+    """
+    if source_col not in source_df.columns:
+        raise ValueError(f"Source column '{source_col}' not found in source dataset")
+    if target_col not in target_df.columns:
+        raise ValueError(f"Target column '{target_col}' not found in target dataset")
+
+    s_clean = source_df[[source_col]].dropna()
+    t_clean = target_df[[target_col]].dropna()
+
+    sample_s = s_clean.head(max_sample_rows).copy()
+    sample_t = t_clean.head(max_sample_rows).copy()
+
+    # Convert keys to clean string representations for exact simulated join
+    sample_s["_k"] = sample_s[source_col].astype(str)
+    sample_t["_k"] = sample_t[target_col].astype(str)
+
+    s_keys = set(sample_s["_k"].tolist())
+    t_keys = set(sample_t["_k"].tolist())
+    matched_keys = s_keys.intersection(t_keys)
+
+    merged = pd.merge(sample_s, sample_t, on="_k", how="inner")
+    matched_rows = len(merged)
+    rows_before = len(source_df)
+    target_rows_before = len(target_df)
+
+    expansion = matched_rows / max(len(sample_s), 1)
+
+    s_unmatched_rows = int((~sample_s["_k"].isin(matched_keys)).sum())
+    t_unmatched_rows = int((~sample_t["_k"].isin(matched_keys)).sum())
+
+    s_dups = sample_s["_k"].duplicated().sum()
+    t_dups = sample_t["_k"].duplicated().sum()
+    is_mult = bool(s_dups > 0 and t_dups > 0 and expansion > 1.2)
+
+    warnings: list[str] = []
+    evidence: list[str] = [
+        f"Simulated non-destructive inner join: {matched_rows} matching rows produced from {len(sample_s)} source sample rows",
+        f"Row expansion factor: {expansion:.2f}x relative to source dataset grain",
+        f"Matched distinct keys: {len(matched_keys)} ({len(s_keys - matched_keys)} unmatched source keys, {len(t_keys - matched_keys)} unmatched target keys)",
+    ]
+
+    is_valid = bool(matched_rows > 0)
+
+    if not is_valid:
+        join_safety = JoinSafety.INSUFFICIENT_EVIDENCE.value
+        warnings.append("Simulated join yielded 0 matching rows between selected columns.")
+    elif is_mult:
+        join_safety = JoinSafety.MANY_TO_MANY_RISK.value
+        warnings.append("⚠️ Many-to-many Cartesian multiplication detected: duplicate keys on both sides expand row count exponentially.")
+    elif expansion > 1.05:
+        join_safety = JoinSafety.FANOUT_RISK.value
+        warnings.append(
+            f"⚠️ Fan-out risk ({expansion:.2f}x expansion): Source records are duplicated. "
+            "Summing source-level measures after this join will cause double counting without pre-aggregation."
+        )
+    elif expansion < 1.0 and s_unmatched_rows > 0:
+        join_safety = JoinSafety.SAFE_WITH_AGGREGATION.value
+        warnings.append(f"Incomplete key match: {s_unmatched_rows} source rows have no matching key in target dataset.")
+    else:
+        join_safety = JoinSafety.SAFE.value
+        evidence.append("Join maintains 1:1 or N:1 row stability with no row expansion.")
+
+    return {
+        "source_column": source_col,
+        "target_column": target_col,
+        "rows_before": rows_before,
+        "target_rows_before": target_rows_before,
+        "rows_after": matched_rows,
+        "row_expansion_factor": round(expansion, 2),
+        "matched_rows": matched_rows,
+        "unmatched_source_rows": s_unmatched_rows,
+        "unmatched_target_rows": t_unmatched_rows,
+        "duplicate_key_multiplication": is_mult,
+        "is_valid": is_valid,
+        "join_safety": join_safety,
+        "warnings": warnings,
+        "evidence": evidence,
+    }

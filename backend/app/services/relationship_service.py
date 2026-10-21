@@ -19,6 +19,7 @@ from app.ml.relationship_inferencer import (
     discover_candidate_relationships,
     infer_dataset_grain,
     validate_relationship_join,
+    simulate_relationship_join,
 )
 from app.services.dataset_service import DatasetService
 
@@ -249,3 +250,33 @@ class DatasetRelationshipService:
                 pass
 
         return validated
+
+    def simulate_join(
+        self,
+        source_dataset_id: str,
+        source_column: str,
+        target_dataset_id: str,
+        target_column: str,
+    ) -> dict[str, Any]:
+        """Perform a non-destructive join simulation between two datasets."""
+        s_dataset = self.dataset_service.get_dataset(source_dataset_id)
+        t_dataset = self.dataset_service.get_dataset(target_dataset_id)
+
+        if not s_dataset or not t_dataset:
+            raise HTTPException(status_code=404, detail="Source or target dataset not found")
+
+        if not os.path.exists(s_dataset.file_path) or not os.path.exists(t_dataset.file_path):
+            raise HTTPException(status_code=404, detail="Dataset parquet file not found")
+
+        df_src = pd.read_parquet(s_dataset.file_path)
+        df_tgt = pd.read_parquet(t_dataset.file_path)
+
+        try:
+            return simulate_relationship_join(
+                source_df=df_src,
+                source_col=source_column,
+                target_df=df_tgt,
+                target_col=target_column,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))

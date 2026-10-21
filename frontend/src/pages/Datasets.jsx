@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import ProductIntelligenceOverview from '../components/common/ProductIntelligenceOverview';
+import DataRelationshipsModel from '../components/common/DataRelationshipsModel';
 
 const ROLE_OPTIONS = [
   { value: 'dimension', label: 'Dimension (Categorical/Grouping)' },
@@ -265,6 +266,17 @@ export default function Datasets() {
         </button>
         <button
           type="button"
+          onClick={() => setActiveTab('relationships')}
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'relationships'
+              ? 'border-teal text-ink'
+              : 'border-transparent text-[var(--muted)] hover:text-ink'
+          }`}
+        >
+          Data Model & Relationships
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab('intelligence')}
           className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
             activeTab === 'intelligence'
@@ -323,7 +335,9 @@ export default function Datasets() {
         </div>
       )}
 
-      {activeTab === 'intelligence' ? (
+      {activeTab === 'relationships' ? (
+        <DataRelationshipsModel token={token} datasets={datasets} />
+      ) : activeTab === 'intelligence' ? (
         <ProductIntelligenceOverview token={token} />
       ) : datasets.length === 0 ? (
         <div className="empty-state">

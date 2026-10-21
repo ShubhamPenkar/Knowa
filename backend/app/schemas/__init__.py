@@ -307,8 +307,10 @@ class DatasetGrainResponse(BaseModel):
     """Inferred dataset grain / level-of-detail."""
     dataset_id: str
     dataset_name: str
-    grain_type: str = Field(..., description="entity, transaction, periodic_aggregate, composite_key, unknown")
+    grain_type: str = Field(..., description="entity, transaction, event, snapshot, time_series, periodic_aggregate, composite_key, bridge, unknown")
+    grain_description: str = Field("", description="Human-readable level-of-detail summary e.g. 1 row per customer")
     primary_key: list[str] = Field(default_factory=list, description="Primary or composite key identifying the grain")
+    entity_type: Optional[str] = Field(None, description="Primary business entity represented by dataset grain")
     confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
     confidence_type: str = Field("heuristic", description="Explicit confidence type label")
     evidence: list[str] = Field(default_factory=list, description="Pattern evidence establishing dataset grain")
@@ -331,14 +333,19 @@ class DatasetRelationshipResponse(BaseModel):
     source_uniqueness_ratio: float
     target_uniqueness_ratio: float
     containment_ratio: float
+    source_unmatched_rate: float = 0.0
+    target_unmatched_rate: float = 0.0
     jaccard_similarity: float
     overlapping_values_count: int
     confidence: float = Field(..., description="Rule-based heuristic score in [0.0, 1.0], not a calibrated probability")
     confidence_type: str = Field("heuristic", description="Explicit confidence type label")
     evidence: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    quality_notes: list[str] = Field(default_factory=list)
     validation_status: str = Field(..., description="candidate, needs_review, ambiguous, validated, rejected")
     is_ambiguous: bool = False
+    is_valid: bool = Field(True, description="Structural validity of candidate relationship separate from analytical aggregation safety")
+    join_safety: str = Field("safe", description="safe, safe_with_aggregation, fanout_risk, many_to_many_risk, insufficient_evidence")
     fan_out_ratio: float = Field(1.0, description="Joined row expansion multiplier")
     double_counting_risk: bool = Field(False, description="Flag indicating potential measure inflation")
     double_counting_measures: list[str] = Field(default_factory=list)
@@ -364,6 +371,32 @@ class RelationshipValidationRequest(BaseModel):
     source_column: str
     target_dataset_id: str
     target_column: str
+
+
+class JoinSimulationRequest(BaseModel):
+    """Request to perform a non-destructive simulated join between two datasets."""
+    source_dataset_id: str
+    source_column: str
+    target_dataset_id: str
+    target_column: str
+
+
+class JoinSimulationResponse(BaseModel):
+    """Results of a non-destructive join simulation."""
+    source_column: str
+    target_column: str
+    rows_before: int
+    target_rows_before: int
+    rows_after: int
+    row_expansion_factor: float
+    matched_rows: int
+    unmatched_source_rows: int
+    unmatched_target_rows: int
+    duplicate_key_multiplication: bool
+    is_valid: bool
+    join_safety: str
+    warnings: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
 
 
 # ============== Dynamic Product Intelligence Schemas (Phase 3) ==============

@@ -16,6 +16,8 @@ from app.schemas import (
     RelationshipDiscoveryRequest,
     RelationshipDiscoveryResponse,
     RelationshipValidationRequest,
+    JoinSimulationRequest,
+    JoinSimulationResponse,
     SemanticProfileResponse,
 )
 from app.services.auth_service import AuthContext, get_auth_context
@@ -78,6 +80,20 @@ async def list_datasets(
     ]
 
 
+@router.get("/relationships", response_model=RelationshipDiscoveryResponse)
+async def list_relationships(
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve discovered candidate relationships across organization datasets."""
+    service = DatasetRelationshipService(db, auth.org_id)
+    rels = service.discover_relationships(refresh=False)
+    return {
+        "relationships": [r.to_dict() for r in rels],
+        "total_found": len(rels),
+    }
+
+
 @router.post("/relationships/discover", response_model=RelationshipDiscoveryResponse)
 async def discover_relationships(
     body: Optional[RelationshipDiscoveryRequest] = None,
@@ -110,6 +126,22 @@ async def validate_relationship(
         target_column=body.target_column,
     )
     return rel.to_dict()
+
+
+@router.post("/relationships/simulate", response_model=JoinSimulationResponse)
+async def simulate_relationship_join_endpoint(
+    body: JoinSimulationRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Simulate a non-destructive join between two datasets and calculate row expansion and safety."""
+    service = DatasetRelationshipService(db, auth.org_id)
+    return service.simulate_join(
+        source_dataset_id=body.source_dataset_id,
+        source_column=body.source_column,
+        target_dataset_id=body.target_dataset_id,
+        target_column=body.target_column,
+    )
 
 
 @router.get("/{dataset_id}/grain", response_model=DatasetGrainResponse)
