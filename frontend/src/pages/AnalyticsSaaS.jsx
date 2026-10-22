@@ -295,10 +295,10 @@ export default function AnalyticsSaaS() {
     <div className="page">
       <div className="page-header">
         <div>
-          <p className="page-kicker">Org board</p>
-          <h1 className="page-title">Follow-ups</h1>
+          <p className="page-kicker">Decision Accountability</p>
+          <h1 className="page-title">Decision Ledger & Follow-up Board</h1>
           <p className="page-sub max-w-xl">
-            Check in on saved actions across your org. Use Cases for new reviews; What-if for scenarios.
+            Audit committed operational actions, enforce review deadlines with assigned owners, and verify whether predicted improvements occurred in reality.
           </p>
         </div>
         {readyProjects.length > 0 && selectedProject && (

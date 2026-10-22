@@ -2,49 +2,49 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-/** Primary work tabs first; setup (Projects / Data) last. */
+/** Work tabs first; analytics, data, and models organized by operational purpose. */
 const navItems = [
   {
     path: '/',
     match: (p) => p === '/',
     label: 'Home',
-    hint: "Knowa overview and today's pulse",
+    hint: "Executive command center and daily decision pulse",
   },
   {
     path: '/cases',
     match: (p) => p.startsWith('/cases'),
-    label: 'Cases',
-    hint: 'Review who needs attention',
+    label: 'Cases Queue',
+    hint: 'Prioritized accounts and individual decisions',
   },
   {
     path: '/follow-ups',
     match: (p) => p.startsWith('/follow-ups') || p.startsWith('/analytics'),
-    label: 'Follow-ups',
-    hint: 'Check-ins due across projects',
+    label: 'Decision Ledger',
+    hint: 'Committed actions, check-ins, and portfolio ROI',
   },
   {
     path: '/whatif',
     match: (p) => p.startsWith('/whatif'),
-    label: 'What-if',
-    hint: 'Test scenarios before you act',
+    label: 'What-If Simulation',
+    hint: 'Test scenarios and intervention levers before acting',
+  },
+  {
+    path: '/datasets',
+    match: (p) => p.startsWith('/datasets'),
+    label: 'Data & Insights',
+    hint: 'Catalog, dataset connections, and dynamic findings',
   },
   {
     path: '/monitoring',
     match: (p) => p.startsWith('/monitoring'),
-    label: 'Monitoring',
-    hint: 'Model quality and learning',
+    label: 'Model Health',
+    hint: 'Prediction reliability, accuracy, and operational drift',
   },
   {
     path: '/projects',
     match: (p) => p === '/projects' || /^\/projects\/[^/]+$/.test(p),
     label: 'Projects',
-    hint: 'Create and prepare models',
-  },
-  {
-    path: '/datasets',
-    match: (p) => p.startsWith('/datasets'),
-    label: 'Data',
-    hint: 'Upload datasets',
+    hint: 'Business objectives and model pipelines',
   },
 ]
 
@@ -82,7 +82,7 @@ function Layout() {
       {navItems.map((item, idx) => {
         const isActive = item.match(location.pathname)
         const showBadge = item.path === '/follow-ups' && dueCount > 0
-        const showDivider = idx === 5
+        const showDivider = idx === 4
         return (
           <React.Fragment key={item.path === '/' ? 'home' : item.path}>
             {showDivider && (

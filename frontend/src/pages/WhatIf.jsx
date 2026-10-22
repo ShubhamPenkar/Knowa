@@ -346,10 +346,10 @@ export default function WhatIf() {
             Project
           </Link>
         </div>
-        <p className="page-kicker mt-4 mb-1">What-if</p>
-        <h1 className="page-title">What if we changed something?</h1>
+        <p className="page-kicker mt-4 mb-1">Scenario Studio</p>
+        <h1 className="page-title">What-If Decision Simulation</h1>
         <p className="page-sub max-w-2xl">
-          Pick a person, change dials that actually move their estimate, and compare before vs after.
+          Evaluate intervention levers, project before-and-after outcomes with Monte Carlo uncertainty, and test decisions prior to real-world capital commitment.
         </p>
       </header>
 
@@ -675,6 +675,17 @@ export default function WhatIf() {
                     )}
                 </div>
 
+                {/* Causality & Model Uncertainty Banner */}
+                <div className="mx-5 mb-4 p-3 bg-paper/80 border border-mist rounded-control text-xs flex items-start gap-2.5">
+                  <span className="text-teal font-bold shrink-0 text-sm">ℹ️</span>
+                  <div>
+                    <span className="font-semibold text-ink block">Decision Intelligence Advisory</span>
+                    <p className="text-[11px] text-[var(--muted)] leading-relaxed mt-0.5">
+                      Model-based projections indicate statistical correlation from historical data, not guaranteed real-world causality. Validate operational feasibility before committing large budgets.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-3 gap-px bg-mist">
                   <div className="bg-paper px-4 py-5 text-center">
                     <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">Before</div>
@@ -897,6 +908,19 @@ export default function WhatIf() {
                     </ol>
                   </div>
                 )}
+
+                <div className="px-5 py-4 border-t border-mist bg-paper/40 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-semibold text-ink block">Ready to act on this scenario?</span>
+                    <span className="text-[11px] text-[var(--muted)]">Commit this action to the Decision Ledger with an assignee and scheduled follow-up recheck.</span>
+                  </div>
+                  <Link
+                    to={`/cases?project=${projectId}`}
+                    className="btn-primary text-xs py-1.5 px-3"
+                  >
+                    Commit in Case Review →
+                  </Link>
+                </div>
               </div>
             )}
           </div>

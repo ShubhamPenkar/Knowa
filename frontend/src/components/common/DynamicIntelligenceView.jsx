@@ -196,14 +196,14 @@ export default function DynamicIntelligenceView({ token, initialDatasetId = null
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-display text-lg font-semibold text-ink">
-              Dynamic Business Intelligence
+              Executive Findings & Automated Analyses
             </h2>
-            <span className="badge bg-teal-soft text-teal border border-teal/20 text-xs">
-              Phase 3 Active
+            <span className="status-pill-safe text-[11px]">
+              Continuous Discovery Active
             </span>
           </div>
           <p className="text-xs text-[var(--muted)] mt-1 max-w-2xl">
-            Automatically reasons from Phase 1 semantic profiles and Phase 2 grain models to discover meaningful patterns, audit anomalies, test non-causal associations, and surface high-value business insights.
+            Proactive discovery of meaningful changes, operational patterns, and statistical anomalies synthesized across your verified data.
           </p>
         </div>
 
@@ -322,20 +322,24 @@ export default function DynamicIntelligenceView({ token, initialDatasetId = null
                     </div>
 
                     {/* Actions */}
-                    <div className="pt-3 border-t border-mist flex items-center justify-between gap-2">
+                    <div className="pt-3 border-t border-mist flex flex-wrap items-center justify-between gap-2">
                       <button
                         type="button"
                         onClick={() => handleOpenEvidence(ins)}
                         className="text-xs text-teal hover:underline font-semibold flex items-center gap-1"
                       >
-                        <span>View Evidence & Math</span> →
+                        <span>Inspect Evidence & Calculations</span> →
                       </button>
 
-                      {ins.recommended_next_analysis && (
-                        <span className="text-[10px] text-[var(--muted)] truncate max-w-[200px]" title={ins.recommended_next_analysis}>
-                          Next: {ins.recommended_next_analysis}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <a
+                          href="/whatif"
+                          className="text-xs text-muted hover:text-ink font-medium"
+                          title="Simulate intervention levers for this insight"
+                        >
+                          Simulate in What-If →
+                        </a>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -343,15 +347,15 @@ export default function DynamicIntelligenceView({ token, initialDatasetId = null
             )}
           </section>
 
-          {/* SECTION 2: ANALYSIS EXPLORER (RECOMMENDED ANALYSES) */}
+          {/* SECTION 2: RECOMMENDED ANALYSES */}
           <section className="space-y-4 pt-4 border-t border-mist">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-display text-base font-semibold text-ink">
-                  Analysis Opportunity Explorer
+                  Recommended Business Analyses
                 </h3>
                 <p className="text-xs text-[var(--muted)]">
-                  Dynamically generated analytical opportunities derived from inferred semantic roles, targets, and dataset grain.
+                  Data-driven analytical workflows prioritized by potential business impact, data completeness, and grain safety.
                 </p>
               </div>
 
@@ -375,65 +379,76 @@ export default function DynamicIntelligenceView({ token, initialDatasetId = null
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredOpportunities.map((opp) => (
-                <div
-                  key={opp.id}
-                  className="p-4 border border-mist rounded-control bg-surface flex flex-col justify-between hover:border-teal/40 transition-colors"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-mist text-ink/80">
-                        {opp.analysis_type.replace('_', ' ')}
-                      </span>
-                      <span className="badge text-[11px] bg-teal-soft text-teal border border-teal/20 font-semibold" title="Analytical relevance score">
-                        {(opp.relevance_score * 100).toFixed(0)}% Relevance
-                      </span>
-                    </div>
+              {filteredOpportunities.map((opp) => {
+                const isExecuting = executingOppId === opp.id;
+                let actionLabel = 'Explore Finding';
+                if (opp.analysis_type === 'trend') actionLabel = 'Analyze Trend';
+                else if (opp.analysis_type === 'comparative') actionLabel = 'Compare Segments';
+                else if (opp.analysis_type === 'correlation') actionLabel = 'Test Association';
+                else if (opp.analysis_type === 'anomaly') actionLabel = 'Audit Outliers';
+                else if (opp.analysis_type === 'segmentation') actionLabel = 'Discover Segments';
+                else if (opp.analysis_type === 'cross_dataset') actionLabel = 'Verify Connection';
 
-                    <h4 className="font-display text-sm font-semibold text-ink mb-1">
-                      {opp.title}
-                    </h4>
-                    <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
-                      {opp.description}
-                    </p>
+                return (
+                  <div
+                    key={opp.id}
+                    className="p-4 border border-mist rounded-control bg-surface flex flex-col justify-between hover:border-teal/40 transition-colors"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-mist text-ink/80">
+                          {opp.analysis_type.replace('_', ' ')}
+                        </span>
+                        <span className="badge text-[11px] bg-teal-soft text-teal border border-teal/20 font-semibold" title="Analytical relevance score">
+                          {(opp.relevance_score * 100).toFixed(0)}% Relevance
+                        </span>
+                      </div>
 
-                    {/* Evidence Checklist: Recommended because */}
-                    <div className="space-y-1 mb-4 p-2.5 rounded bg-paper border border-mist">
-                      <p className="text-[10px] uppercase font-bold text-[var(--muted)] tracking-wider mb-1">
-                        Recommended because:
+                      <h4 className="font-display text-sm font-semibold text-ink mb-1">
+                        {opp.title}
+                      </h4>
+                      <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
+                        {opp.description}
                       </p>
-                      {opp.evidence_factors?.map((ef, idx) => (
-                        <p key={idx} className="text-[11px] text-ink/90 flex items-start gap-1.5">
-                          <span className="text-teal font-bold shrink-0">✓</span>
-                          <span>{ef}</span>
-                        </p>
-                      ))}
 
-                      {opp.reason_unavailable && (
-                        <p className="text-[11px] text-coral font-medium mt-1">
-                          ⚠️ {opp.reason_unavailable}
+                      {/* Evidence Checklist: Recommended because */}
+                      <div className="space-y-1 mb-4 p-2.5 rounded bg-paper border border-mist">
+                        <p className="text-[10px] uppercase font-bold text-[var(--muted)] tracking-wider mb-1">
+                          Recommended because:
                         </p>
-                      )}
+                        {opp.evidence_factors?.map((ef, idx) => (
+                          <p key={idx} className="text-[11px] text-ink/90 flex items-start gap-1.5">
+                            <span className="text-teal font-bold shrink-0">✓</span>
+                            <span>{ef}</span>
+                          </p>
+                        ))}
+
+                        {opp.reason_unavailable && (
+                          <p className="text-[11px] text-coral font-medium mt-1">
+                            ⚠️ {opp.reason_unavailable}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Run / Explore button with specific label */}
+                    <div className="pt-2 border-t border-mist flex items-center justify-between">
+                      <span className="text-[10px] text-[var(--muted)]">
+                        {opp.grain_safe ? '🛡️ Safe Grain' : '⚠️ Grain Restricted'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRunOpportunity(opp.id)}
+                        disabled={isExecuting || opp.status === 'unavailable'}
+                        className="btn-secondary text-xs px-2.5 py-1 flex items-center gap-1"
+                      >
+                        {isExecuting && <Spinner className="h-3 w-3 text-teal" />}
+                        {isExecuting ? 'Evaluating…' : actionLabel}
+                      </button>
                     </div>
                   </div>
-
-                  {/* Run / Explore button */}
-                  <div className="pt-2 border-t border-mist flex items-center justify-between">
-                    <span className="text-[10px] text-[var(--muted)]">
-                      {opp.grain_safe ? '🛡️ Grain Safe' : '⚠️ Grain Restricted'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRunOpportunity(opp.id)}
-                      disabled={executingOppId === opp.id || opp.status === 'unavailable'}
-                      className="btn-secondary text-xs px-2.5 py-1 flex items-center gap-1"
-                    >
-                      {executingOppId === opp.id && <Spinner className="h-3 w-3 text-teal" />}
-                      {executingOppId === opp.id ? 'Running…' : 'Run Analysis'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 

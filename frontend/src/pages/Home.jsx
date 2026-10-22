@@ -50,12 +50,10 @@ const CAPABILITIES = [
   },
 ]
 
-/**
- * In-app home — orients users on the Knowa decision loop before deep work tabs.
- */
 export default function Home() {
   const { token, organization, user } = useAuth()
   const [projects, setProjects] = useState([])
+  const [portfolio, setPortfolio] = useState(null)
   const [loading, setLoading] = useState(true)
   const [dueAttention, setDueAttention] = useState(0)
   const [handoffOpen, setHandoffOpen] = useState(false)
@@ -68,11 +66,14 @@ export default function Home() {
     let cancelled = false
     ;(async () => {
       try {
-        const [projRes, healthRes] = await Promise.all([
+        const [projRes, healthRes, portRes] = await Promise.all([
           fetch('/api/projects', {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch('/api/projects/org-health', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch('/api/projects/decisions/portfolio?limit=10', {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ])
@@ -91,7 +92,6 @@ export default function Home() {
             /* ignore */
           }
           if (pendingHandoff && due > 0) {
-            // Keep the flag until dismiss so React Strict Mode remounts still see it
             setHandoffOpen(true)
           } else if (pendingHandoff && due === 0) {
             try {
@@ -101,9 +101,11 @@ export default function Home() {
             }
           }
         }
-        // If org-health fails, leave the handoff flag for a later successful load
-      } catch {
-        /* ignore */
+        if (portRes.ok) {
+          setPortfolio(await portRes.json())
+        }
+      } catch (err) {
+        console.error('Error loading executive home:', err)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -136,28 +138,39 @@ export default function Home() {
     }
   }
 
+  const urgentDecisions = useMemo(() => {
+    if (!portfolio?.decisions) return []
+    return portfolio.decisions
+      .filter((d) => d.status === 'overdue' || d.status === 'due_now' || d.needs_check_in)
+      .slice(0, 4)
+  }, [portfolio])
+
   return (
     <div className="page">
+      {/* Alert Banner for Overdue Commitments */}
       {handoffOpen && dueAttention > 0 && (
         <div
-          className="mb-6 border border-coral/35 bg-coral-soft/40 px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 rounded-control"
+          className="mb-6 border border-coral/35 bg-coral-soft/50 px-5 py-4 flex flex-wrap items-center justify-between gap-4 rounded-control"
           role="status"
         >
-          <p className="text-sm text-ink">
-            <span className="font-medium tabular-nums">{dueAttention}</span> follow-up
-            {dueAttention === 1 ? '' : 's'} need you — overdue or due now.
-          </p>
-          <div className="flex flex-wrap gap-2 shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="h-2.5 w-2.5 rounded-full bg-coral animate-ping" />
+            <p className="text-sm font-medium text-ink">
+              <span className="font-semibold text-coral tabular-nums">{dueAttention}</span> decision
+              {dueAttention === 1 ? '' : 's'} require scheduled follow-up check-ins right now.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <Link
               to="/follow-ups"
-              className="btn-primary text-sm py-1.5"
+              className="btn-primary text-xs py-1.5 px-3"
               onClick={dismissHandoff}
             >
-              Open follow-ups
+              Open Decision Ledger
             </Link>
             <button
               type="button"
-              className="btn-ghost text-sm py-1.5"
+              className="btn-ghost text-xs py-1.5 px-3"
               onClick={dismissHandoff}
             >
               Dismiss
@@ -166,127 +179,282 @@ export default function Home() {
         </div>
       )}
 
-      <header className="relative overflow-hidden border border-mist mb-10">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-90"
-          aria-hidden="true"
-          style={{
-            background:
-              'radial-gradient(ellipse 80% 60% at 12% 20%, color-mix(in srgb, var(--teal) 22%, transparent), transparent 55%), radial-gradient(ellipse 70% 50% at 88% 10%, color-mix(in srgb, var(--coral) 14%, transparent), transparent 50%), linear-gradient(180deg, color-mix(in srgb, var(--surface) 80%, transparent), transparent)',
-          }}
-        />
-        <div className="relative px-6 py-10 md:px-10 md:py-14">
-          <p className="page-kicker">Home</p>
-          <h1 className="font-display text-4xl md:text-5xl font-semibold text-ink tracking-tight max-w-2xl leading-[1.05]">
-            Knowa
-          </h1>
-          <p className="mt-4 text-base md:text-lg text-[var(--muted)] max-w-xl leading-relaxed">
-            {greetingName ? `Welcome back, ${greetingName}. ` : ''}
-            Decide with clarity — predict outcomes, see why, act with ranked moves, then learn from
-            what happened.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
+      {/* Executive Command Hero */}
+      <header className="decision-hero mb-8">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="page-kicker mb-0">Executive Command Center</span>
+              <span className="text-muted text-xs">·</span>
+              <span className="text-xs text-muted font-mono">{organization?.name || 'Workspace'}</span>
+            </div>
+            <h1 className="page-title">
+              {greetingName ? `Good day, ${greetingName}.` : 'Decision Intelligence Overview'}
+            </h1>
+            <p className="page-sub mt-2 text-base text-muted">
+              Active oversight across business risks, high-priority cases, scheduled follow-up
+              audits, and verifiable outcome improvements.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
             {hasReady ? (
               <>
                 <Link
                   to={primaryProjectId ? `/cases?project=${primaryProjectId}` : '/cases'}
                   className="btn-primary"
                 >
-                  Continue reviewing
+                  Inspect Priority Cases →
                 </Link>
                 <Link to="/follow-ups" className="btn-secondary">
-                  Open follow-ups
+                  Decision Ledger
                 </Link>
               </>
             ) : (
               <>
                 <Link to="/projects" className="btn-primary">
-                  Set up a project
+                  Start New Objective
                 </Link>
                 <Link to="/datasets" className="btn-secondary">
-                  Upload data
+                  Explore Data
                 </Link>
               </>
             )}
           </div>
-          {!loading && organization?.name && (
-            <p className="mt-6 text-xs text-[var(--muted)]">
-              Workspace · {organization.name}
-              {hasReady
-                ? ` · ${readyProjects.length} ready project${readyProjects.length === 1 ? '' : 's'}`
-                : ' · no ready projects yet'}
-            </p>
-          )}
+        </div>
+
+        {/* Metric Pulse Strip */}
+        <div className="mt-8 pt-6 border-t border-mist/80 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Active Objectives</div>
+            <div className="mt-1 font-display text-2xl font-bold text-ink">
+              {loading ? '…' : projects.length}
+            </div>
+            <div className="text-xs text-teal mt-0.5">
+              {readyProjects.length} ready for inference
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Follow-ups Requiring Action</div>
+            <div className="mt-1 font-display text-2xl font-bold text-coral">
+              {loading ? '…' : dueAttention}
+            </div>
+            <div className="text-xs text-muted mt-0.5">
+              {dueAttention > 0 ? 'Review check-ins today' : 'All check-ins up to date'}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Tracked Decisions</div>
+            <div className="mt-1 font-display text-2xl font-bold text-ink">
+              {loading ? '…' : portfolio?.counts?.total ?? '0'}
+            </div>
+            <div className="text-xs text-muted mt-0.5">
+              {portfolio?.counts?.closed ?? 0} verified outcomes
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Decision Assurance</div>
+            <div className="mt-1 font-display text-2xl font-bold text-teal">
+              {hasReady ? 'Active' : 'Awaiting Setup'}
+            </div>
+            <div className="text-xs text-muted mt-0.5">
+              SHAP & consistency guards live
+            </div>
+          </div>
         </div>
       </header>
 
-      <OrgHealthStrip projectId={primaryProjectId} />
+      {/* Decision Ledger Priority Queue — What needs attention right now */}
+      {urgentDecisions.length > 0 && (
+        <section className="mb-8" aria-labelledby="urgent-heading">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 id="urgent-heading" className="font-display text-lg font-semibold text-ink flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-coral inline-block" />
+                Decisions Requiring Immediate Check-in
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Committed interventions whose scheduled evaluation deadline has arrived.
+              </p>
+            </div>
+            <Link to="/follow-ups" className="text-xs text-teal hover:underline font-medium">
+              View all follow-ups ({portfolio?.decisions?.length || 0}) →
+            </Link>
+          </div>
 
-      <section className="mb-12" aria-labelledby="flow-heading">
-        <h2 id="flow-heading" className="font-display text-xl font-semibold text-ink">
-          How Knowa works
-        </h2>
-        <p className="text-sm text-[var(--muted)] mt-2 max-w-xl">
-          A closed loop — not a one-shot churn dashboard.
-        </p>
-        <ol className="mt-6 border border-mist divide-y divide-mist">
-          {FLOW.map((step, i) => (
-            <li
-              key={step.n}
-              className="px-5 py-5 md:px-6 flex flex-col md:flex-row md:items-center gap-4 md:gap-8 home-flow-row"
-              style={{ animationDelay: `${80 + i * 70}ms` }}
-            >
-              <span className="font-display text-sm text-teal tabular-nums shrink-0 w-8">
-                {step.n}
-              </span>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-medium text-ink">{step.title}</h3>
-                <p className="text-sm text-[var(--muted)] mt-1 leading-relaxed">{step.body}</p>
+          <div className="grid md:grid-cols-2 gap-3">
+            {urgentDecisions.map((dec) => (
+              <div key={dec.id} className="decision-card flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="status-pill-risk">Check-in Due</span>
+                    <span className="text-xs font-mono text-muted truncate max-w-[150px]">
+                      {dec.entity_id || 'Case'}
+                    </span>
+                  </div>
+                  <h3 className="font-medium text-ink text-sm">
+                    {dec.action_name || dec.strategy || 'Committed Business Action'}
+                  </h3>
+                  <p className="text-xs text-muted mt-1 line-clamp-2">
+                    {dec.notes || 'Scheduled recheck to evaluate whether real-world risk reduced.'}
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-mist/60 flex items-center justify-between text-xs">
+                  <span className="text-muted">
+                    Assignee: <span className="text-ink">{dec.assignee_name || 'Unassigned'}</span>
+                  </span>
+                  <Link
+                    to={`/projects/${dec.project_id}?from=priorities#decision-${dec.id}`}
+                    className="text-teal hover:underline font-semibold"
+                  >
+                    Complete Check-in →
+                  </Link>
+                </div>
               </div>
-              <Link to={step.to} className="btn-ghost text-sm shrink-0 self-start md:self-center">
-                {step.cta} →
-              </Link>
-            </li>
-          ))}
-        </ol>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <section className="mb-10" aria-labelledby="cap-heading">
-        <h2 id="cap-heading" className="font-display text-xl font-semibold text-ink">
-          What you can do here
-        </h2>
-        <p className="text-sm text-[var(--muted)] mt-2 max-w-xl">
-          Built for operators who need accountable decisions — not raw model dumps.
-        </p>
-        <ul className="mt-6 grid md:grid-cols-3 gap-px bg-mist border border-mist">
-          {CAPABILITIES.map((cap) => (
-            <li key={cap.title} className="bg-paper px-5 py-6">
-              <h3 className="font-medium text-ink">{cap.title}</h3>
-              <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed">{cap.body}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="border border-mist px-5 py-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="font-display text-lg font-semibold text-ink">Ready to dig in?</h2>
-          <p className="text-sm text-[var(--muted)] mt-1">
-            {hasReady
-              ? 'Jump back into cases, or check Monitoring when a guide looks rough.'
-              : 'Start with data, then describe the decision you want to score.'}
-          </p>
+      {/* Active Business Objectives / Projects Portfolio */}
+      <section className="mb-10" aria-labelledby="portfolio-heading">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 id="portfolio-heading" className="font-display text-lg font-semibold text-ink">
+              Business Objectives & Model Readiness
+            </h2>
+            <p className="text-xs text-muted mt-0.5">
+              High-stakes operational prediction workflows currently configured in your workspace.
+            </p>
+          </div>
+          <Link to="/projects" className="text-xs text-teal hover:underline font-medium">
+            Manage all projects →
+          </Link>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to={hasReady ? (primaryProjectId ? `/cases?project=${primaryProjectId}` : '/cases') : '/datasets'}
-            className="btn-primary"
-          >
-            {hasReady ? 'Open cases' : 'Go to data'}
-          </Link>
-          <Link to="/monitoring" className="btn-ghost text-sm">
-            Monitoring
-          </Link>
+
+        {projects.length === 0 && !loading ? (
+          <div className="empty-state">
+            <h3 className="text-base font-semibold text-ink">No business objectives configured yet</h3>
+            <p className="text-sm text-muted mt-1 max-w-md mx-auto">
+              Connect a business dataset and define the target decision outcome (e.g. churn prevention, customer renewal, or demand forecasting).
+            </p>
+            <div className="mt-4 flex justify-center gap-3">
+              <Link to="/projects" className="btn-primary text-xs">
+                Create Project
+              </Link>
+              <Link to="/datasets" className="btn-secondary text-xs">
+                Upload Dataset
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {projects.map((p) => {
+              const isReady = p.status === 'ready' || p.status === 'trained'
+              return (
+                <div key={p.id} className="decision-card flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className={isReady ? 'status-pill-safe' : 'status-pill-caution'}>
+                        {isReady ? 'Model Ready' : 'Setup Required'}
+                      </span>
+                      <span className="text-[11px] font-mono uppercase text-muted tracking-wide">
+                        {p.problem_type === 'regression' ? 'Metric Estimate' : 'Classification'}
+                      </span>
+                    </div>
+
+                    <Link to={`/projects/${p.id}`} className="block group">
+                      <h3 className="font-display font-semibold text-base text-ink group-hover:text-teal transition-colors">
+                        {p.name}
+                      </h3>
+                    </Link>
+                    <p className="text-xs text-muted mt-1.5 line-clamp-2 leading-relaxed">
+                      {p.description || p.target_description || `Targeting outcome: ${p.target_column || 'Not specified'}`}
+                    </p>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-mist/60 flex items-center justify-between text-xs">
+                    {isReady ? (
+                      <div className="flex items-center gap-3">
+                        <Link
+                          to={`/cases?project=${p.id}`}
+                          className="font-medium text-teal hover:underline"
+                        >
+                          Review Cases
+                        </Link>
+                        <span className="text-mist">·</span>
+                        <Link
+                          to={`/whatif/${p.id}`}
+                          className="text-muted hover:text-ink"
+                        >
+                          Simulate Levers
+                        </Link>
+                      </div>
+                    ) : (
+                      <Link
+                        to={`/projects/${p.id}`}
+                        className="font-medium text-coral hover:underline"
+                      >
+                        Complete Setup →
+                      </Link>
+                    )}
+                    <span className="text-[11px] font-mono text-muted">
+                      {p.feature_columns?.length || 0} features
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Decision Lifecycle Roadmap */}
+      <section className="mb-6 p-6 rounded-control border border-mist bg-surface/50" aria-labelledby="lifecycle-heading">
+        <h2 id="lifecycle-heading" className="font-display text-sm font-semibold uppercase tracking-wider text-muted mb-4">
+          The Closed-Loop Decision Intelligence Cycle
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="p-3 border border-mist/70 rounded bg-paper/60">
+            <span className="text-xs font-mono font-bold text-teal">01 · UNDERSTAND</span>
+            <h3 className="text-xs font-semibold text-ink mt-1">Data & Semantic Grain</h3>
+            <p className="text-[11px] text-muted mt-1 leading-relaxed">
+              Verify what each row represents, cross-dataset connections, and safe join criteria.
+            </p>
+            <Link to="/datasets" className="text-[11px] text-teal hover:underline mt-2 inline-block">
+              Explore Data →
+            </Link>
+          </div>
+          <div className="p-3 border border-mist/70 rounded bg-paper/60">
+            <span className="text-xs font-mono font-bold text-teal">02 · PREDICT & EXPLAIN</span>
+            <h3 className="text-xs font-semibold text-ink mt-1">Prioritized Cases</h3>
+            <p className="text-[11px] text-muted mt-1 leading-relaxed">
+              Review accounts by predicted impact with dual SHAP/LIME explanation and consistency guards.
+            </p>
+            <Link to="/cases" className="text-[11px] text-teal hover:underline mt-2 inline-block">
+              Inspect Cases →
+            </Link>
+          </div>
+          <div className="p-3 border border-mist/70 rounded bg-paper/60">
+            <span className="text-xs font-mono font-bold text-teal">03 · SIMULATE</span>
+            <h3 className="text-xs font-semibold text-ink mt-1">What-If Scenarios</h3>
+            <p className="text-[11px] text-muted mt-1 leading-relaxed">
+              Test intervention levers before spending capital. Transparently evaluate model boundaries.
+            </p>
+            <Link to="/whatif" className="text-[11px] text-teal hover:underline mt-2 inline-block">
+              Simulate Actions →
+            </Link>
+          </div>
+          <div className="p-3 border border-mist/70 rounded bg-paper/60">
+            <span className="text-xs font-mono font-bold text-teal">04 · ACCOUNTABILITY</span>
+            <h3 className="text-xs font-semibold text-ink mt-1">Decision Ledger & ROI</h3>
+            <p className="text-[11px] text-muted mt-1 leading-relaxed">
+              Log committed decisions with assigned owners, scheduled rechecks, and audit-ready outcome tracking.
+            </p>
+            <Link to="/follow-ups" className="text-[11px] text-teal hover:underline mt-2 inline-block">
+              Open Ledger →
+            </Link>
+          </div>
         </div>
       </section>
     </div>

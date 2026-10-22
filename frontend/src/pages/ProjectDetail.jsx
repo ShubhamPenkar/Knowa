@@ -631,6 +631,41 @@ export default function ProjectDetail() {
         <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">{deleteError}</div>
       )}
 
+      {/* Business Decision Lifecycle Status */}
+      <div className="mb-8 p-4 bg-paper/60 border border-mist rounded-control">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="h-6 w-6 rounded-full bg-teal/20 text-teal flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+            <div>
+              <span className="font-semibold text-ink block">1. Objective Configured</span>
+              <span className="text-[11px] text-[var(--muted)]">Target: {outcomeLabel}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <span className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+              isReady ? 'bg-teal/20 text-teal' : 'bg-coral-soft text-coral border border-coral/30'
+            }`}>
+              {isReady ? '✓' : '2'}
+            </span>
+            <div>
+              <span className="font-semibold text-ink block">2. Model Evaluation</span>
+              <span className="text-[11px] text-[var(--muted)]">{isReady ? (readiness?.label || 'Trained & evaluated') : 'Requires preparation'}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <span className={`h-6 w-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+              isReady ? 'bg-teal/20 text-teal' : 'bg-mist text-[var(--muted)]'
+            }`}>
+              {isReady ? '✓' : '3'}
+            </span>
+            <div>
+              <span className="font-semibold text-ink block">3. Decision Ledger & Action</span>
+              <span className="text-[11px] text-[var(--muted)]">{isReady ? 'Active case reviews' : 'Pending model activation'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {(project.status === 'created' || project.status === 'draft') && (
         <section className="surface p-6 mb-8">
           <h2 className="font-display text-lg font-semibold text-ink">Turn on guidance</h2>

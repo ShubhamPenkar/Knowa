@@ -243,9 +243,11 @@ export default function Datasets() {
     <div className="page">
       <div className="page-header">
         <div>
-          <p className="page-kicker">Data</p>
-          <h1 className="page-title">Datasets</h1>
-          <p className="page-sub">Evidence-based semantic data understanding, profiling, and schema models.</p>
+          <p className="page-kicker">Data Foundation</p>
+          <h1 className="page-title">Data & Insights</h1>
+          <p className="page-sub">
+            Understand what your uploaded data contains, how records connect across tables, and discover proactive business patterns.
+          </p>
         </div>
         <button type="button" onClick={() => setShowUpload(true)} className="btn-primary">
           Upload dataset
@@ -263,7 +265,7 @@ export default function Datasets() {
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Datasets & Semantics ({datasets.length})
+          Data Catalog & Meaning ({datasets.length})
         </button>
         <button
           type="button"
@@ -274,7 +276,7 @@ export default function Datasets() {
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Data Model & Relationships
+          How Data Connects
         </button>
         <button
           type="button"
@@ -285,7 +287,7 @@ export default function Datasets() {
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Dynamic Business Intelligence
+          Executive Insights & Discoveries
         </button>
         <button
           type="button"
@@ -296,7 +298,7 @@ export default function Datasets() {
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Portfolio Overview
+          Data Quality & Health
         </button>
       </div>
 

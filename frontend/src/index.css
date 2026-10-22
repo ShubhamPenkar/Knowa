@@ -135,8 +135,55 @@
   }
 
   .empty-state {
-    @apply border border-mist px-8 py-12 md:px-12 text-center;
+    @apply border border-mist px-8 py-12 md:px-12 text-center rounded-control;
     background: color-mix(in srgb, var(--surface) 55%, transparent);
+  }
+
+  /* Business Decision Intelligence Design Tokens */
+  .decision-card {
+    @apply bg-surface border border-mist rounded-control p-5 transition-all duration-200;
+  }
+  .decision-card:hover {
+    border-color: color-mix(in srgb, var(--teal) 35%, var(--mist));
+  }
+
+  .decision-hero {
+    @apply bg-surface border border-mist rounded-control p-6 md:p-8;
+    background: radial-gradient(ellipse 90% 60% at 0% 0%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 60%), var(--surface);
+  }
+
+  .evidence-drawer {
+    @apply bg-paper border border-mist rounded-control p-4 mt-3 text-xs leading-relaxed;
+  }
+
+  /* Semantic status pills with high readability */
+  .status-pill-safe {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-teal-soft/80 border border-teal/40 text-teal;
+  }
+
+  .status-pill-caution {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-[#3d2b0f]/80 border border-[#e5a00d]/40 text-[#f5b838];
+  }
+
+  .status-pill-risk {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-coral-soft/80 border border-coral/40 text-coral;
+  }
+
+  .status-pill-info {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-mist/60 border border-mist text-ink;
+  }
+
+  /* Scenario Delta Badges */
+  .scenario-delta-positive {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded bg-teal-soft text-teal border border-teal/30;
+  }
+
+  .scenario-delta-negative {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded bg-coral-soft text-coral border border-coral/30;
+  }
+
+  .scenario-delta-neutral {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-mist/60 text-muted border border-mist;
   }
 
   .shell-stage {

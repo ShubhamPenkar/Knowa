@@ -173,53 +173,59 @@ export default function DataRelationshipsModel({ token, datasets = [] }) {
   const getGrainBadge = (grainType) => {
     switch (grainType) {
       case 'entity':
-        return { label: 'Entity', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+        return { label: '1 Row = 1 Entity (e.g. Account/Customer)', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
       case 'transaction':
-        return { label: 'Transaction', cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
+        return { label: '1 Row = 1 Event or Transaction', cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
       case 'bridge':
-        return { label: 'Bridge / Association', cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30' };
+        return { label: '1 Row = 1 Bridge Association', cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30' };
       case 'event':
-        return { label: 'Event Log', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' };
+        return { label: '1 Row = 1 Activity Log Entry', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' };
       case 'snapshot':
-        return { label: 'Snapshot', cls: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' };
+        return { label: '1 Row = 1 Periodic Status Snapshot', cls: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' };
       case 'time_series':
-        return { label: 'Time Series', cls: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' };
+        return { label: '1 Row = 1 Time Period Interval', cls: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' };
       case 'periodic_aggregate':
-        return { label: 'Periodic Aggregate', cls: 'bg-teal-500/20 text-teal-300 border-teal-500/30' };
+        return { label: '1 Row = 1 Aggregate Summary', cls: 'bg-teal-500/20 text-teal-300 border-teal-500/30' };
       case 'composite_key':
-        return { label: 'Composite Key', cls: 'bg-violet-500/20 text-violet-300 border-violet-500/30' };
+        return { label: '1 Row = Multi-Key Combination', cls: 'bg-violet-500/20 text-violet-300 border-violet-500/30' };
       default:
-        return { label: 'Unknown Grain', cls: 'bg-gray-500/20 text-gray-300 border-gray-500/30' };
+        return { label: 'Row Representation Unconfirmed', cls: 'bg-gray-500/20 text-gray-300 border-gray-500/30' };
     }
   };
 
-  const getSafetyBadge = (safety) => {
+  const getSafetyBadge = (safety, containmentRatio = 1.0) => {
     switch (safety) {
       case 'safe':
-        return { label: 'Safe Join', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+        if (containmentRatio != null && containmentRatio < 0.6) {
+          return {
+            label: `Partial Key Overlap (${Math.round(containmentRatio * 100)}% match)`,
+            cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+          };
+        }
+        return { label: 'Analytically Safe Join', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
       case 'safe_with_aggregation':
-        return { label: 'Safe with Aggregation', cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
+        return { label: 'Safe with Prior Aggregation', cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
       case 'fanout_risk':
-        return { label: '⚠️ Fan-Out / Double-Counting Risk', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' };
+        return { label: '⚠️ Risk: Counts Records More Than Once', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' };
       case 'many_to_many_risk':
-        return { label: '⚠️ Cartesian Fan-Out Risk', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/30' };
+        return { label: '⚠️ Severe Duplication Risk (Many-to-Many)', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/30' };
       default:
-        return { label: 'Insufficient Evidence', cls: 'bg-gray-500/20 text-gray-300 border-gray-500/30' };
+        return { label: 'Incomplete Overlap Evidence', cls: 'bg-gray-500/20 text-gray-300 border-gray-500/30' };
     }
   };
 
   const getCardinalityLabel = (cardinality) => {
     switch (cardinality) {
       case 'one_to_one':
-        return '1 : 1';
+        return '1 : 1 (Exact)';
       case 'one_to_many':
-        return '1 : N';
+        return '1 : Many';
       case 'many_to_one':
-        return 'N : 1';
+        return 'Many : 1';
       case 'many_to_many':
-        return 'N : M';
+        return 'Many : Many (Cartesian Hazard)';
       default:
-        return '? : ?';
+        return 'Unknown Connection';
     }
   };
 
@@ -260,14 +266,14 @@ export default function DataRelationshipsModel({ token, datasets = [] }) {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs uppercase font-semibold tracking-wider text-teal">Phase 2 Intelligence</span>
-              <span className="px-2 py-0.5 text-[11px] rounded bg-teal/15 text-teal border border-teal/30 font-mono">
-                Cross-Dataset Reasoning
+              <span className="text-xs uppercase font-semibold tracking-wider text-teal">Data Connections</span>
+              <span className="px-2 py-0.5 text-[11px] rounded bg-teal/15 text-teal border border-teal/30 font-medium">
+                Business Join Reality
               </span>
             </div>
-            <h2 className="text-2xl font-display font-semibold mt-1">Data Model & Analytical Safety</h2>
+            <h2 className="text-2xl font-display font-semibold mt-1">How Your Data Connects</h2>
             <p className="text-sm text-[var(--muted)] mt-1 max-w-2xl">
-              Automatic dataset grain inference, key entity mapping, cross-dataset join discovery, and fan-out risk detection to prevent metric inflation.
+              Understand what one row represents in each table, how records connect, and whether combining tables will exclude records or count some values more than once.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -401,14 +407,14 @@ export default function DataRelationshipsModel({ token, datasets = [] }) {
         </div>
       )}
 
-      {/* SECTION 1: DATASET GRAINS */}
+      {/* SECTION 1: WHAT ONE ROW REPRESENTS (GRAIN) */}
       {(viewMode === 'all' || viewMode === 'grains') && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-display text-lg font-semibold">Dataset Grains & Level of Detail</h3>
+              <h3 className="font-display text-lg font-semibold">What One Row Represents (Dataset Grain)</h3>
               <p className="text-xs text-[var(--muted)]">
-                Inferred row grain, entity keys, temporal tracking, and measures vulnerable to join multiplication.
+                Explicit definition of what each record represents in the real world. Prevents inadvertent record duplication when merging tables.
               </p>
             </div>
           </div>
@@ -438,7 +444,8 @@ export default function DataRelationshipsModel({ token, datasets = [] }) {
                         {grain?.grain_description || `Level of detail: ${dataset.name}`}
                       </p>
                       <p className="text-[11px] text-[var(--muted)] mt-1">
-                        Inference Confidence: {grain ? Math.round(grain.confidence * 100) : 0}% ({grain?.confidence_type || 'heuristic'})
+                        Inference Confidence: {grain ? Math.round(grain.confidence * 100) : 0}% ({grain?.confidence_type === 'heuristic' ? 'inferred from distinct keys' : 'verified from schema'})
+                        {grain && grain.confidence < 0.6 ? ' · Tentative (confirm key column)' : ' · Confirmed unique grain'}
                       </p>
                     </div>
 
@@ -505,9 +512,9 @@ export default function DataRelationshipsModel({ token, datasets = [] }) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-display text-lg font-semibold">Cross-Dataset Relationships & Join Safety</h3>
+              <h3 className="font-display text-lg font-semibold">How Your Data Connects (Cross-Dataset Joins)</h3>
               <p className="text-xs text-[var(--muted)]">
-                Discovered join candidates with cardinality inference, value match rate, and analytical fan-out warnings.
+                Discovered key relationships showing match rates, cardinality, and whether combining tables will exclude records or multiply totals.
               </p>
             </div>
           </div>
@@ -529,7 +536,7 @@ export default function DataRelationshipsModel({ token, datasets = [] }) {
           ) : (
             <div className="space-y-4">
               {filteredRelationships.map((rel) => {
-                const safety = getSafetyBadge(rel.join_safety);
+                const safety = getSafetyBadge(rel.join_safety, rel.containment_ratio);
                 const cardLabel = getCardinalityLabel(rel.cardinality);
                 const isValidating = validatingId === rel.id;
 

@@ -177,10 +177,10 @@ export default function Monitoring() {
     <div className="page">
       <div className="page-header">
         <div>
-          <p className="page-kicker">Quality</p>
-          <h1 className="page-title">Monitoring</h1>
+          <p className="page-kicker">Operational Trust</p>
+          <h1 className="page-title">Model Health & Reliability</h1>
           <p className="page-sub max-w-xl">
-            How well guidance is ranking and matching real outcomes — without opening project setup.
+            Evaluate whether prediction guidance remains reliable over time, verify ranking quality against known cases, and inspect feedback learning from recorded business outcomes.
           </p>
         </div>
         {projectId && (
