@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import ProductIntelligenceOverview from '../components/common/ProductIntelligenceOverview';
 import DataRelationshipsModel from '../components/common/DataRelationshipsModel';
+import DynamicIntelligenceView from '../components/common/DynamicIntelligenceView';
 
 const ROLE_OPTIONS = [
   { value: 'dimension', label: 'Dimension (Categorical/Grouping)' },
@@ -277,6 +278,17 @@ export default function Datasets() {
         </button>
         <button
           type="button"
+          onClick={() => setActiveTab('dynamic_bi')}
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'dynamic_bi'
+              ? 'border-teal text-ink'
+              : 'border-transparent text-[var(--muted)] hover:text-ink'
+          }`}
+        >
+          Dynamic Business Intelligence
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab('intelligence')}
           className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
             activeTab === 'intelligence'
@@ -284,7 +296,7 @@ export default function Datasets() {
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Product Intelligence
+          Portfolio Overview
         </button>
       </div>
 
@@ -337,6 +349,8 @@ export default function Datasets() {
 
       {activeTab === 'relationships' ? (
         <DataRelationshipsModel token={token} datasets={datasets} />
+      ) : activeTab === 'dynamic_bi' ? (
+        <DynamicIntelligenceView token={token} />
       ) : activeTab === 'intelligence' ? (
         <ProductIntelligenceOverview token={token} />
       ) : datasets.length === 0 ? (

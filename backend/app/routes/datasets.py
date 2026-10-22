@@ -7,10 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas import (
+    AnalysisExecutionRequest,
+    AnalysisOpportunitiesResponse,
     BatchSemanticUpdate,
     ColumnSemanticUpdate,
     DatasetGrainResponse,
     DatasetRelationshipResponse,
+    DynamicIntelligenceResponse,
+    InsightDetailResponse,
     ProductIntelligenceOverviewResponse,
     ProductIntelligenceRequest,
     RelationshipDiscoveryRequest,
@@ -22,6 +26,7 @@ from app.schemas import (
 )
 from app.services.auth_service import AuthContext, get_auth_context
 from app.services.dataset_service import DatasetService
+from app.services.dynamic_intelligence_service import DynamicIntelligenceService
 from app.services.product_intelligence_service import ProductIntelligenceService
 from app.services.relationship_service import DatasetRelationshipService
 
@@ -203,6 +208,64 @@ async def get_single_dataset_intelligence(
     """Retrieve Product Intelligence overview focused on a single dataset."""
     service = ProductIntelligenceService(db, auth.org_id)
     return service.build_overview(dataset_ids=[dataset_id], refresh=refresh)
+
+
+@router.get("/{dataset_id}/analysis-opportunities", response_model=AnalysisOpportunitiesResponse)
+async def get_dataset_analysis_opportunities(
+    dataset_id: str,
+    refresh: bool = False,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve ranked dynamic analysis opportunities for a dataset."""
+    service = DynamicIntelligenceService(db, auth.org_id)
+    return service.get_opportunities(dataset_id, refresh=refresh)
+
+
+@router.post("/{dataset_id}/analyze", response_model=DynamicIntelligenceResponse)
+async def run_dataset_analysis(
+    dataset_id: str,
+    body: Optional[AnalysisExecutionRequest] = None,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Execute selected (or top) dynamic analyses and generate proactive insights."""
+    service = DynamicIntelligenceService(db, auth.org_id)
+    opportunity_ids = body.opportunity_ids if body else None
+    top_n = body.top_n if body else 5
+    refresh = body.refresh if body else False
+    return service.run_analysis(
+        dataset_id=dataset_id,
+        opportunity_ids=opportunity_ids,
+        top_n=top_n,
+        refresh=refresh,
+    )
+
+
+@router.get("/{dataset_id}/insights", response_model=DynamicIntelligenceResponse)
+async def get_dataset_insights(
+    dataset_id: str,
+    refresh: bool = False,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve proactively ranked business insights for a dataset."""
+    service = DynamicIntelligenceService(db, auth.org_id)
+    return service.get_insights(dataset_id=dataset_id, refresh=refresh)
+
+
+@router.get("/{dataset_id}/insights/{insight_id}", response_model=InsightDetailResponse)
+async def get_dataset_insight_detail(
+    dataset_id: str,
+    insight_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Retrieve complete explainability breakdown and evidence calculation for an insight."""
+    service = DynamicIntelligenceService(db, auth.org_id)
+    return service.get_insight_detail(dataset_id=dataset_id, insight_id=insight_id)
+
+
 
 
 @router.get("/{dataset_id}")

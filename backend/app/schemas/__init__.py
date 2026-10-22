@@ -524,3 +524,91 @@ class ProductIntelligenceRequest(BaseModel):
     """Optional parameters for overview query."""
     dataset_ids: Optional[list[str]] = Field(None, description="Subset of dataset IDs to analyze")
     refresh: bool = Field(False, description="Bypass cache and recompute overview")
+
+
+# =====================================================================
+# Phase 3: Dynamic Business Intelligence Schemas
+# =====================================================================
+
+class AnalysisOpportunitySchema(BaseModel):
+    id: str
+    dataset_id: str
+    dataset_name: str
+    analysis_type: str
+    title: str
+    description: str
+    primary_column: Optional[str] = None
+    secondary_column: Optional[str] = None
+    relevance_score: float
+    evidence_factors: list[str] = Field(default_factory=list)
+    grain_safe: bool = True
+    pre_aggregation_needed: bool = False
+    status: str = "ready"
+    reason_unavailable: Optional[str] = None
+
+
+class AnalysisOpportunitiesResponse(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    total_opportunities: int
+    opportunities: list[AnalysisOpportunitySchema] = Field(default_factory=list)
+
+
+class AnalysisExecutionRequest(BaseModel):
+    opportunity_ids: Optional[list[str]] = Field(None, description="Specific opportunity IDs to execute")
+    top_n: int = Field(5, description="Number of top opportunities to execute if IDs not provided")
+    refresh: bool = Field(False, description="Bypass cache and force recomputation")
+
+
+class ExecutedAnalysisResultSchema(BaseModel):
+    opportunity_id: str
+    analysis_type: str
+    title: str
+    status: str
+    summary_stats: dict[str, Any] = Field(default_factory=dict)
+    visualization_data: dict[str, Any] = Field(default_factory=dict)
+    evidence: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DynamicInsightSchema(BaseModel):
+    id: str
+    title: str
+    category: str
+    severity: str
+    metric: Optional[str] = None
+    value: Optional[float] = None
+    baseline: Optional[float] = None
+    change: Optional[float] = None
+    confidence: float
+    affected_segment: Optional[str] = None
+    dataset_context: Optional[str] = None
+    evidence: list[str] = Field(default_factory=list)
+    why_it_matters: str
+    limitations: list[str] = Field(default_factory=list)
+    recommended_next_analysis: Optional[str] = None
+    is_causal_claim: bool = False
+
+
+class DynamicIntelligenceResponse(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    opportunities_count: int
+    analyses_executed_count: int
+    top_insights: list[DynamicInsightSchema] = Field(default_factory=list)
+    all_insights: list[DynamicInsightSchema] = Field(default_factory=list)
+    executed_analyses: list[ExecutedAnalysisResultSchema] = Field(default_factory=list)
+    opportunities: list[AnalysisOpportunitySchema] = Field(default_factory=list)
+    generated_at: str
+
+
+class InsightDetailResponse(BaseModel):
+    insight: DynamicInsightSchema
+    finding: str
+    metric_calculation: str
+    data_used: str
+    relevant_dimensions: list[str] = Field(default_factory=list)
+    statistical_evidence: list[str] = Field(default_factory=list)
+    confidence: float
+    limitations: list[str] = Field(default_factory=list)
