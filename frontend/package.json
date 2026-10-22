@@ -1,6 +1,7 @@
 {
   "name": "decision-intelligence-frontend",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "dependencies": {
     "@headlessui/react": "^1.7.0",

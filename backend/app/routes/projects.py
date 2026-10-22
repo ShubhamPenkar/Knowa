@@ -2,7 +2,7 @@
 
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -30,6 +30,8 @@ class CreateProjectRequest(BaseModel):
 
 
 class UpdateProjectRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     name: str | None = None
     description: str | None = None
     target_positive_label: str | None = None

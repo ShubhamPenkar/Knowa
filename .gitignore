@@ -70,6 +70,7 @@ backend/data/processed/
 backend/data/uploads/
 backend/data/raw/
 backend/data/*.db
+backend/data/eval_reports/*.json
 
 # ========================
 # Build output

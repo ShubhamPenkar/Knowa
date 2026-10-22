@@ -37,7 +37,23 @@ A closed-loop decision intelligence system that predicts business outcomes, expl
 - Intent onboarding: describe the problem → suggested project setup
 - Scheduled rechecks via Celery Beat (or manual Sync due / API sweep)
 
-### 7. Feedback Learning Loop
+### 7. Phase 1: Semantic Data Understanding
+- Deterministic profiling, semantic type inference, business-role detection (revenue, profit, churn, date, entity).
+- Automated target candidate detection, data hygiene scoring, and human-in-the-loop overrides.
+
+### 8. Phase 2: Multi-Dataset Intelligence
+- Dataset grain detection, entity and foreign key discovery across datasets.
+- Relationship discovery (1:1, 1:N, N:M), fan-out ratio estimation, join simulation, and double-counting safeguards.
+
+### 9. Phase 3: Dynamic Business Intelligence
+- **Analysis Opportunity Engine**: Derives meaningful business analyses dynamically from semantic roles and grain.
+- **Grain-Aware Analytics**: Safely executes descriptive, trend, comparative, correlation, anomaly, segmentation, and cross-dataset analyses with pre-aggregation safeguards.
+- **Non-Causal Association Intelligence**: Formulates bivariate correlations with p-values while strictly enforcing non-causal boundaries.
+- **Statistically Defensible Anomaly Detection**: Uncovers extreme outliers (Z > 2.5) with baseline context, magnitude, and affected segments.
+- **Proactive Insight Generation**: Deduplicates redundant observations and ranks high-value business insights by severity (`critical`, `warning`, `positive`, `info`), magnitude, and confidence.
+- **Complete Explainability Trace**: Mathematical formula, data source, relevant dimensions, and limitations available for every insight.
+
+### 10. Feedback Learning Loop
 - Track action outcomes via decision check-in
 - Update recommendation effectiveness and model feedback metrics
 - Retraining triggers when enough labeled outcomes accumulate

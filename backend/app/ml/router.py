@@ -128,8 +128,8 @@ def route_training(
         return RoutingDecision(
             strategy="foundation_model",
             reason=(
-                f"Rows={row_count} ≤ {max_foundation_rows} and features={feature_count} "
-                f"≤ {max_foundation_features} (cat={cat_frac:.0%}, missing={miss:.1%}); "
+                f"Rows={row_count} <= {max_foundation_rows} and features={feature_count} "
+                f"<= {max_foundation_features} (cat={cat_frac:.0%}, missing={miss:.1%}); "
                 "foundation model preferred for small/medium tabular data"
             ),
             row_count=row_count,

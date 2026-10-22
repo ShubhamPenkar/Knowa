@@ -1,5 +1,13 @@
 """FastAPI application entry point."""
 
+import sys
+if sys.platform == "win32":
+    # Ensure stdout/stderr use UTF-8 on Windows to avoid 'charmap' codec crashes
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
