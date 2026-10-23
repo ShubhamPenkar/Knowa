@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useViewMode } from '../context/ViewModeContext';
 
 export default function Explainability() {
   const { projectId } = useParams();
@@ -8,6 +9,7 @@ export default function Explainability() {
   const predictionId = searchParams.get('prediction');
   
   const { token } = useAuth();
+  const { plainEnglish, term } = useViewMode();
   const navigate = useNavigate();
   
   const [project, setProject] = useState(null);
@@ -320,7 +322,9 @@ export default function Explainability() {
                     <div className="text-2xl font-bold text-gray-900">
                       {(prediction.prediction.confidence * 100).toFixed(0)}%
                     </div>
-                    <div className="text-xs text-gray-400 mt-1">Model agreement</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {plainEnglish ? 'AI model agreement' : 'Ensemble model consensus'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -329,10 +333,12 @@ export default function Explainability() {
               {prediction.prediction.explanations?.shap?.top_features && (
                 <div className="bg-white rounded-xl shadow-sm border p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    🎯 SHAP Feature Importance
+                    {plainEnglish ? '🎯 Top Influencing Factors' : '🎯 SHAP Feature Attribution (Shapley Values)'}
                   </h3>
                   <p className="text-gray-600 text-sm mb-4">
-                    Features driving this prediction. Green = decreases risk, Red = increases risk.
+                    {plainEnglish
+                      ? 'Which factors push risk higher (red) or lower (green).'
+                      : 'Additive Shapley contribution values ϕ_i quantifying marginal feature impact.'}
                   </p>
                   
                   {/* Waterfall-style visualization */}
@@ -376,8 +382,11 @@ export default function Explainability() {
                   {/* Base value explanation */}
                   {prediction.prediction.explanations.shap.base_value !== undefined && (
                     <div className="mt-4 pt-4 border-t text-sm text-gray-600">
-                      <strong>Base prediction:</strong> {(prediction.prediction.explanations.shap.base_value * 100).toFixed(1)}%
-                      (average model output before considering this record's features)
+                      <strong>{plainEnglish ? 'Starting baseline:' : 'Base value E[f(X)]: '}</strong>{' '}
+                      {(prediction.prediction.explanations.shap.base_value * 100).toFixed(1)}%{' '}
+                      {plainEnglish
+                        ? '(the average prediction before factoring in this specific record)'
+                        : '(expected model output over training distribution before conditioning on features)'}
                     </div>
                   )}
                 </div>
@@ -386,7 +395,7 @@ export default function Explainability() {
               {/* Feature Values */}
               <div className="bg-white rounded-xl shadow-sm border p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  📋 Feature Values for this Record
+                  {plainEnglish ? '📋 Record Details' : '📋 Input Feature Vector'}
                 </h3>
                 <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto">
                   {Object.entries(prediction.features).map(([key, value]) => (
@@ -402,10 +411,12 @@ export default function Explainability() {
               {prediction.prediction.insights?.length > 0 && (
                 <div className="bg-white rounded-xl shadow-sm border p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    💡 Why This Prediction? (SHAP Analysis)
+                    {plainEnglish ? '💡 Key Takeaways on Why This Happened' : '💡 Local Interpretability Insights (SHAP)'}
                   </h3>
                   <p className="text-gray-600 text-sm mb-4">
-                    Understanding the key factors driving this {project.target_description || 'prediction'} risk:
+                    {plainEnglish
+                      ? `Understanding what contributed to this ${project.target_description || 'prediction'}:`
+                      : `Decomposition of primary drivers affecting ${project.target_description || 'target'}:`}
                   </p>
                   <div className="space-y-4">
                     {prediction.prediction.insights.map((insight, i) => {

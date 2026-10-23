@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { AlertTriangle, TrendingUp, Users, ArrowRight, ShieldCheck, Gauge } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { ProgressBar } from '../ui/ProgressBar'
+import { Badge } from '../ui/Badge'
 import Spinner from './Spinner'
 
 /**
@@ -146,50 +149,64 @@ export default function PortfolioIntel({ projectId }) {
                 a.avg_expected_lift_pp != null
                   ? `${a.avg_expected_lift_pp > 0 ? '+' : ''}${a.avg_expected_lift_pp} pp`
                   : '—'
+              const capRatio = a.capacity_open ? a.open_n / a.capacity_open : 0
+              const capColor = capRatio >= 1 ? 'coral' : capRatio >= 0.75 ? 'amber' : 'teal'
+
               return (
                 <li
                   key={a.action_code}
-                  className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 text-sm"
+                  className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 text-sm hover:bg-mist/15 transition-colors"
                 >
                   <div className="min-w-0 max-w-xl">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-ink">{a.action_name}</span>
+                      <span className="font-semibold text-ink">{a.action_name}</span>
                       {a.over_capacity && (
-                        <span className="badge bg-coral-soft border border-coral/30 text-ink">
+                        <Badge variant="urgent" size="xs">
                           Over capacity
-                        </span>
+                        </Badge>
                       )}
                       {a.evidence === 'thin' && (
-                        <span className="badge bg-mist text-[var(--muted)]">Thin evidence</span>
+                        <Badge variant="neutral" size="xs">
+                          Thin evidence
+                        </Badge>
                       )}
                       {a.evidence === 'reliable' && (
-                        <span className="badge bg-teal-soft/40 text-ink">Enough to read</span>
+                        <Badge variant="safe" size="xs">
+                          Verified evidence
+                        </Badge>
                       )}
                     </div>
                     <p className="text-xs text-[var(--muted)] mt-1.5 leading-relaxed">
                       {a.autopsy_strip}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-4 text-xs text-[var(--muted)] tabular-nums shrink-0">
-                    <div>
-                      <div className="uppercase tracking-wide">Open</div>
-                      <div className="text-ink text-sm mt-0.5">
-                        {a.open_n}
-                        <span className="text-[var(--muted)]"> / {a.capacity_open}</span>
+                  <div className="flex flex-wrap gap-5 text-xs text-[var(--muted)] tabular-nums shrink-0 items-center">
+                    <div className="w-24">
+                      <div className="flex justify-between items-baseline mb-1">
+                        <span className="uppercase tracking-wide text-[10px]">Capacity</span>
+                        <span className="text-ink text-xs font-semibold">
+                          {a.open_n}/{a.capacity_open}
+                        </span>
                       </div>
+                      <ProgressBar
+                        value={a.open_n}
+                        max={a.capacity_open || 1}
+                        color={capColor}
+                        size="xs"
+                      />
                     </div>
                     <div>
-                      <div className="uppercase tracking-wide">Favorable</div>
-                      <div className="text-ink text-sm mt-0.5">
+                      <div className="uppercase tracking-wide text-[10px]">Favorable</div>
+                      <div className="text-ink text-sm font-semibold mt-0.5">
                         {favPct != null ? `${favPct}%` : '—'}
                         {a.outcome_n ? (
-                          <span className="text-[var(--muted)]"> · n={a.outcome_n}</span>
+                          <span className="text-[var(--muted)] font-normal text-xs"> (n={a.outcome_n})</span>
                         ) : null}
                       </div>
                     </div>
                     <div>
-                      <div className="uppercase tracking-wide">Expected</div>
-                      <div className="text-ink text-sm mt-0.5">{lift}</div>
+                      <div className="uppercase tracking-wide text-[10px]">Expected Lift</div>
+                      <div className="text-teal text-sm font-semibold mt-0.5">{lift}</div>
                     </div>
                   </div>
                 </li>

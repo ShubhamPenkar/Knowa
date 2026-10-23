@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { Upload, Database, Network, Sparkles, Plus, ArrowRight, Table } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/ui/Toast';
 import ProductIntelligenceOverview from '../components/common/ProductIntelligenceOverview';
 import DataRelationshipsModel from '../components/common/DataRelationshipsModel';
 import DynamicIntelligenceView from '../components/common/DynamicIntelligenceView';
@@ -57,6 +59,7 @@ const BUSINESS_ROLE_OPTIONS = [
 
 export default function Datasets() {
   const { token } = useAuth();
+  const toast = useToast();
   const [datasets, setDatasets] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -109,12 +112,14 @@ export default function Datasets() {
         const data = await res.json();
         throw new Error(data.detail || 'Upload failed');
       }
+      toast.success(`Dataset "${uploadName}" uploaded and profiled.`);
       setShowUpload(false);
       setSelectedFile(null);
       setUploadName('');
       fetchDatasets();
     } catch (err) {
       setError(err.message);
+      toast.error(err.message || 'Upload failed');
     }
     setUploading(false);
   };
@@ -208,14 +213,20 @@ export default function Datasets() {
           });
         }
         setEditingColumn(null);
-        setCorrectionSuccess(`Corrected column '${columnName}' successfully.`);
+        const msg = `Corrected column '${columnName}' successfully.`;
+        setCorrectionSuccess(msg);
+        toast.success(msg);
       } else {
         const errData = await res.json().catch(() => ({}));
-        setCorrectionError(errData.detail || 'Failed to update semantic column');
+        const msg = errData.detail || 'Failed to update semantic column';
+        setCorrectionError(msg);
+        toast.error(msg);
       }
     } catch (err) {
       console.error(err);
-      setCorrectionError('Error updating column semantics');
+      const msg = 'Error updating column semantics';
+      setCorrectionError(msg);
+      toast.error(msg);
     }
     setSavingCorrection(false);
   };
@@ -243,62 +254,71 @@ export default function Datasets() {
     <div className="page">
       <div className="page-header">
         <div>
-          <p className="page-kicker">Data Foundation</p>
+          <p className="page-kicker">Data Platform</p>
           <h1 className="page-title">Data & Insights</h1>
           <p className="page-sub">
-            Understand what your uploaded data contains, how records connect across tables, and discover proactive business patterns.
+            Explore your business tables, see how records connect safely without double-counting, and discover proactive findings.
           </p>
         </div>
-        <button type="button" onClick={() => setShowUpload(true)} className="btn-primary">
-          Upload dataset
+        <button
+          type="button"
+          onClick={() => setShowUpload(true)}
+          className="btn-primary inline-flex items-center gap-1.5 text-xs font-semibold"
+        >
+          <Upload size={14} />
+          <span>Upload dataset</span>
         </button>
       </div>
 
       {/* View Switcher Tabs */}
-      <div className="flex border-b border-mist mb-6 gap-6">
+      <div className="flex border-b border-mist mb-6 gap-6 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('datasets')}
-          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 inline-flex items-center gap-2 shrink-0 ${
             activeTab === 'datasets'
               ? 'border-teal text-ink'
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Data Catalog & Meaning ({datasets.length})
+          <Database size={15} className={activeTab === 'datasets' ? 'text-teal' : 'text-muted'} />
+          <span>Tables & Columns ({datasets.length})</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('relationships')}
-          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 inline-flex items-center gap-2 shrink-0 ${
             activeTab === 'relationships'
               ? 'border-teal text-ink'
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          How Data Connects
+          <Network size={15} className={activeTab === 'relationships' ? 'text-teal' : 'text-muted'} />
+          <span>Table Connections & Safety</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('dynamic_bi')}
-          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 inline-flex items-center gap-2 shrink-0 ${
             activeTab === 'dynamic_bi'
               ? 'border-teal text-ink'
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Executive Insights & Discoveries
+          <Sparkles size={15} className={activeTab === 'dynamic_bi' ? 'text-teal' : 'text-muted'} />
+          <span>Key Findings & Trends</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('intelligence')}
-          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+          className={`pb-3 text-sm font-medium transition-colors border-b-2 inline-flex items-center gap-2 shrink-0 ${
             activeTab === 'intelligence'
               ? 'border-teal text-ink'
               : 'border-transparent text-[var(--muted)] hover:text-ink'
           }`}
         >
-          Data Quality & Health
+          <Table size={15} className={activeTab === 'intelligence' ? 'text-teal' : 'text-muted'} />
+          <span>Data Quality & Cleanliness</span>
         </button>
       </div>
 
@@ -396,7 +416,7 @@ export default function Datasets() {
                       onClick={() => openInspector(dataset.id)}
                       className="btn-secondary text-xs px-3 py-1.5"
                     >
-                      {isInspecting ? 'Close Semantics' : 'Inspect Semantics'}
+                      {isInspecting ? 'Close Columns' : 'View Columns & Meanings'}
                     </button>
                     <span className="badge bg-teal-soft/50 text-ink border border-teal/20">Ready</span>
                   </div>
@@ -406,9 +426,9 @@ export default function Datasets() {
                   <div className="mt-4 p-4 rounded-control bg-surface border border-mist animate-page-in">
                     <div className="flex justify-between items-center mb-3">
                       <div>
-                        <h4 className="font-display text-base font-semibold text-ink">Semantic Data Understanding</h4>
+                        <h4 className="font-display text-base font-semibold text-ink">Column Meanings & Data Dictionary</h4>
                         <p className="text-xs text-[var(--muted)]">
-                          Evidence-based inferences: types, business roles, data quality, targets, and relationships.
+                          What each column represents: business roles, data quality, target metrics, and links.
                         </p>
                       </div>
                       {correctionSuccess && (

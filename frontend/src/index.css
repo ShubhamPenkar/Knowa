@@ -8,13 +8,19 @@
   --paper: #0a0908;
   --mist: #2a2622;
   --surface: #141210;
+  --surface-elevated: #1a1816;
   --muted: #9a948a;
   --teal: #00c8b4;
   --teal-soft: #0a3330;
   --coral: #ff5a1f;
   --coral-soft: #3a1a10;
+  --amber: #f5b838;
+  --amber-soft: #3d2b0f;
   --blue: #4a7fbe;
   --ring: #00c8b4;
+  --speed-fast: 150ms;
+  --speed-normal: 200ms;
+  --speed-slow: 350ms;
 }
 
 @layer base {
@@ -142,14 +148,39 @@
   /* Business Decision Intelligence Design Tokens */
   .decision-card {
     @apply bg-surface border border-mist rounded-control p-5 transition-all duration-200;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   }
   .decision-card:hover {
-    border-color: color-mix(in srgb, var(--teal) 35%, var(--mist));
+    border-color: color-mix(in srgb, var(--teal) 45%, var(--mist));
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in srgb, var(--teal) 15%, transparent);
+    transform: translateY(-2px);
+  }
+  .decision-card-urgent {
+    border-left: 3px solid var(--coral);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--coral) 4%, var(--surface)), var(--surface));
+  }
+  .decision-card-urgent:hover {
+    border-color: color-mix(in srgb, var(--coral) 55%, var(--mist));
+    border-left-color: var(--coral);
+    box-shadow: 0 8px 24px -6px rgba(255, 90, 31, 0.15);
+  }
+  .decision-card-completed {
+    opacity: 0.72;
+    background: color-mix(in srgb, var(--surface) 60%, var(--paper));
+  }
+  .decision-card-completed:hover {
+    opacity: 0.95;
+    transform: none;
+  }
+  .decision-card-elevated {
+    background: var(--surface-elevated);
+    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.35);
   }
 
   .decision-hero {
     @apply bg-surface border border-mist rounded-control p-6 md:p-8;
     background: radial-gradient(ellipse 90% 60% at 0% 0%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 60%), var(--surface);
+    box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3);
   }
 
   .evidence-drawer {
@@ -365,3 +396,51 @@
     transform: translateY(0);
   }
 }
+
+/* Toast Animations */
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+.toast-enter {
+  animation: toast-slide-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.toast-exit {
+  animation: toast-slide-out 0.22s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+/* Shimmer animation for loading skeletons */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--mist) 0%, var(--surface-elevated) 50%, var(--mist) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+}
+

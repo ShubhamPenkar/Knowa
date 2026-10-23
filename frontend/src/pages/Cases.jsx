@@ -5,6 +5,20 @@ import { PredictionPanel } from '../components/PredictionPanel'
 import ProjectPicker from '../components/common/ProjectPicker'
 import OrgHealthStrip from '../components/common/OrgHealthStrip'
 import Spinner from '../components/common/Spinner'
+import Badge from '../components/ui/Badge'
+import EmptyState from '../components/ui/EmptyState'
+import { SkeletonTable } from '../components/ui/Skeleton'
+import {
+  Briefcase,
+  AlertTriangle,
+  UserCheck,
+  Filter,
+  CheckCircle2,
+  Clock,
+  ArrowRight,
+  ShieldAlert,
+  Search,
+} from 'lucide-react'
 import { getLastProjectId, setLastProjectId } from '../lib/lastProject'
 import { softReasonLabel } from '../lib/trustAssessment'
 
@@ -494,7 +508,14 @@ export default function Cases() {
                     </div>
                   )}
                   {!predicting && !prediction && (
-                    <div className="case-brief-stage px-5 py-6 md:px-6">
+                    <div className="case-brief-stage px-5 py-8 md:px-6 text-center flex flex-col items-center justify-center">
+                      <div className="w-12 h-12 rounded-full bg-mist/60 flex items-center justify-center text-teal mb-3">
+                        {filterMode === 'dont-act' ? (
+                          <ShieldAlert className="w-6 h-6 text-coral" />
+                        ) : (
+                          <UserCheck className="w-6 h-6" />
+                        )}
+                      </div>
                       <p className="page-kicker">Brief</p>
                       <h3 className="font-display text-xl font-semibold text-ink mt-1 tracking-tight">
                         {filterMode === 'dont-act'
@@ -520,8 +541,9 @@ export default function Cases() {
                       {(prediction.low_confidence ||
                         prediction.abstention_reason ||
                         filterMode === 'dont-act') && (
-                        <div className="border border-coral/30 bg-coral-soft/40 px-3 py-2 text-xs text-ink rounded-control">
-                          Don&apos;t act yet — review carefully before spending.
+                        <div className="border border-coral/30 bg-coral-soft/40 px-3 py-2 text-xs text-ink rounded-control flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-coral shrink-0" />
+                          <span>Don&apos;t act yet — review carefully before spending.</span>
                         </div>
                       )}
                       <PredictionPanel
@@ -550,47 +572,44 @@ export default function Cases() {
                       Don&apos;t act yet
                     </h2>
                     <p className="text-sm text-[var(--muted)] mb-4">
-                      <span className="text-ink tabular-nums">{loggedDontActCount}</span> logged
+                      <span className="text-ink tabular-nums font-semibold">{loggedDontActCount}</span> logged
                       {sampleDontActCount
                         ? ` · ${sampleDontActCount} also soft in this sample (not logged yet)`
                         : ''}
                       . Prefer light check-ins when certainty is soft.
                     </p>
                     {softScanError && loggedDontActCount === 0 && sampleDontActCount === 0 && !softScanLoading ? (
-                      <div className="empty-state py-10">
-                        <h3 className="font-display text-lg font-semibold text-ink mb-2">
-                          Couldn&apos;t scan Don&apos;t act
-                        </h3>
-                        <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
-                          {softScanError}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setFilterMode('all')}
-                          className="btn-secondary text-sm"
-                        >
-                          Browse all sample cases
-                        </button>
-                      </div>
+                      <EmptyState
+                        icon={AlertTriangle}
+                        title="Couldn't scan Don't act"
+                        description={softScanError}
+                        action={
+                          <button
+                            type="button"
+                            onClick={() => setFilterMode('all')}
+                            className="btn-secondary text-sm"
+                          >
+                            Browse all sample cases
+                          </button>
+                        }
+                      />
                     ) : !softScanLoading &&
                       loggedDontActCount === 0 &&
                       sampleDontActCount === 0 ? (
-                      <div className="empty-state py-10">
-                        <h3 className="font-display text-lg font-semibold text-ink mb-2">
-                          Queue is clear
-                        </h3>
-                        <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
-                          Nothing logged as Don&apos;t act for this project, and this sample looks
-                          firm. Open more cases if you want low-trust flags to accumulate.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setFilterMode('all')}
-                          className="btn-secondary text-sm"
-                        >
-                          Browse all sample cases
-                        </button>
-                      </div>
+                      <EmptyState
+                        icon={CheckCircle2}
+                        title="Queue is clear"
+                        description="Nothing logged as Don't act for this project, and this sample looks firm. Open more cases if you want low-trust flags to accumulate."
+                        action={
+                          <button
+                            type="button"
+                            onClick={() => setFilterMode('all')}
+                            className="btn-secondary text-sm"
+                          >
+                            Browse all sample cases
+                          </button>
+                        }
+                      />
                     ) : (
                       <div className="space-y-6">
                         {softScanError && (
@@ -625,10 +644,8 @@ export default function Cases() {
                                     className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
                                   >
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="badge bg-coral-soft border border-coral/30 text-ink">
-                                        Logged
-                                      </span>
-                                      <span className="text-sm text-ink">
+                                      <Badge variant="risk">Logged</Badge>
+                                      <span className="text-sm font-medium text-ink">
                                         {pred.entity_id || pred.id.slice(0, 8)}
                                       </span>
                                     </div>
@@ -686,10 +703,8 @@ export default function Cases() {
                                       className="w-full text-left px-4 py-3.5 hover:bg-mist/30 transition-colors"
                                     >
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <span className="badge bg-mist text-ink border border-mist">
-                                          Sample
-                                        </span>
-                                        <span className="text-sm text-ink">
+                                        <Badge variant="caution">Sample</Badge>
+                                        <span className="text-sm font-medium text-ink">
                                           Case #{item.index + 1}
                                           {item.entity_id ? ` · ${item.entity_id}` : ''}
                                         </span>
@@ -718,19 +733,22 @@ export default function Cases() {
                     <p className="text-sm text-[var(--muted)] mb-4">
                       Click a row to open their brief. Save a follow-up when you decide to act.
                     </p>
-                    {rows.length === 0 ? (
-                      <div className="empty-state py-10">
-                        <h3 className="font-display text-lg font-semibold text-ink mb-2">
-                          No sample cases yet
-                        </h3>
-                        <p className="text-sm text-[var(--muted)] mb-5 max-w-md mx-auto leading-relaxed">
-                          This project doesn&apos;t have sample rows to review. Refresh data from
-                          project settings.
-                        </p>
-                        <Link to={`/projects/${projectId}`} className="btn-primary text-sm">
-                          Open project settings
-                        </Link>
+                    {rowsLoading ? (
+                      <div className="py-2">
+                        <SkeletonTable rows={8} cols={4} />
                       </div>
+                    ) : rows.length === 0 ? (
+                      <EmptyState
+                        icon={Briefcase}
+                        title="No sample cases yet"
+                        description="This project doesn't have sample rows to review. Refresh data from project settings."
+                        action={
+                          <Link to={`/projects/${projectId}`} className="btn-primary text-sm inline-flex items-center gap-1.5">
+                            Open project settings
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Link>
+                        }
+                      />
                     ) : (
                       <div className="border border-mist overflow-x-auto bg-paper/40">
                         <table className="data-table">
@@ -779,13 +797,9 @@ export default function Cases() {
                                 >
                                   <td className="text-[var(--muted)]">{idx + 1}</td>
                                   <td>
-                                    <span
-                                      className={`badge ${
-                                        actual ? 'bg-coral-soft text-ink' : 'bg-mist text-ink'
-                                      }`}
-                                    >
+                                    <Badge variant={actual ? 'risk' : 'neutral'}>
                                       {actual ? 'Yes' : 'No'}
-                                    </span>
+                                    </Badge>
                                   </td>
                                   {mobileFeatureCols.map((col) => (
                                     <td

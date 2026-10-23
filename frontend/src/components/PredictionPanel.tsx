@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useToast } from './ui/Toast';
+import { useViewMode } from '../context/ViewModeContext';
 import { TrustSpine } from './TrustSpine';
 import { HalftoneGlow } from './HalftoneGlow';
 import { assessTrust, matchLabel } from '../lib/trustAssessment';
@@ -197,6 +199,8 @@ export function PredictionPanel({
   onFeedbackSaved,
   onDecisionCommitted,
 }: Props) {
+  const toast = useToast();
+  const { plainEnglish, term } = useViewMode();
   const isReg = result.problem_type === 'regression';
   const point = isReg
     ? Number(result.predicted_value ?? 0)
@@ -355,20 +359,28 @@ export function PredictionPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setDecError(formatApiError(data.detail, 'Could not save follow-up'));
+        const msg = formatApiError(data.detail, 'Could not save follow-up');
+        setDecError(msg);
+        toast.error(msg);
       } else {
-        setDecStatus(data.plain_summary || 'Follow-up saved.');
+        const msg = data.plain_summary || 'Follow-up saved.';
+        setDecStatus(msg);
+        toast.success(msg);
         onDecisionCommitted?.(data);
       }
     } catch (e) {
-      setDecError(e instanceof Error ? e.message : 'Network error');
+      const msg = e instanceof Error ? e.message : 'Network error';
+      setDecError(msg);
+      toast.error(msg);
     }
     setDecSaving(false);
   };
 
   const submitFeedback = async () => {
     if (!canLog || !fbOutcome) {
-      setFbError('Choose an outcome first.');
+      const msg = 'Choose an outcome first.';
+      setFbError(msg);
+      toast.warning(msg);
       return;
     }
     setFbSaving(true);
@@ -388,14 +400,20 @@ export function PredictionPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFbError(formatApiError(data.detail, 'Could not save'));
+        const msg = formatApiError(data.detail, 'Could not save');
+        setFbError(msg);
+        toast.error(msg);
       } else {
-        setFbStatus(data.plain_summary || 'Saved — thanks.');
+        const msg = data.plain_summary || 'Saved — thanks.';
+        setFbStatus(msg);
+        toast.success(msg);
         setFbMatch(data.model_matched_outcome);
         onFeedbackSaved?.(data);
       }
     } catch (e) {
-      setFbError(e instanceof Error ? e.message : 'Network error');
+      const msg = e instanceof Error ? e.message : 'Network error';
+      setFbError(msg);
+      toast.error(msg);
     }
     setFbSaving(false);
   };
@@ -727,21 +745,36 @@ export function PredictionPanel({
                 ))}
               </ul>
             )}
-            {drivers.length > 0 && !(result.insights && result.insights.length > 0) && (
-              <ul className="space-y-2">
-                {drivers.slice(0, 4).map((f) => {
-                  const impact = Number(f.impact ?? 0);
-                  const up = f.direction === 'increases' || impact > 0;
-                  return (
-                    <li key={f.feature} className="text-sm flex justify-between gap-3">
-                      <span className="text-ink">{f.label || humanize(f.feature)}</span>
-                      <span className={`shrink-0 ${up ? 'text-coral' : 'text-teal'}`}>
-                        {up ? 'raises risk' : 'lowers risk'}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+            {drivers.length > 0 && (
+              <div className="space-y-2.5 pt-2 border-t border-mist/50">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  {plainEnglish ? 'Key Influences on this Case' : 'Key Drivers (SHAP / Feature Attribution)'}
+                </div>
+                <div className="space-y-2">
+                  {drivers.slice(0, 5).map((f) => {
+                    const impact = Math.abs(Number(f.impact ?? 0));
+                    const up = f.direction === 'increases' || Number(f.impact ?? 0) > 0;
+                    const maxImpact = Math.max(...drivers.map((d) => Math.abs(Number(d.impact ?? 0))), 0.001);
+                    const pct = Math.min(Math.max((impact / maxImpact) * 100, 10), 100);
+                    return (
+                      <div key={f.feature} className="text-xs">
+                        <div className="flex justify-between items-baseline mb-1">
+                          <span className="text-ink font-medium">{f.label || humanize(f.feature)}</span>
+                          <span className={`font-semibold text-[11px] ${up ? 'text-coral' : 'text-teal'}`}>
+                            {up ? '+ raises risk' : '− lowers risk'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-mist/50 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${up ? 'bg-coral' : 'bg-teal'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
         </details>

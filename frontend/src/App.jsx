@@ -1,6 +1,8 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ViewModeProvider } from './context/ViewModeContext'
+import { ToastProvider } from './components/ui/Toast'
 import Layout from './components/common/Layout'
 
 import Login from './pages/Login'
@@ -79,7 +81,11 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ViewModeProvider>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </ViewModeProvider>
       </AuthProvider>
     </BrowserRouter>
   )

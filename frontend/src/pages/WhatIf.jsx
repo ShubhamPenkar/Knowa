@@ -1,6 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import {
+  FlaskConical,
+  Sliders,
+  ArrowRight,
+  RotateCcw,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  CheckCircle2,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useViewMode } from '../context/ViewModeContext';
+import { useToast } from '../components/ui/Toast';
+import { Breadcrumb } from '../components/ui/Breadcrumb';
+import { Badge } from '../components/ui/Badge';
 import Spinner from '../components/common/Spinner';
 
 function humanize(name) {
@@ -48,6 +62,7 @@ export default function WhatIf() {
   const rowIdx = searchParams.get('row');
 
   const { token } = useAuth();
+  const { plainEnglish, term } = useViewMode();
   const navigate = useNavigate();
 
   const [project, setProject] = useState(null);
@@ -334,23 +349,40 @@ export default function WhatIf() {
 
   return (
     <div className="page space-y-8">
+      <Breadcrumb
+        items={[
+          { label: 'What-If Simulation', to: '/whatif' },
+          { label: project?.name || 'Scenario Studio' },
+        ]}
+      />
       <header className="border-b border-mist pb-6">
-        <div className="flex flex-wrap items-center gap-2 -ml-2">
-          <Link to="/whatif" className="btn-ghost text-sm">
-            ← Switch project
-          </Link>
-          <Link to={`/cases?project=${projectId}`} className="btn-ghost text-sm text-[var(--muted)]">
-            Cases
-          </Link>
-          <Link to={`/projects/${projectId}`} className="btn-ghost text-sm text-[var(--muted)]">
-            Project
-          </Link>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="page-kicker mb-0 flex items-center gap-1.5">
+                <FlaskConical size={12} className="text-teal" />
+                Scenario Studio
+              </span>
+              <span className="text-muted text-xs">·</span>
+              <span className="text-xs text-muted font-mono">{project?.name || 'Project'}</span>
+            </div>
+            <h1 className="page-title">What-If Decision Simulation</h1>
+            <p className="page-sub max-w-2xl mt-1">
+              Evaluate intervention levers, project before-and-after outcomes with Monte Carlo uncertainty, and test decisions prior to real-world capital commitment.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/whatif" className="btn-ghost text-xs">
+              ← Switch project
+            </Link>
+            <Link to={`/cases?project=${projectId}`} className="btn-secondary text-xs">
+              Review Cases
+            </Link>
+            <Link to={`/projects/${projectId}`} className="btn-ghost text-xs">
+              Settings
+            </Link>
+          </div>
         </div>
-        <p className="page-kicker mt-4 mb-1">Scenario Studio</p>
-        <h1 className="page-title">What-If Decision Simulation</h1>
-        <p className="page-sub max-w-2xl">
-          Evaluate intervention levers, project before-and-after outcomes with Monte Carlo uncertainty, and test decisions prior to real-world capital commitment.
-        </p>
       </header>
 
       {!baseRow && (
@@ -543,7 +575,9 @@ export default function WhatIf() {
                     onClick={() => setFilterLever((v) => !v)}
                     disabled={leverFeatures.size === 0}
                   >
-                    {filterLever ? 'Show all fields' : 'Focus dials that move score'}
+                    {filterLever
+                      ? (plainEnglish ? 'Show all fields' : 'Show all input features')
+                      : (plainEnglish ? 'Focus dials that move score' : 'Filter high-sensitivity features')}
                   </button>
                   <button type="button" className="btn-secondary text-sm" onClick={resetModifications}>
                     Reset
@@ -679,9 +713,13 @@ export default function WhatIf() {
                 <div className="mx-5 mb-4 p-3 bg-paper/80 border border-mist rounded-control text-xs flex items-start gap-2.5">
                   <span className="text-teal font-bold shrink-0 text-sm">ℹ️</span>
                   <div>
-                    <span className="font-semibold text-ink block">Decision Intelligence Advisory</span>
+                    <span className="font-semibold text-ink block">
+                      {plainEnglish ? 'A quick note on this prediction' : 'Decision Intelligence Advisory (Causal Observability)'}
+                    </span>
                     <p className="text-[11px] text-[var(--muted)] leading-relaxed mt-0.5">
-                      Model-based projections indicate statistical correlation from historical data, not guaranteed real-world causality. Validate operational feasibility before committing large budgets.
+                      {plainEnglish
+                        ? 'These simulations are based on historical patterns in your data. While they provide strong directional guidance, test changes in small batches before making major business commitments.'
+                        : 'Model-based counterfactual projections indicate statistical correlation from historical empirical distributions P(Y|X), not guaranteed real-world structural causality. Validate operational feasibility before committing large budgets.'}
                     </p>
                   </div>
                 </div>

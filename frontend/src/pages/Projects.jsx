@@ -2,9 +2,30 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Spinner from '../components/common/Spinner';
+import { useToast } from '../components/ui/Toast';
+import Badge from '../components/ui/Badge';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonCard } from '../components/ui/Skeleton';
+import {
+  FolderKanban,
+  Plus,
+  Sparkles,
+  Trash2,
+  ArrowRight,
+  Briefcase,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Layers,
+  Activity,
+  SlidersHorizontal,
+} from 'lucide-react';
+import { useViewMode } from '../context/ViewModeContext';
 
 export default function Projects() {
   const { token, user } = useAuth();
+  const { plainEnglish, term } = useViewMode();
+  const toast = useToast();
   const [projects, setProjects] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -204,8 +225,10 @@ export default function Projects() {
       }
       setIntentDraft(data);
       applyIntentDraft(data);
+      toast.success('Configuration suggested based on dataset semantics!');
     } catch {
       setError('Network error while suggesting setup.');
+      toast.error('Network error while suggesting setup.');
     } finally {
       setSuggesting(false);
     }
@@ -272,20 +295,24 @@ export default function Projects() {
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) navigate(`/projects/${data.id}`);
-      else {
+      if (res.ok) {
+        toast.success(`Project "${payload.name}" created successfully!`);
+        navigate(`/projects/${data.id}`);
+      } else {
         const detail = data.detail;
-        setError(
+        const msg =
           typeof detail === 'string'
             ? detail
             : detail?.message ||
               (Array.isArray(detail)
                 ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
-                : 'Failed to create project')
-        );
+                : 'Failed to create project');
+        setError(msg);
+        toast.error(msg);
       }
     } catch {
       setError('Network error. Please try again.');
+      toast.error('Network error. Please try again.');
     } finally {
       setCreating(false);
     }
@@ -316,13 +343,19 @@ export default function Projects() {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) fetchProjects();
-      else {
+      if (res.ok) {
+        toast.success(`Project "${projectName}" removed.`);
+        fetchProjects();
+      } else {
         const data = await res.json();
-        setDeleteError(data.detail || 'Failed to delete');
+        const msg = data.detail || 'Failed to delete';
+        setDeleteError(msg);
+        toast.error(msg);
       }
     } catch {
-      setDeleteError('Network error while deleting project');
+      const msg = 'Network error while deleting project';
+      setDeleteError(msg);
+      toast.error(msg);
     } finally {
       setDeletingProjectId(null);
     }
@@ -343,8 +376,13 @@ export default function Projects() {
 
   if (loading) {
     return (
-      <div className="page flex justify-center items-center min-h-[40vh]">
-        <Spinner />
+      <div className="page space-y-4">
+        <div className="h-8 w-44 bg-mist/60 rounded animate-pulse mb-6" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
       </div>
     );
   }
@@ -372,16 +410,18 @@ export default function Projects() {
               resetCreateForm();
               setShowCreate(true);
             }}
-            className="btn-primary"
+            className="btn-primary inline-flex items-center gap-1.5"
           >
+            <Plus className="w-4 h-4" />
             New project
           </button>
         </div>
       </div>
 
       {deleteError && (
-        <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control">
-          {deleteError}
+        <div className="mb-4 text-sm border border-coral/40 bg-coral-soft px-4 py-3 rounded-control flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-coral shrink-0" />
+          <span>{deleteError}</span>
         </div>
       )}
 
@@ -524,11 +564,21 @@ export default function Projects() {
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">What kind of question?</label>
+                    <label className="block text-sm font-medium mb-1">
+                      {plainEnglish ? 'What kind of question do you want to answer?' : 'Problem Type / Learning Task'}
+                    </label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        ['binary_classification', 'Will it happen?', 'Yes / No risk (churn, attrition…)'],
-                        ['regression', 'How much?', 'A number (spend, score…)'],
+                        [
+                          'binary_classification',
+                          plainEnglish ? 'Will it happen?' : 'Binary Classification',
+                          plainEnglish ? 'Yes / No risk (churn, conversion, fraud)' : 'Discrete 2-class probability distribution',
+                        ],
+                        [
+                          'regression',
+                          plainEnglish ? 'How much?' : 'Continuous Regression',
+                          plainEnglish ? 'A continuous number (spend, revenue, days)' : 'Continuous numerical target estimation',
+                        ],
                       ].map(([val, label, hint]) => (
                         <label
                           key={val}
@@ -566,7 +616,9 @@ export default function Projects() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Target column</label>
+                    <label className="block text-sm font-medium mb-1">
+                      {plainEnglish ? 'Outcome column you want to predict' : 'Target Column (y Label)'}
+                    </label>
                     <select
                       className="input"
                       value={newProject.target_column}
@@ -585,10 +637,12 @@ export default function Projects() {
                     newProject.target_column && (
                       <div>
                         <label className="block text-sm font-medium mb-1">
-                          Positive label
+                          {plainEnglish ? 'What counts as a positive match?' : 'Target Positive Class (y=1)'}
                         </label>
                         <p className="text-xs text-[var(--muted)] mb-1">
-                          Which target value means the outcome you want to predict (e.g. attrition = Yes)?
+                          {plainEnglish
+                            ? 'Which value means the event of concern (e.g. Yes, Churned, 1)?'
+                            : 'Specifies the ground-truth positive class encoded as 1 for classification metrics.'}
                         </p>
                         {targetLabels.length > 0 ? (
                           <select
@@ -688,29 +742,31 @@ export default function Projects() {
       )}
 
       {projects.length === 0 ? (
-        <div className="empty-state">
-          <h3 className="font-display text-xl font-semibold text-ink">Start with a project</h3>
-          <p className="text-[var(--muted)] mt-2 mb-6 max-w-sm mx-auto text-sm">
-            A project links your data to guidance you can act on — who needs attention, why, and what
-            to try.
-          </p>
-          {datasets.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => {
-                resetCreateForm();
-                setShowCreate(true);
-              }}
-              className="btn-primary"
-            >
-              Describe a decision
-            </button>
-          ) : (
-            <Link to="/datasets" className="btn-primary">
-              Upload a dataset first
-            </Link>
-          )}
-        </div>
+        <EmptyState
+          icon={FolderKanban}
+          title="Start with a project"
+          description="A project links your data to guidance you can act on — who needs attention, why, and what to try."
+          action={
+            datasets.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resetCreateForm();
+                  setShowCreate(true);
+                }}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Describe a decision
+              </button>
+            ) : (
+              <Link to="/datasets" className="btn-primary inline-flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Upload a dataset first
+              </Link>
+            )
+          }
+        />
       ) : (
         <>
           <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="Filter projects">
@@ -725,10 +781,10 @@ export default function Projects() {
                 role="tab"
                 aria-selected={statusFilter === chip.id}
                 onClick={() => setStatusFilter(chip.id)}
-                className={`px-3 py-1.5 text-xs border rounded-control ${
+                className={`px-3 py-1.5 text-xs border rounded-control transition-colors ${
                   statusFilter === chip.id
-                    ? 'border-teal bg-teal-soft/30 text-ink'
-                    : 'border-mist text-[var(--muted)] hover:text-ink'
+                    ? 'border-teal bg-teal-soft/30 text-ink font-medium shadow-xs'
+                    : 'border-mist text-[var(--muted)] hover:text-ink hover:bg-mist/20'
                 }`}
               >
                 {chip.label}
@@ -736,11 +792,11 @@ export default function Projects() {
             ))}
           </div>
           {filteredProjects.length === 0 ? (
-            <div className="border border-mist px-5 py-8 text-sm text-[var(--muted)]">
+            <div className="border border-mist px-5 py-8 text-sm text-[var(--muted)] text-center rounded-control">
               No projects match this filter.
             </div>
           ) : (
-            <ul className="divide-y divide-mist border-y border-mist">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredProjects.map((project) => {
                 const ready = project.status === 'ready' || project.status === 'trained';
                 const statusLabel = ready
@@ -750,59 +806,74 @@ export default function Projects() {
                     : project.status === 'created' || project.status === 'draft'
                       ? 'Needs setup'
                       : String(project.status || '').replace(/_/g, ' ');
+                const badgeVariant = ready
+                  ? 'safe'
+                  : project.status === 'error'
+                    ? 'risk'
+                    : 'neutral';
+
                 return (
-                  <li key={project.id}>
-                    <div
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 cursor-pointer group"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                      onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${project.id}`)}
-                      role="link"
-                      tabIndex={0}
-                    >
-                      <div className="min-w-0">
-                        <h3 className="font-display text-lg font-semibold text-ink group-hover:text-teal transition-colors">
+                  <div
+                    key={project.id}
+                    className="p-5 rounded-control border border-mist hover:border-teal/50 bg-surface decision-card cursor-pointer group flex flex-col justify-between transition-all"
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                    onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${project.id}`)}
+                    role="link"
+                    tabIndex={0}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-control bg-teal-soft/40 border border-teal/20 flex items-center justify-center shrink-0 text-teal group-hover:scale-105 transition-transform">
+                          <FolderKanban className="w-5 h-5" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={badgeVariant}>{statusLabel}</Badge>
+                          {(user?.role === 'owner' || user?.role === 'admin') && (
+                            <button
+                              type="button"
+                              className="p-1.5 rounded-control text-[var(--muted)] hover:text-coral hover:bg-coral-soft/50 transition-colors"
+                              disabled={deletingProjectId === project.id}
+                              title="Delete project"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteProject(project.id, project.name);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-display text-base font-semibold text-ink group-hover:text-teal transition-colors">
                           {project.name}
                         </h3>
-                        <p className="text-sm text-[var(--muted)] mt-0.5">
-                          Watching{' '}
-                          {(project.target_description || project.target_column || 'outcome').replace(
-                            /[_-]+/g,
-                            ' '
-                          )}
-                          {project.feature_count != null ? ` · ${project.feature_count} factors` : ''}
-                        </p>
+                        <ArrowRight className="w-4 h-4 text-[var(--muted)] opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span
-                          className={`badge ${
-                            ready
-                              ? 'bg-teal-soft/50 text-ink border border-teal/20'
-                              : project.status === 'error'
-                                ? 'bg-coral-soft text-ink'
-                                : 'bg-mist text-ink'
-                          }`}
-                        >
-                          {statusLabel}
-                        </span>
-                        {(user?.role === 'owner' || user?.role === 'admin') && (
-                          <button
-                            type="button"
-                            className="text-xs text-[var(--muted)] hover:text-coral transition-colors"
-                            disabled={deletingProjectId === project.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProject(project.id, project.name);
-                            }}
-                          >
-                            {deletingProjectId === project.id ? '…' : 'Remove'}
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-1.5 line-clamp-2">
+                        {project.description || 'Target outcome and predictive factors configured.'}
+                      </p>
                     </div>
-                  </li>
+
+                    <div className="pt-4 mt-4 border-t border-mist/60 flex items-center justify-between text-xs text-[var(--muted)]">
+                      <span className="flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-teal" />
+                        {plainEnglish ? 'Goal:' : 'Target (y):'}{' '}
+                        <strong className="text-ink font-medium">
+                          {(project.target_description || project.target_column || 'outcome').replace(/[_-]+/g, ' ')}
+                        </strong>
+                      </span>
+                      {project.feature_count != null && (
+                        <span className="flex items-center gap-1">
+                          <Layers className="w-3.5 h-3.5" />
+                          {project.feature_count} {plainEnglish ? 'factors' : 'features'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
         </>
       )}

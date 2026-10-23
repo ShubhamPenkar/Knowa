@@ -127,8 +127,8 @@ class AnalysisOpportunityEngine:
                 "dataset_id": dataset_id,
                 "dataset_name": dataset_name,
                 "analysis_type": "descriptive",
-                "title": f"{m['name'].replace('_', ' ').title()} Distribution & Concentration",
-                "description": f"Statistical distribution, dispersion, and value concentration for measure '{m['name']}'.",
+                "title": f"Typical Range & Concentration: {m['name'].replace('_', ' ').title()}",
+                "description": f"Examine average vs median, typical ranges, and whether top records dominate '{m['name']}'.",
                 "primary_column": m["name"],
                 "secondary_column": None,
                 "relevance_score": score,
@@ -150,8 +150,8 @@ class AnalysisOpportunityEngine:
                         "dataset_id": dataset_id,
                         "dataset_name": dataset_name,
                         "analysis_type": "trend",
-                        "title": f"{m['name'].replace('_', ' ').title()} Over Time ({t['name']})",
-                        "description": f"Temporal growth/decline, period-over-period variance, and trajectory tracking.",
+                        "title": f"Trajectory Over Time: {m['name'].replace('_', ' ').title()}",
+                        "description": f"Track growth, decline, and period-over-period changes in '{m['name']}'.",
                         "primary_column": m["name"],
                         "secondary_column": t["name"],
                         "relevance_score": score,
@@ -265,8 +265,8 @@ class AnalysisOpportunityEngine:
                 "dataset_id": dataset_id,
                 "dataset_name": dataset_name,
                 "analysis_type": "anomaly",
-                "title": f"Statistical Outlier & Anomaly Audit for {m['name'].replace('_', ' ').title()}",
-                "description": f"Identifies extreme value spikes or subgroup deviations (> 2.5 standard deviations).",
+                "title": f"Audit Spikes & Outliers: {m['name'].replace('_', ' ').title()}",
+                "description": f"Detect unusual activity surges or extreme outlier values in '{m['name']}'.",
                 "primary_column": m["name"],
                 "secondary_column": None,
                 "relevance_score": score,
@@ -291,8 +291,8 @@ class AnalysisOpportunityEngine:
                 "dataset_id": dataset_id,
                 "dataset_name": dataset_name,
                 "analysis_type": "segmentation",
-                "title": f"Multivariate Customer / Entity Segmentation",
-                "description": f"Synthesizes natural behavioral cohorts across {', '.join(meas_names)}.",
+                "title": f"Customer & Account Behavior Cohorts",
+                "description": f"Group records into natural behavioral tiers using {', '.join(meas_names)}.",
                 "primary_column": meas_names[0],
                 "secondary_column": meas_names[1],
                 "relevance_score": score,
@@ -305,30 +305,54 @@ class AnalysisOpportunityEngine:
 
         # 7. Cross-Dataset Grain-Aware Opportunities (from Phase 2 relationships)
         if relationships:
+            # Group by target dataset so we produce at most ONE consolidated opportunity per related dataset pair
+            rels_by_target: Dict[str, List[Tuple[Dict[str, Any], bool]]] = {}
             for rel in relationships:
                 is_src = str(rel.get("source_dataset_id")) == dataset_id
                 is_tgt = str(rel.get("target_dataset_id")) == dataset_id
                 if not (is_src or is_tgt):
                     continue
+                other_id = str(rel.get("target_dataset_id") if is_src else rel.get("source_dataset_id"))
+                if other_id not in rels_by_target:
+                    rels_by_target[other_id] = []
+                rels_by_target[other_id].append((rel, is_src))
 
-                cardinality = rel.get("cardinality", "one_to_one")
-                fan_out = float(rel.get("fan_out_ratio", 1.0) or 1.0)
-                has_double_counting = bool(rel.get("double_counting_risk", False))
-                val_status = rel.get("validation_status", "candidate")
+            for other_id, rel_entries in rels_by_target.items():
+                # Pick the safest / highest confidence relationship as representative
+                def _rel_rank(item):
+                    r, _ = item
+                    val_score = 2 if r.get("validation_status") == "validated" else 1
+                    fan = float(r.get("fan_out_ratio", 1.0) or 1.0)
+                    conf = float(r.get("confidence", 0.5) or 0.5)
+                    return (val_score, -fan, conf)
 
-                other_id = rel.get("target_dataset_id") if is_src else rel.get("source_dataset_id")
-                other_name = rel.get("target_dataset_name") if is_src else rel.get("source_dataset_name")
-                my_col = rel.get("source_column") if is_src else rel.get("target_column")
-                other_col = rel.get("target_column") if is_src else rel.get("source_column")
+                rel_entries.sort(key=_rel_rank, reverse=True)
+                best_rel, is_src = rel_entries[0]
+
+                cardinality = best_rel.get("cardinality", "one_to_one")
+                fan_out = float(best_rel.get("fan_out_ratio", 1.0) or 1.0)
+                has_double_counting = bool(best_rel.get("double_counting_risk", False))
+                val_status = best_rel.get("validation_status", "candidate")
+
+                other_name = best_rel.get("target_dataset_name") if is_src else best_rel.get("source_dataset_name")
+                my_col = best_rel.get("source_column") if is_src else best_rel.get("target_column")
+                other_col = best_rel.get("target_column") if is_src else best_rel.get("source_column")
+
+                all_col_pairs = [
+                    f"{r.get('source_column') if s else r.get('target_column')} ↔ {r.get('target_column') if s else r.get('source_column')}"
+                    for r, s in rel_entries
+                ]
 
                 # Grain check
                 is_safe = (val_status == "validated") and not has_double_counting and (fan_out <= 1.05)
                 pre_agg_needed = (fan_out > 1.05) or (cardinality in ("one_to_many", "many_to_many"))
 
                 evidence = [
-                    f"Phase 2 relationship discovered: {dataset_name}.{my_col} ↔ {other_name}.{other_col}",
-                    f"Relationship cardinality: {cardinality} (fan-out ratio: {fan_out:.2f}x)",
+                    f"Discovered {len(rel_entries)} link candidate(s) between {dataset_name} and {other_name}",
+                    f"Primary link: {dataset_name}.{my_col} ↔ {other_name}.{other_col} ({cardinality}, {fan_out:.1f}x fan-out)",
                 ]
+                if len(all_col_pairs) > 1:
+                    evidence.append(f"Other matching columns: {', '.join(all_col_pairs[1:4])}")
 
                 if is_safe:
                     evidence.append("Validated join is safe against measure double-counting")
@@ -354,8 +378,8 @@ class AnalysisOpportunityEngine:
                     "dataset_id": dataset_id,
                     "dataset_name": dataset_name,
                     "analysis_type": "cross_dataset",
-                    "title": f"Cross-Dataset Analysis: {dataset_name} ⋈ {other_name}",
-                    "description": f"Grain-aware join comparing measures across {dataset_name} and {other_name}.",
+                    "title": f"Cross-Dataset Analysis: {dataset_name} & {other_name}",
+                    "description": f"Compare records across {dataset_name} and {other_name} ({len(rel_entries)} matching key candidates).",
                     "primary_column": str(my_col),
                     "secondary_column": str(other_col),
                     "relevance_score": rel_score,
@@ -569,6 +593,7 @@ class AnalysisExecutionEngine:
             "opportunity_id": opp.get("id"),
             "analysis_type": "descriptive",
             "title": opp.get("title"),
+            "primary_column": col,
             "status": "completed",
             "summary_stats": {
                 "count": count,
@@ -1114,6 +1139,18 @@ class DynamicInsightEngine:
         title = analysis_result.get("title", "")
         opp_id = analysis_result.get("opportunity_id", "opp")
 
+        # Extract clean column/metric name
+        col = (
+            analysis_result.get("primary_column")
+            or stats_data.get("column")
+            or stats_data.get("measure")
+            or stats_data.get("audited_column")
+        )
+        if not col:
+            words = title.split()
+            col = words[-1] if ": " in title else (words[0] if words else "Metric")
+        col_clean = str(col).replace("_", " ").title()
+
         insights = []
 
         # 1. Descriptive Insights (Concentration & Skew)
@@ -1126,50 +1163,56 @@ class DynamicInsightEngine:
                 severity = "critical" if conc >= 80.0 else "warning"
                 insights.append({
                     "id": f"ins_conc_{opp_id}",
-                    "title": f"High Volume Concentration ({conc:.1f}%) in Top 20% Records",
+                    "title": f"Top 20% of Records Drive {conc:.0f}% of Total '{col_clean}'",
                     "category": "concentration",
                     "severity": severity,
-                    "metric": title.split()[0],
+                    "metric": col_clean,
                     "value": conc,
                     "baseline": 20.0,
                     "change": safe_float(conc - 20.0),
                     "confidence": 0.92,
-                    "affected_segment": "Top 20% records",
-                    "dataset_context": "Discovered from empirical distribution",
+                    "affected_segment": f"Top 20% highest-volume records in '{col_clean}'",
+                    "dataset_context": f"Empirical distribution across {stats_data.get('count', 0):,} records",
                     "evidence": [
-                        f"Top 20% of records account for {conc:.1f}% of cumulative volume (total: {total_sum:,})",
-                        f"Substantial Pareto inequality indicates high reliance on top tail observations",
+                        f"The top 20% of records account for {conc:.1f}% of all cumulative '{col_clean}' volume ({total_sum:,.0f} total).",
+                        "Heavy Pareto concentration: performance relies heavily on a small group of high-volume observations.",
                     ],
-                    "why_it_matters": "Disproportionate concentration creates operational dependency and volatility risk if key entities fluctuate.",
+                    "why_it_matters": f"Disproportionate concentration creates operational vulnerability. If key top entities fluctuate or churn, overall '{col_clean}' will swing dramatically.",
                     "limitations": [
-                        "Observational distribution snapshot; does not indicate individual entity churn or retention history.",
+                        "Snapshot observation; does not track individual account history over time.",
                     ],
-                    "recommended_next_analysis": "Perform entity-level breakdown and top performer retention audit.",
+                    "recommended_next_analysis": f"Perform account-level breakdown to audit the retention of top '{col_clean}' contributors.",
                     "is_causal_claim": False,
                 })
 
             if skew is not None and abs(skew) > 1.8:
+                mean_val = stats_data.get("mean")
+                median_val = stats_data.get("median")
+                mean_str = f"{mean_val:,.2f}" if isinstance(mean_val, (int, float)) else str(mean_val)
+                median_str = f"{median_val:,.2f}" if isinstance(median_val, (int, float)) else str(median_val)
+                direction_word = "high-end" if skew > 0 else "low-end"
+
                 insights.append({
                     "id": f"ins_skew_{opp_id}",
-                    "title": f"Heavy Distribution Skew (Coefficient: {skew:.2f})",
+                    "title": f"Extreme Values in '{col_clean}' Distort Averages",
                     "category": "descriptive",
                     "severity": "info",
-                    "metric": title.split()[0],
+                    "metric": col_clean,
                     "value": skew,
                     "baseline": 0.0,
                     "change": skew,
                     "confidence": 0.85,
-                    "affected_segment": "Distribution tail",
-                    "dataset_context": "Statistical moment audit",
+                    "affected_segment": f"Extreme {direction_word} records in '{col_clean}'",
+                    "dataset_context": f"Observed across {stats_data.get('count', 0):,} records",
                     "evidence": [
-                        f"Skewness coefficient of {skew:.2f} confirms long right/left tail divergence",
-                        f"Mean ({stats_data.get('mean')}) diverges substantially from median ({stats_data.get('median')})",
+                        f"Most records cluster tightly, but extreme {direction_word} outliers stretch the data range.",
+                        f"Typical record value (median: {median_str}) differs sharply from the mathematical average (mean: {mean_str}).",
                     ],
-                    "why_it_matters": "When distributions are skewed, business decisions based on simple averages will distort expectations.",
+                    "why_it_matters": f"Don't base business rules, budgets, or fraud thresholds on simple averages of '{col_clean}'. Massive outliers distort your baseline and trigger false alarms.",
                     "limitations": [
-                        "Requires business domain verification to differentiate high-value VIP records from data logging errors.",
+                        "Requires manual review to confirm whether outliers represent genuine high-value VIPs or logging glitches.",
                     ],
-                    "recommended_next_analysis": "Apply log transformation or median-based thresholds for decision policies.",
+                    "recommended_next_analysis": f"Use median or percentile thresholds instead of simple averages when setting rules for '{col_clean}'.",
                     "is_causal_claim": False,
                 })
 
@@ -1183,7 +1226,6 @@ class DynamicInsightEngine:
 
             if chg is not None and abs(chg) >= 4.0:
                 is_growth = chg > 0
-                # If metric is churn, growth is critical; if revenue, growth is positive
                 is_adverse = ("churn" in title.lower() or "cost" in title.lower()) and is_growth
                 is_beneficial = ("revenue" in title.lower() or "profit" in title.lower()) and is_growth
 
@@ -1197,25 +1239,25 @@ class DynamicInsightEngine:
                 verb = "increased" if is_growth else "declined"
                 insights.append({
                     "id": f"ins_trend_{opp_id}",
-                    "title": f"Sustained {direction.capitalize()} Trajectory ({chg:+.1f}%) Across {p_type.capitalize()} Periods",
+                    "title": f"'{col_clean}' Has {verb.capitalize()} by {abs(chg):.1f}% Over Recent {p_type.capitalize()}s",
                     "category": "trend",
                     "severity": severity,
-                    "metric": title.split()[0],
+                    "metric": col_clean,
                     "value": chg,
                     "baseline": 0.0,
                     "change": chg,
                     "confidence": 0.88,
-                    "affected_segment": f"{start_p} to {end_p}",
+                    "affected_segment": f"Trend from {start_p} to {end_p}",
                     "dataset_context": f"Observed over {stats_data.get('periods_count')} {p_type} cycles",
                     "evidence": [
-                        f"Value moved from {stats_data.get('start_value')} to {stats_data.get('end_value')} ({chg:+.1f}%)",
-                        f"Average period-over-period shift: {stats_data.get('average_pop_change_pct'):+.1f}%",
+                        f"Value moved from {stats_data.get('start_value')} to {stats_data.get('end_value')} ({chg:+.1f}% net change).",
+                        f"Average period-to-period change was {stats_data.get('average_pop_change_pct'):+.1f}%.",
                     ],
-                    "why_it_matters": f"Sustained {direction} volume shifts directly impact operational capacity, inventory, and revenue runway.",
+                    "why_it_matters": f"A sustained {direction} in '{col_clean}' directly impacts operational capacity, inventory, and revenue runway.",
                     "limitations": [
-                        "Historical movement does not guarantee future trajectory; external seasonality or campaign cycles may be present.",
+                        "Historical movement does not guarantee future results; seasonality or marketing campaigns may be factors.",
                     ],
-                    "recommended_next_analysis": "Perform comparative breakdown by dimension to isolate segment drivers.",
+                    "recommended_next_analysis": f"Break down '{col_clean}' by segment or region to isolate which groups drove the change.",
                     "is_causal_claim": False,
                 })
 
@@ -1231,27 +1273,28 @@ class DynamicInsightEngine:
 
             if top_seg and disparity is not None and disparity >= 1.5:
                 severity = "critical" if (is_target_rate and disparity >= 2.0) else "warning"
+                meas_clean = str(stats_data.get("measure") or col_clean).replace("_", " ").title()
                 insights.append({
                     "id": f"ins_comp_{opp_id}",
-                    "title": f"Significant Segment Disparity in '{top_seg}' ({disparity:.1f}x Multiplier)",
+                    "title": f"'{top_seg}' Outperforms '{bot_seg}' by {disparity:.1f}x in '{meas_clean}'",
                     "category": "comparative",
                     "severity": severity,
-                    "metric": stats_data.get("measure"),
+                    "metric": meas_clean,
                     "value": top_val,
                     "baseline": bot_val,
                     "change": safe_float(top_val - (bot_val or 0.0)) if top_val and bot_val else None,
                     "confidence": 0.90,
-                    "affected_segment": f"{dim}: {top_seg} vs {bot_seg}",
+                    "affected_segment": f"{dim}: '{top_seg}' vs '{bot_seg}'",
                     "dataset_context": f"Compared across {stats_data.get('total_categories')} categories in '{dim}'",
                     "evidence": [
-                        f"'{top_seg}' accounts for {top_val} vs '{bot_seg}' at {bot_val}",
-                        f"Observed disparity ratio of {disparity:.1f}x between highest and lowest cohorts",
+                        f"'{top_seg}' averages {top_val} compared to '{bot_seg}' at {bot_val}.",
+                        f"Observed gap is {disparity:.1f}x between the highest and lowest performing groups in '{dim}'.",
                     ],
-                    "why_it_matters": "Wide performance gaps across segments highlight untapped expansion headroom or acute localized retention risks.",
+                    "why_it_matters": f"Wide performance differences across {dim} cohorts highlight either successful strategies to scale or lagging segments needing intervention.",
                     "limitations": [
-                        "Segment disparity is observational; confounding cohort characteristics (e.g. tenure, channel) must be verified.",
+                        "Segment differences are observational; underlying differences in customer age, tenure, or acquisition channel should be verified.",
                     ],
-                    "recommended_next_analysis": "Investigate underlying tenure and engagement differences within the leading segment.",
+                    "recommended_next_analysis": f"Investigate tenure and activity differences within '{top_seg}'.",
                     "is_causal_claim": False,
                 })
 
@@ -1266,62 +1309,65 @@ class DynamicInsightEngine:
 
             if r is not None and abs(r) >= 0.35 and (p_val or 1) < 0.05:
                 severity = "positive" if (r > 0 and strength == "strong") else "info"
+                v1_clean = str(v1).replace("_", " ").title()
+                v2_clean = str(v2).replace("_", " ").title()
                 insights.append({
                     "id": f"ins_corr_{opp_id}",
-                    "title": f"{strength.capitalize()} {direction.capitalize()} Association: '{v1}' & '{v2}' (r = {r:.2f})",
+                    "title": f"Strong Relationship Discovered Between '{v1_clean}' and '{v2_clean}'",
                     "category": "correlation",
                     "severity": severity,
-                    "metric": f"{v1} ↔ {v2}",
+                    "metric": f"{v1_clean} ↔ {v2_clean}",
                     "value": r,
                     "baseline": 0.0,
                     "change": r,
                     "confidence": 0.88,
-                    "affected_segment": "All continuous observation pairs",
-                    "dataset_context": f"Evaluated across {stats_data.get('sample_size'):,} paired observations",
+                    "affected_segment": f"Records containing both '{v1_clean}' and '{v2_clean}'",
+                    "dataset_context": f"Evaluated across {stats_data.get('sample_size'):,} observations",
                     "evidence": [
-                        f"Statistically significant correlation (r = {r:.2f}, p = {p_val})",
-                        f"Indicates that values of '{v1}' tend to systematically vary with '{v2}'",
+                        f"When '{v1_clean}' increases, '{v2_clean}' systematically tends to {'increase' if r > 0 else 'decrease'}.",
+                        f"Association strength is {strength} (correlation r = {r:.2f}, statistically significant).",
                     ],
-                    "why_it_matters": "Identifies interrelated business variables useful for planning models and heuristic segment monitoring.",
+                    "why_it_matters": f"Changes in '{v1_clean}' can act as an early leading indicator for shifts in '{v2_clean}' during forecasting and planning.",
                     "limitations": [
                         "CRITICAL: Correlation does NOT prove that changing one variable causes the other to change.",
-                        "Direct manipulation based on correlation alone carries strategic risk without controlled experiments.",
+                        "Do not make operational changes assuming causation without running a controlled A/B test.",
                     ],
-                    "recommended_next_analysis": "Conduct controlled A/B test or multivariate regression to isolate confounding drivers.",
+                    "recommended_next_analysis": f"Conduct an A/B test or multivariate regression to verify whether '{v1_clean}' directly impacts '{v2_clean}'.",
                     "is_causal_claim": False,
                 })
 
         # 5. Anomaly Insights
         elif a_type == "anomaly":
             cnt = stats_data.get("anomaly_count", 0)
-            col = stats_data.get("audited_column")
+            col_anom = stats_data.get("audited_column") or col
             max_z = stats_data.get("max_z_score")
             top_anoms = stats_data.get("top_anomalies", [])
 
             if cnt > 0 and max_z and max_z >= 2.5:
                 severity = "warning" if cnt > 3 else "info"
                 lead_anom = top_anoms[0] if top_anoms else {}
+                anom_col_clean = str(col_anom).replace("_", " ").title()
                 insights.append({
                     "id": f"ins_anom_{opp_id}",
-                    "title": f"{cnt} Statistical Anomalies Detected in '{col}' (Peak: {max_z:.1f}σ)",
+                    "title": f"{cnt} Extreme Spike{'s' if cnt > 1 else ''} Detected in '{anom_col_clean}'",
                     "category": "anomaly",
                     "severity": severity,
-                    "metric": col,
+                    "metric": anom_col_clean,
                     "value": lead_anom.get("observed_value"),
                     "baseline": stats_data.get("baseline_mean"),
                     "change": lead_anom.get("deviation_magnitude"),
                     "confidence": 0.94,
-                    "affected_segment": f"{cnt} isolated records in '{col}'",
+                    "affected_segment": f"{cnt} unusual record{'s' if cnt > 1 else ''} in '{anom_col_clean}'",
                     "dataset_context": f"Evaluated across {stats_data.get('total_records'):,} observations",
                     "evidence": [
-                        f"Peak outlier diverged by {max_z:.1f} standard deviations from the empirical baseline",
-                        f"Observed value: {lead_anom.get('observed_value')} vs baseline mean: {stats_data.get('baseline_mean')}",
+                        f"The highest outlier reached {lead_anom.get('observed_value')}, diverging sharply from the normal average of {stats_data.get('baseline_mean')}.",
+                        f"Peak spike was {max_z:.1f} times higher than typical variation.",
                     ],
-                    "why_it_matters": "Statistical outliers can severely distort average-based KPIs, risk calculations, and forecasting baselines.",
+                    "why_it_matters": f"Unusual spikes in '{anom_col_clean}' can distort KPI tracking, trigger false alarms, or point to data pipeline issues or fraud.",
                     "limitations": [
-                        "Identifies mathematical deviation only; domain audit is required to confirm whether records represent VIP transactions or telemetry errors.",
+                        "Identifies mathematical deviation only; check raw transactions to see if they are genuine VIPs or telemetry errors.",
                     ],
-                    "recommended_next_analysis": "Inspect raw transaction rows to audit source integrity.",
+                    "recommended_next_analysis": f"Inspect the {cnt} flagged transaction rows in '{anom_col_clean}' to audit their source.",
                     "is_causal_claim": False,
                 })
 
@@ -1335,28 +1381,30 @@ class DynamicInsightEngine:
             if breakdown and len(breakdown) >= 2:
                 top = breakdown[0]
                 share = top.get("share_pct") or 0.0
+                meas_clean = str(meas).replace("_", " ").title()
+                dim_clean = str(dim).replace("_", " ").title()
                 if share >= 40.0:
                     insights.append({
                         "id": f"ins_cross_{opp_id}",
-                        "title": f"Cross-Dataset Concentration: '{top['group']}' Dominates {share:.1f}% of {meas}",
+                        "title": f"'{top['group']}' Drives {share:.1f}% of Total '{meas_clean}' Across Connected Data",
                         "category": "cross_dataset",
                         "severity": "warning",
-                        "metric": meas,
+                        "metric": meas_clean,
                         "value": share,
                         "baseline": 100.0 / len(breakdown),
                         "change": safe_float(share - (100.0 / len(breakdown))),
                         "confidence": 0.89,
-                        "affected_segment": f"{dim}: {top['group']}",
+                        "affected_segment": f"{dim_clean}: '{top['group']}'",
                         "dataset_context": f"Synthesized across {joined_n:,} records using validated grain-safe join",
                         "evidence": [
-                            f"Cross-dataset group '{top['group']}' commands {share:.1f}% of cumulative {meas}",
-                            "Join verified safe against fan-out measure double-counting",
+                            f"Linked records show '{top['group']}' commands {share:.1f}% of all '{meas_clean}', far above an equal distribution.",
+                            "Join verified safe against fan-out measure double-counting.",
                         ],
-                        "why_it_matters": "Unified cross-dataset view surfaces portfolio concentration that is invisible when inspecting datasets in isolation.",
+                        "why_it_matters": f"Cross-dataset concentration reveals how behavior in one system directly drives concentration in the other.",
                         "limitations": [
-                            "Relies on relational key integrity between primary and secondary sources.",
+                            "Relies on foreign key link validity and active record synchronization.",
                         ],
-                        "recommended_next_analysis": "Evaluate margin or cost drivers in the secondary dataset to verify net contribution.",
+                        "recommended_next_analysis": f"Investigate account-level drivers within '{top['group']}'.",
                         "is_causal_claim": False,
                     })
 

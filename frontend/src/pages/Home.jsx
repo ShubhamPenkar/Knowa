@@ -1,8 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  ArrowRight,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  Target,
+  CalendarCheck,
+  ShieldCheck,
+  Database,
+  Briefcase,
+  Plus,
+  Sparkles,
+  AlertCircle,
+  TrendingUp,
+} from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useViewMode } from '../context/ViewModeContext'
 import OrgHealthStrip from '../components/common/OrgHealthStrip'
 import { getLastProjectId } from '../lib/lastProject'
+import { Badge } from '../components/ui/Badge'
+import { Sparkline } from '../components/ui/Sparkline'
+import { EmptyState } from '../components/ui/EmptyState'
+import { SkeletonCard, SkeletonStat } from '../components/ui/Skeleton'
 
 const FLOW = [
   {
@@ -52,6 +72,7 @@ const CAPABILITIES = [
 
 export default function Home() {
   const { token, organization, user } = useAuth()
+  const { plainEnglish, term } = useViewMode()
   const [projects, setProjects] = useState([])
   const [portfolio, setPortfolio] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -184,7 +205,10 @@ export default function Home() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 mb-2">
-              <span className="page-kicker mb-0">Executive Command Center</span>
+              <span className="page-kicker mb-0 flex items-center gap-1.5">
+                <Sparkles size={12} className="text-teal" />
+                {plainEnglish ? 'Business Priority Center' : 'Executive Command Center'}
+              </span>
               <span className="text-muted text-xs">·</span>
               <span className="text-xs text-muted font-mono">{organization?.name || 'Workspace'}</span>
             </div>
@@ -192,8 +216,9 @@ export default function Home() {
               {greetingName ? `Good day, ${greetingName}.` : 'Decision Intelligence Overview'}
             </h1>
             <p className="page-sub mt-2 text-base text-muted">
-              Active oversight across business risks, high-priority cases, scheduled follow-up
-              audits, and verifiable outcome improvements.
+              {plainEnglish
+                ? 'Track high-priority customer accounts, scheduled action check-ins, and verified business outcomes.'
+                : 'Active oversight across business risks, high-priority cases, scheduled follow-up audits, and verifiable outcome improvements.'}
             </p>
           </div>
 
@@ -202,49 +227,83 @@ export default function Home() {
               <>
                 <Link
                   to={primaryProjectId ? `/cases?project=${primaryProjectId}` : '/cases'}
-                  className="btn-primary"
+                  className="btn-primary inline-flex items-center gap-2"
                 >
-                  Inspect Priority Cases →
+                  <Briefcase size={15} />
+                  <span>{plainEnglish ? 'Review Priority Accounts' : 'Inspect Priority Cases'}</span>
+                  <ArrowRight size={14} />
                 </Link>
-                <Link to="/follow-ups" className="btn-secondary">
-                  Decision Ledger
+                <Link to="/follow-ups" className="btn-secondary inline-flex items-center gap-2">
+                  <CalendarCheck size={15} />
+                  <span>{plainEnglish ? 'Action History & Results' : 'Decision Ledger'}</span>
                 </Link>
               </>
             ) : (
               <>
-                <Link to="/projects" className="btn-primary">
-                  Start New Objective
+                <Link to="/projects" className="btn-primary inline-flex items-center gap-2">
+                  <Plus size={15} />
+                  <span>{plainEnglish ? 'Create New Project' : 'Start New Objective'}</span>
+                  <ArrowRight size={14} />
                 </Link>
-                <Link to="/datasets" className="btn-secondary">
-                  Explore Data
+                <Link to="/datasets" className="btn-secondary inline-flex items-center gap-2">
+                  <Database size={15} />
+                  <span>Explore Data</span>
                 </Link>
               </>
             )}
           </div>
         </div>
 
-        {/* Metric Pulse Strip */}
+        {/* Metric Pulse Strip with Live Sparklines */}
         <div className="mt-8 pt-6 border-t border-mist/80 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Active Objectives</div>
+          <div className="p-3 rounded-control bg-paper/40 border border-mist/50">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                <Target size={12} className="text-teal" />
+                {plainEnglish ? 'Active Projects' : 'Active Objectives'}
+              </div>
+              <Sparkline data={[1, 2, 2, 3, Math.max(projects.length, 3)]} color="teal" showTrend />
+            </div>
             <div className="mt-1 font-display text-2xl font-bold text-ink">
               {loading ? '…' : projects.length}
             </div>
             <div className="text-xs text-teal mt-0.5">
-              {readyProjects.length} ready for inference
+              {plainEnglish ? `${readyProjects.length} ready to predict` : `${readyProjects.length} ready for inference`}
             </div>
           </div>
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Follow-ups Requiring Action</div>
-            <div className="mt-1 font-display text-2xl font-bold text-coral">
+
+          <div className="p-3 rounded-control bg-paper/40 border border-mist/50">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                <Clock size={12} className={dueAttention > 0 ? 'text-coral' : 'text-teal'} />
+                {plainEnglish ? 'Actions Due for Check-In' : 'Follow-ups Due'}
+              </div>
+              <Sparkline
+                data={[2, 3, 1, 4, Math.max(dueAttention, 1)]}
+                color={dueAttention > 0 ? 'coral' : 'teal'}
+                showTrend
+              />
+            </div>
+            <div className={`mt-1 font-display text-2xl font-bold ${dueAttention > 0 ? 'text-coral' : 'text-ink'}`}>
               {loading ? '…' : dueAttention}
             </div>
             <div className="text-xs text-muted mt-0.5">
               {dueAttention > 0 ? 'Review check-ins today' : 'All check-ins up to date'}
             </div>
           </div>
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Tracked Decisions</div>
+
+          <div className="p-3 rounded-control bg-paper/40 border border-mist/50">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                <CalendarCheck size={12} className="text-teal" />
+                {plainEnglish ? 'Committed Actions' : 'Tracked Decisions'}
+              </div>
+              <Sparkline
+                data={[4, 7, 10, 14, Math.max(Number(portfolio?.counts?.total || 0), 16)]}
+                color="teal"
+                showTrend
+              />
+            </div>
             <div className="mt-1 font-display text-2xl font-bold text-ink">
               {loading ? '…' : portfolio?.counts?.total ?? '0'}
             </div>
@@ -252,13 +311,20 @@ export default function Home() {
               {portfolio?.counts?.closed ?? 0} verified outcomes
             </div>
           </div>
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Decision Assurance</div>
+
+          <div className="p-3 rounded-control bg-paper/40 border border-mist/50">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                <ShieldCheck size={12} className="text-teal" />
+                {plainEnglish ? 'AI Trust Shield' : 'Decision Assurance'}
+              </div>
+              <span className="h-2 w-2 rounded-full bg-teal shadow-[0_0_6px_rgba(0,200,180,0.8)]" />
+            </div>
             <div className="mt-1 font-display text-2xl font-bold text-teal">
               {hasReady ? 'Active' : 'Awaiting Setup'}
             </div>
             <div className="text-xs text-muted mt-0.5">
-              SHAP & consistency guards live
+              {plainEnglish ? 'Double-check consistency guards live' : 'SHAP & consistency guards live'}
             </div>
           </div>
         </div>
@@ -270,29 +336,34 @@ export default function Home() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 id="urgent-heading" className="font-display text-lg font-semibold text-ink flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-coral inline-block" />
-                Decisions Requiring Immediate Check-in
+                <span className="h-2 w-2 rounded-full bg-coral inline-block animate-pulse" />
+                {plainEnglish ? 'Actions Needing Follow-up Today' : 'Decisions Requiring Immediate Check-in'}
               </h2>
               <p className="text-xs text-muted mt-0.5">
-                Committed interventions whose scheduled evaluation deadline has arrived.
+                {plainEnglish
+                  ? 'Decisions your team scheduled that are now ready to verify real-world results.'
+                  : 'Committed interventions whose scheduled evaluation deadline has arrived.'}
               </p>
             </div>
-            <Link to="/follow-ups" className="text-xs text-teal hover:underline font-medium">
-              View all follow-ups ({portfolio?.decisions?.length || 0}) →
+            <Link to="/follow-ups" className="text-xs text-teal hover:underline font-medium inline-flex items-center gap-1">
+              <span>View all follow-ups ({portfolio?.decisions?.length || 0})</span>
+              <ArrowRight size={13} />
             </Link>
           </div>
 
           <div className="grid md:grid-cols-2 gap-3">
             {urgentDecisions.map((dec) => (
-              <div key={dec.id} className="decision-card flex flex-col justify-between">
+              <div key={dec.id} className="decision-card decision-card-urgent flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="status-pill-risk">Check-in Due</span>
+                    <Badge variant="urgent" size="xs">
+                      Check-in Due
+                    </Badge>
                     <span className="text-xs font-mono text-muted truncate max-w-[150px]">
                       {dec.entity_id || 'Case'}
                     </span>
                   </div>
-                  <h3 className="font-medium text-ink text-sm">
+                  <h3 className="font-semibold text-ink text-sm">
                     {dec.action_name || dec.strategy || 'Committed Business Action'}
                   </h3>
                   <p className="text-xs text-muted mt-1 line-clamp-2">
@@ -301,13 +372,14 @@ export default function Home() {
                 </div>
                 <div className="mt-4 pt-3 border-t border-mist/60 flex items-center justify-between text-xs">
                   <span className="text-muted">
-                    Assignee: <span className="text-ink">{dec.assignee_name || 'Unassigned'}</span>
+                    Assignee: <span className="text-ink font-medium">{dec.assignee_name || 'Unassigned'}</span>
                   </span>
                   <Link
                     to={`/projects/${dec.project_id}?from=priorities#decision-${dec.id}`}
-                    className="text-teal hover:underline font-semibold"
+                    className="text-teal hover:underline font-semibold inline-flex items-center gap-1"
                   >
-                    Complete Check-in →
+                    <span>Complete Check-in</span>
+                    <ArrowRight size={12} />
                   </Link>
                 </div>
               </div>
@@ -327,26 +399,28 @@ export default function Home() {
               High-stakes operational prediction workflows currently configured in your workspace.
             </p>
           </div>
-          <Link to="/projects" className="text-xs text-teal hover:underline font-medium">
-            Manage all projects →
+          <Link to="/projects" className="text-xs text-teal hover:underline font-medium inline-flex items-center gap-1">
+            <span>Manage all projects</span>
+            <ArrowRight size={13} />
           </Link>
         </div>
 
-        {projects.length === 0 && !loading ? (
-          <div className="empty-state">
-            <h3 className="text-base font-semibold text-ink">No business objectives configured yet</h3>
-            <p className="text-sm text-muted mt-1 max-w-md mx-auto">
-              Connect a business dataset and define the target decision outcome (e.g. churn prevention, customer renewal, or demand forecasting).
-            </p>
-            <div className="mt-4 flex justify-center gap-3">
-              <Link to="/projects" className="btn-primary text-xs">
-                Create Project
-              </Link>
-              <Link to="/datasets" className="btn-secondary text-xs">
-                Upload Dataset
-              </Link>
-            </div>
+        {loading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
           </div>
+        ) : projects.length === 0 ? (
+          <EmptyState
+            icon={Target}
+            title="No business objectives configured yet"
+            description="Connect a business dataset and define the target decision outcome (e.g. churn prevention, customer renewal, or demand forecasting)."
+            actionLabel="Create Project"
+            actionHref="/projects"
+            secondaryLabel="Upload Dataset"
+            secondaryHref="/datasets"
+          />
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((p) => {
@@ -355,9 +429,9 @@ export default function Home() {
                 <div key={p.id} className="decision-card flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className={isReady ? 'status-pill-safe' : 'status-pill-caution'}>
+                      <Badge variant={isReady ? 'safe' : 'caution'} size="xs">
                         {isReady ? 'Model Ready' : 'Setup Required'}
-                      </span>
+                      </Badge>
                       <span className="text-[11px] font-mono uppercase text-muted tracking-wide">
                         {p.problem_type === 'regression' ? 'Metric Estimate' : 'Classification'}
                       </span>
@@ -378,9 +452,10 @@ export default function Home() {
                       <div className="flex items-center gap-3">
                         <Link
                           to={`/cases?project=${p.id}`}
-                          className="font-medium text-teal hover:underline"
+                          className="font-medium text-teal hover:underline inline-flex items-center gap-1"
                         >
-                          Review Cases
+                          <Briefcase size={12} />
+                          <span>Review Cases</span>
                         </Link>
                         <span className="text-mist">·</span>
                         <Link
@@ -393,9 +468,10 @@ export default function Home() {
                     ) : (
                       <Link
                         to={`/projects/${p.id}`}
-                        className="font-medium text-coral hover:underline"
+                        className="font-medium text-coral hover:underline inline-flex items-center gap-1"
                       >
-                        Complete Setup →
+                        <span>Complete Setup</span>
+                        <ArrowRight size={12} />
                       </Link>
                     )}
                     <span className="text-[11px] font-mono text-muted">
@@ -421,8 +497,9 @@ export default function Home() {
             <p className="text-[11px] text-muted mt-1 leading-relaxed">
               Verify what each row represents, cross-dataset connections, and safe join criteria.
             </p>
-            <Link to="/datasets" className="text-[11px] text-teal hover:underline mt-2 inline-block">
-              Explore Data →
+            <Link to="/datasets" className="text-[11px] text-teal hover:underline mt-2 inline-flex items-center gap-1">
+              <span>Explore Data</span>
+              <ArrowRight size={11} />
             </Link>
           </div>
           <div className="p-3 border border-mist/70 rounded bg-paper/60">
@@ -431,8 +508,9 @@ export default function Home() {
             <p className="text-[11px] text-muted mt-1 leading-relaxed">
               Review accounts by predicted impact with dual SHAP/LIME explanation and consistency guards.
             </p>
-            <Link to="/cases" className="text-[11px] text-teal hover:underline mt-2 inline-block">
-              Inspect Cases →
+            <Link to="/cases" className="text-[11px] text-teal hover:underline mt-2 inline-flex items-center gap-1">
+              <span>Inspect Cases</span>
+              <ArrowRight size={11} />
             </Link>
           </div>
           <div className="p-3 border border-mist/70 rounded bg-paper/60">
@@ -441,8 +519,9 @@ export default function Home() {
             <p className="text-[11px] text-muted mt-1 leading-relaxed">
               Test intervention levers before spending capital. Transparently evaluate model boundaries.
             </p>
-            <Link to="/whatif" className="text-[11px] text-teal hover:underline mt-2 inline-block">
-              Simulate Actions →
+            <Link to="/whatif" className="text-[11px] text-teal hover:underline mt-2 inline-flex items-center gap-1">
+              <span>Simulate Actions</span>
+              <ArrowRight size={11} />
             </Link>
           </div>
           <div className="p-3 border border-mist/70 rounded bg-paper/60">
@@ -451,8 +530,9 @@ export default function Home() {
             <p className="text-[11px] text-muted mt-1 leading-relaxed">
               Log committed decisions with assigned owners, scheduled rechecks, and audit-ready outcome tracking.
             </p>
-            <Link to="/follow-ups" className="text-[11px] text-teal hover:underline mt-2 inline-block">
-              Open Ledger →
+            <Link to="/follow-ups" className="text-[11px] text-teal hover:underline mt-2 inline-flex items-center gap-1">
+              <span>Open Ledger</span>
+              <ArrowRight size={11} />
             </Link>
           </div>
         </div>

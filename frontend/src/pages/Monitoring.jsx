@@ -1,9 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import {
+  Activity,
+  ShieldCheck,
+  CheckCircle2,
+  BarChart3,
+  RefreshCw,
+  Sliders,
+  Sparkles,
+  TrendingUp,
+  Briefcase,
+  Settings,
+  ArrowRight,
+} from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useViewMode } from '../context/ViewModeContext'
 import ProjectPicker from '../components/common/ProjectPicker'
 import Spinner from '../components/common/Spinner'
 import { getLastProjectId, setLastProjectId } from '../lib/lastProject'
+import { Badge } from '../components/ui/Badge'
+import { ProgressBar } from '../components/ui/ProgressBar'
+import { EmptyState } from '../components/ui/EmptyState'
+import { SkeletonCard, SkeletonStat } from '../components/ui/Skeleton'
 
 function pct(v) {
   if (v == null || Number.isNaN(Number(v))) return '—'
@@ -45,6 +63,7 @@ function scoreLabel(project) {
  */
 export default function Monitoring() {
   const { token } = useAuth()
+  const { plainEnglish, term } = useViewMode()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -185,26 +204,26 @@ export default function Monitoring() {
         </div>
         {projectId && (
           <div className="flex flex-wrap gap-2">
-            <Link to={`/cases?project=${projectId}`} className="btn-secondary text-sm">
-              Open cases
+            <Link to={`/cases?project=${projectId}`} className="btn-secondary text-xs inline-flex items-center gap-1.5">
+              <Briefcase size={13} />
+              <span>Open cases</span>
             </Link>
-            <Link to={`/projects/${projectId}`} className="btn-ghost text-sm">
-              Project settings
+            <Link to={`/projects/${projectId}`} className="btn-ghost text-xs inline-flex items-center gap-1.5">
+              <Settings size={13} />
+              <span>Project settings</span>
             </Link>
           </div>
         )}
       </div>
 
       {readyProjects.length === 0 ? (
-        <div className="empty-state">
-          <h3 className="font-display text-xl font-semibold text-ink mb-2">Nothing to monitor yet</h3>
-          <p className="text-sm text-[var(--muted)] mb-6 max-w-md mx-auto">
-            Prepare a project first — then model quality and learning show up here.
-          </p>
-          <Link to="/projects" className="btn-primary">
-            Go to projects
-          </Link>
-        </div>
+        <EmptyState
+          icon={Activity}
+          title="Nothing to monitor yet"
+          description="Prepare a project first — then model quality, operational drift, and feedback learning show up here."
+          actionLabel="Go to Projects"
+          actionHref="/projects"
+        />
       ) : (
         <>
           {/* Org overview cards */}
@@ -284,23 +303,57 @@ export default function Monitoring() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-mist border border-mist">
                   {isReg ? (
                     <>
-                      <MetricCell label="R²" value={m?.r2_score != null ? Number(m.r2_score).toFixed(2) : '—'} />
-                      <MetricCell label="MAE" value={m?.mae != null ? Number(m.mae).toFixed(2) : '—'} />
-                      <MetricCell label="RMSE" value={m?.rmse != null ? Number(m.rmse).toFixed(2) : '—'} />
-                      <MetricCell label="Guidance" value={health.label} />
+                      <MetricCell
+                        label={plainEnglish ? 'Pattern Reliability (R²)' : 'R² Score'}
+                        value={m?.r2_score != null ? Number(m.r2_score).toFixed(2) : '—'}
+                      />
+                      <MetricCell
+                        label={plainEnglish ? 'Avg Prediction Error (MAE)' : 'Mean Absolute Error (MAE)'}
+                        value={m?.mae != null ? Number(m.mae).toFixed(2) : '—'}
+                      />
+                      <MetricCell
+                        label={plainEnglish ? 'Severe Miss Penalty (RMSE)' : 'Root Mean Sq Error (RMSE)'}
+                        value={m?.rmse != null ? Number(m.rmse).toFixed(2) : '—'}
+                      />
+                      <MetricCell
+                        label={plainEnglish ? 'Usability Guidance' : 'Readiness Status'}
+                        value={health.label}
+                      />
                     </>
                   ) : (
                     <>
-                      <MetricCell label="Ranking quality (AUC)" value={pct(m?.auc_roc)} accent="text-teal" />
-                      <MetricCell label="Accuracy" value={pct(m?.accuracy)} />
-                      <MetricCell label="Precision" value={pct(m?.precision)} />
-                      <MetricCell label="Recall" value={pct(m?.recall)} />
+                      <MetricCell
+                        label={plainEnglish ? 'Ranking Reliability (AUC)' : 'ROC-AUC Score'}
+                        value={pct(m?.auc_roc)}
+                        accent="text-teal"
+                        progress={m?.auc_roc}
+                        color="teal"
+                      />
+                      <MetricCell
+                        label={plainEnglish ? 'Overall Match Rate' : 'Accuracy Score'}
+                        value={pct(m?.accuracy)}
+                        progress={m?.accuracy}
+                        color="teal"
+                      />
+                      <MetricCell
+                        label={plainEnglish ? 'False Alarm Filter (Precision)' : 'Precision (PPV)'}
+                        value={pct(m?.precision)}
+                        progress={m?.precision}
+                        color="teal"
+                      />
+                      <MetricCell
+                        label={plainEnglish ? 'Catch Rate (Recall)' : 'Recall / Sensitivity'}
+                        value={pct(m?.recall)}
+                        progress={m?.recall}
+                        color="teal"
+                      />
                     </>
                   )}
                 </div>
                 <p className="mt-3 text-xs text-[var(--muted)] max-w-2xl leading-relaxed">
-                  These are training holdout scores — a guide for whether the ranking is trustworthy,
-                  not a guarantee on every future case.
+                  {plainEnglish
+                    ? 'These scores measure how well the AI performed on real test data it had never seen before.'
+                    : 'Training holdout validation metrics evaluated on an out-of-sample test partition.'}
                 </p>
               </section>
 
@@ -340,12 +393,12 @@ export default function Monitoring() {
                         </p>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-px bg-mist border border-mist">
                           <MetricCell
-                            label="Matched known outcomes"
+                            label={plainEnglish ? 'Matched Known Outcomes' : 'Validation Concordance Rate'}
                             value={pct(spotCheck.agree_rate)}
                             accent="text-ink"
                           />
                           <MetricCell
-                            label="Right when flagged high"
+                            label={plainEnglish ? 'Right When Flagged High' : 'Precision @ High Risk Cutoff'}
                             value={
                               spotCheck.high_risk_precision != null
                                 ? pct(spotCheck.high_risk_precision)
@@ -353,7 +406,7 @@ export default function Monitoring() {
                             }
                           />
                           <MetricCell
-                            label="Right when flagged low"
+                            label={plainEnglish ? 'Right When Flagged Low' : 'Specificity @ Low Risk Cutoff'}
                             value={
                               spotCheck.low_risk_true_negative_rate != null
                                 ? pct(spotCheck.low_risk_true_negative_rate)
@@ -412,21 +465,31 @@ export default function Monitoring() {
                       </div>
                       {Array.isArray(feedback.action_effectiveness_ranked) &&
                         feedback.action_effectiveness_ranked.length > 0 && (
-                          <ul className="mt-2 space-y-2">
-                            {feedback.action_effectiveness_ranked.slice(0, 6).map((a) => (
-                              <li
-                                key={a.action_code}
-                                className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
-                              >
-                                <span className="text-ink font-medium">
-                                  {a.action_name || a.action_code}
-                                </span>
-                                <span className="tabular-nums text-[var(--muted)] text-right">
-                                  {a.success_n}/{a.n} favorable
-                                  {a.reliable ? ' · reshapes ranking' : ' · small sample'}
-                                </span>
-                              </li>
-                            ))}
+                          <ul className="mt-3 space-y-2.5">
+                            {feedback.action_effectiveness_ranked.slice(0, 6).map((a) => {
+                              const rate = a.n > 0 ? (a.success_n / a.n) * 100 : 0
+                              return (
+                                <li
+                                  key={a.action_code}
+                                  className="p-3 bg-paper/60 border border-mist/60 rounded-control"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm mb-1.5">
+                                    <span className="text-ink font-semibold flex items-center gap-2">
+                                      {a.action_name || a.action_code}
+                                      {a.reliable && (
+                                        <Badge variant="safe" size="xs">
+                                          Reshapes ranking
+                                        </Badge>
+                                      )}
+                                    </span>
+                                    <span className="tabular-nums text-muted text-xs">
+                                      <span className="text-teal font-semibold">{a.success_n}</span>/{a.n} favorable ({Math.round(rate)}%)
+                                    </span>
+                                  </div>
+                                  <ProgressBar value={rate} max={100} color="teal" size="xs" />
+                                </li>
+                              )
+                            })}
                           </ul>
                         )}
                     </>
@@ -445,13 +508,20 @@ export default function Monitoring() {
   )
 }
 
-function MetricCell({ label, value, accent = 'text-ink', hint }) {
+function MetricCell({ label, value, accent = 'text-ink', hint, progress, color = 'teal' }) {
   return (
-    <div className="bg-paper px-4 py-4">
-      <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{label}</div>
-      <div className={`mt-1 font-display text-2xl font-semibold tabular-nums ${accent}`}>
-        {value}
+    <div className="bg-paper px-4 py-4 flex flex-col justify-between">
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] font-medium">{label}</div>
+        <div className={`mt-1 font-display text-2xl font-semibold tabular-nums ${accent}`}>
+          {value}
+        </div>
       </div>
+      {progress != null && !Number.isNaN(Number(progress)) && (
+        <div className="mt-2.5">
+          <ProgressBar value={Number(progress) * 100} max={100} color={color} size="xs" />
+        </div>
+      )}
       {hint && <p className="text-xs text-[var(--muted)] mt-1">{hint}</p>}
     </div>
   )

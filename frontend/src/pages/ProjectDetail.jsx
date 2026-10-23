@@ -1,6 +1,19 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import {
+  Briefcase,
+  Sliders,
+  Trash2,
+  ArrowRight,
+  CheckCircle2,
+  AlertTriangle,
+  Sparkles,
+  Activity,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/ui/Toast';
+import { Breadcrumb } from '../components/ui/Breadcrumb';
+import { Badge } from '../components/ui/Badge';
 import { PredictionPanel } from '../components/PredictionPanel';
 import Spinner from '../components/common/Spinner';
 
@@ -9,6 +22,7 @@ export default function ProjectDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { token, user } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [training, setTraining] = useState(false);
@@ -576,20 +590,12 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 mb-4 -ml-2">
-        {fromFollowUps ? (
-          <Link to="/follow-ups" className="btn-ghost text-sm">
-            ← Follow-ups
-          </Link>
-        ) : (
-          <button type="button" onClick={() => navigate('/projects')} className="btn-ghost text-sm">
-            ← Projects
-          </button>
-        )}
-        <Link to={`/cases?project=${id}`} className="btn-ghost text-sm text-[var(--muted)]">
-          Cases
-        </Link>
-      </div>
+      <Breadcrumb
+        items={[
+          { label: 'Projects', to: '/projects' },
+          { label: project.name },
+        ]}
+      />
 
       <div className="page-header">
         <div>
@@ -602,25 +608,33 @@ export default function ProjectDetail() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span
-            className={`badge ${
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Badge
+            variant={
               isReady
-                ? 'bg-teal-soft/50 text-ink border border-teal/20'
+                ? 'safe'
                 : project.status === 'error'
-                  ? 'bg-coral-soft text-ink border border-coral/30'
-                  : 'bg-mist text-ink'
-            }`}
+                  ? 'urgent'
+                  : 'caution'
+            }
           >
             {isReady ? 'Ready to use' : project.status === 'error' ? 'Needs attention' : 'Not prepared yet'}
-          </span>
+          </Badge>
           {isReady && (
             <>
-              <Link to={`/cases?project=${id}`} className="btn-secondary text-sm">
-                Open cases
+              <Link
+                to={`/cases?project=${id}`}
+                className="btn-secondary text-xs inline-flex items-center gap-1.5"
+              >
+                <Briefcase size={13} />
+                <span>Open cases</span>
               </Link>
-              <Link to={`/whatif/${id}`} className="btn-ghost text-sm">
-                What-if
+              <Link
+                to={`/whatif/${id}`}
+                className="btn-ghost text-xs inline-flex items-center gap-1.5"
+              >
+                <Sliders size={13} />
+                <span>What-if</span>
               </Link>
             </>
           )}

@@ -1,6 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Download,
+  RefreshCw,
+  UserCheck,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  Sparkles,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/ui/Toast';
+import { StackedBar } from '../components/ui/ProgressBar';
+import { Badge } from '../components/ui/Badge';
 import Spinner from '../components/common/Spinner';
 import OrgHealthStrip from '../components/common/OrgHealthStrip';
 import PortfolioIntel from '../components/common/PortfolioIntel';
@@ -47,6 +61,7 @@ function PortfolioStatSkeleton() {
  */
 export default function AnalyticsSaaS() {
   const { token, user } = useAuth();
+  const toast = useToast();
   const [projects, setProjects] = useState([]);
   const [predictions, setPredictions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -113,9 +128,9 @@ export default function AnalyticsSaaS() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setSweepNote(
-          typeof data.detail === 'string' ? data.detail : 'Could not export decisions'
-        );
+        const msg = typeof data.detail === 'string' ? data.detail : 'Could not export decisions';
+        setSweepNote(msg);
+        toast.error(msg);
         return;
       }
       if (fmt === 'csv') {
@@ -137,9 +152,13 @@ export default function AnalyticsSaaS() {
         a.click();
         URL.revokeObjectURL(url);
       }
-      setSweepNote(`Exported decisions as ${fmt.toUpperCase()}.`);
+      const note = `Exported decisions as ${fmt.toUpperCase()}.`;
+      setSweepNote(note);
+      toast.success(note);
     } catch (err) {
-      setSweepNote(err?.message || 'Could not export decisions');
+      const msg = err?.message || 'Could not export decisions';
+      setSweepNote(msg);
+      toast.error(msg);
     } finally {
       setExporting(false);
     }
@@ -155,17 +174,22 @@ export default function AnalyticsSaaS() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSweepNote(
+        const msg =
           typeof data.detail === 'string'
             ? data.detail
-            : 'Could not mark overdue follow-ups'
-        );
+            : 'Could not mark overdue follow-ups';
+        setSweepNote(msg);
+        toast.error(msg);
       } else {
-        setSweepNote(data.plain_summary || `Flagged ${data.flagged || 0} follow-up(s).`);
+        const msg = data.plain_summary || `Flagged ${data.flagged || 0} follow-up(s).`;
+        setSweepNote(msg);
+        toast.success(msg);
         await fetchPortfolio();
       }
     } catch (err) {
-      setSweepNote(err?.message || 'Could not mark overdue follow-ups');
+      const msg = err?.message || 'Could not mark overdue follow-ups';
+      setSweepNote(msg);
+      toast.error(msg);
     }
     setSweeping(false);
   };
@@ -331,47 +355,52 @@ export default function AnalyticsSaaS() {
               <button
                 type="button"
                 onClick={() => setMineOnly((v) => !v)}
-                className={`text-sm px-3 py-1.5 border rounded-control ${
+                className={`text-xs px-3 py-1.5 border rounded-control inline-flex items-center gap-1.5 ${
                   mineOnly
                     ? 'border-teal bg-teal-soft/30 text-ink'
                     : 'border-mist text-[var(--muted)] hover:text-ink'
                 }`}
               >
-                {mineOnly ? 'All follow-ups' : 'My follow-ups'}
+                <UserCheck size={13} />
+                <span>{mineOnly ? 'All follow-ups' : 'My follow-ups'}</span>
               </button>
             )}
             <button
               type="button"
               onClick={() => exportDecisions('csv')}
               disabled={exporting || portfolioLoading}
-              className="btn-ghost text-sm"
+              className="btn-ghost text-xs inline-flex items-center gap-1.5"
             >
-              {exporting ? 'Exporting…' : 'Export CSV'}
+              <Download size={13} />
+              <span>{exporting ? 'Exporting…' : 'Export CSV'}</span>
             </button>
             <button
               type="button"
               onClick={() => exportDecisions('json')}
               disabled={exporting || portfolioLoading}
-              className="btn-ghost text-sm"
+              className="btn-ghost text-xs inline-flex items-center gap-1.5"
             >
-              Export JSON
+              <Download size={13} />
+              <span>Export JSON</span>
             </button>
             <button
               type="button"
               onClick={runRecheckSweep}
               disabled={sweeping || portfolioLoading}
-              className="btn-ghost text-sm"
+              className="btn-ghost text-xs inline-flex items-center gap-1.5"
               title="Mark due scheduled follow-ups ready for check-in"
             >
-              {sweeping ? 'Updating…' : 'Mark overdue for check-in'}
+              <Clock size={13} />
+              <span>{sweeping ? 'Updating…' : 'Mark overdue'}</span>
             </button>
             <button
               type="button"
               onClick={fetchPortfolio}
               disabled={portfolioLoading}
-              className="btn-ghost text-sm"
+              className="btn-ghost text-xs inline-flex items-center gap-1.5"
             >
-              {portfolioLoading ? 'Refreshing…' : 'Refresh'}
+              <RefreshCw size={13} className={portfolioLoading ? 'animate-spin' : ''} />
+              <span>{portfolioLoading ? 'Refreshing…' : 'Refresh'}</span>
             </button>
           </div>
         </div>
@@ -425,6 +454,22 @@ export default function AnalyticsSaaS() {
                 </div>
               ))}
             </div>
+
+            {/* Visual Portfolio Distribution Bar */}
+            <div className="px-5 py-3.5 bg-surface/50 border-b border-mist">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-2">
+                Decision Pipeline Distribution
+              </div>
+              <StackedBar
+                segments={[
+                  { label: 'Overdue', value: portfolio.counts?.overdue ?? 0, colorClass: 'bg-coral' },
+                  { label: 'Due now', value: portfolio.counts?.due_now ?? 0, colorClass: 'bg-[#f5b838]' },
+                  { label: 'Upcoming', value: portfolio.counts?.upcoming ?? 0, colorClass: 'bg-teal' },
+                  { label: 'Closed', value: portfolio.counts?.closed_recent ?? 0, colorClass: 'bg-mist' },
+                ]}
+              />
+            </div>
+
             {portfolioRows.length === 0 ? (
               <div className="px-5 py-6 text-sm text-[var(--muted)]">
                 No open follow-ups yet. Open a case, pick an action, and save a follow-up —
@@ -435,43 +480,38 @@ export default function AnalyticsSaaS() {
                 {portfolioRows.slice(0, 12).map((d) => (
                   <li
                     key={d.id}
-                    className="px-5 py-3 flex flex-wrap items-start justify-between gap-3 text-sm"
+                    className="px-5 py-3.5 flex flex-wrap items-start justify-between gap-3 text-sm hover:bg-mist/20 transition-colors"
                   >
                     <div className="min-w-0">
-                      <div className="font-medium text-ink">{d.action_name}</div>
-                      <p className="text-xs text-[var(--muted)] mt-1">
-                        <span
-                          className={
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-ink">{d.action_name}</span>
+                        <Badge
+                          variant={
                             d._bucket === 'Overdue'
-                              ? 'text-coral'
+                              ? 'urgent'
                               : d._bucket === 'Due now'
-                                ? 'text-ink'
-                                : ''
+                                ? 'caution'
+                                : 'safe'
                           }
+                          size="xs"
                         >
                           {d._bucket}
-                        </span>
-                        {d.project_name ? ` · ${d.project_name}` : ''}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-1">
+                        {d.project_name ? `${d.project_name}` : ''}
                         {d.assignee?.name
-                          ? ` · ${d.assignee.name}`
-                          : d.assignee_user_id
-                            ? ' · Assigned'
-                            : ' · Unassigned'}
-                        {d.recheck_at
-                          ? ` · check back ${String(d.recheck_at).slice(0, 10)}`
-                          : ''}
-                        {d.impact_hint ? ` · ${d.impact_hint}` : ''}
+                          ? ` · Owner: ${d.assignee.name}`
+                          : ' · Unassigned'}
+                        {d.recheck_date ? ` · Target: ${new Date(d.recheck_date).toLocaleDateString()}` : ''}
                       </p>
                     </div>
                     <Link
-                      to={`/projects/${d.project_id}?decision=${d.id}&checkin=1&from=follow-ups${
-                        d.prediction_id ? `&prediction=${d.prediction_id}` : ''
-                      }`}
-                      className="shrink-0 text-xs px-3 py-1.5 border border-mist hover:border-teal text-ink rounded-control"
+                      to={`/projects/${d.project_id}?from=ledger#decision-${d.id}`}
+                      className="text-xs text-teal hover:underline font-semibold inline-flex items-center gap-1 shrink-0 mt-1"
                     >
-                      {d._bucket === 'Overdue' || d._bucket === 'Due now'
-                        ? 'Update follow-up'
-                        : 'Open follow-up'}
+                      <span>Inspect</span>
+                      <ArrowRight size={12} />
                     </Link>
                   </li>
                 ))}
